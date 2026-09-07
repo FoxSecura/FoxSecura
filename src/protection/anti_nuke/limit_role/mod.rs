@@ -13,7 +13,7 @@ pub struct LimitRoleInput {
     pub current_role_member_count: usize,
 }
 
-pub const fn should_enforce_limit_role(input: LimitRoleInput) -> bool {
+pub fn should_enforce_limit_role(input: LimitRoleInput) -> bool {
     if !input.enabled || !input.role_configured || input.max_members.is_none() {
         return false;
     }
