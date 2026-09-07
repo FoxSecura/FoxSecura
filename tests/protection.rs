@@ -7,3 +7,7 @@ mod anti_nuke;
 mod anti_raid;
 #[path = "protection/anti_spam/mod.rs"]
 mod anti_spam;
+#[path = "protection/automod/mod.rs"]
+mod automod;
+#[path = "protection/shared/mod.rs"]
+mod shared;

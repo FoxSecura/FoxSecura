@@ -1,0 +1,6 @@
+// SPDX-FileCopyrightText: 2026 FoxSecura contributors
+// SPDX-License-Identifier: AGPL-3.0-only
+
+mod detector;
+
+pub use detector::{AntiInviteDetectionResult, detect_invite_link};

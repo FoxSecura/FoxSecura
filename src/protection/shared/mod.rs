@@ -3,8 +3,10 @@
 
 mod action_burst;
 mod decision;
+mod url_signal;
 
 pub use action_burst::{
     ActionBurstDetector, ActionBurstDetectorConfig, ActionBurstInput, ActionBurstResult,
 };
 pub use decision::ProtectionDecision;
+pub use url_signal::{UrlSignal, extract_url_signals, host_matches};
