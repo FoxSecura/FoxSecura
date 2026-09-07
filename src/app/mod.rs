@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+mod data;
+mod events;
+mod intents;
+
 use poise::serenity_prelude as serenity;
 
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub use data::AppData;
 
-#[derive(Debug, Default)]
-pub struct AppData;
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub struct App {
     token: String,
@@ -19,13 +22,16 @@ impl App {
 
         Ok(Self {
             token,
-            intents: Self::default_intents(),
+            intents: intents::default(),
         })
     }
 
     pub async fn run(self) -> Result<(), Error> {
         let options = poise::FrameworkOptions::<AppData, Error> {
             commands: Vec::new(),
+            event_handler: |ctx, event, framework, data| {
+                Box::pin(events::handle(ctx, event, framework, data))
+            },
             ..Default::default()
         };
 
@@ -46,11 +52,5 @@ impl App {
         client.start().await?;
 
         Ok(())
-    }
-
-    fn default_intents() -> serenity::GatewayIntents {
-        serenity::GatewayIntents::GUILDS
-            | serenity::GatewayIntents::GUILD_MODERATION
-            | serenity::GatewayIntents::GUILD_MEMBERS
     }
 }
