@@ -3,10 +3,13 @@
 
 use std::time::Duration;
 
+use poise::serenity_prelude::Permissions;
+
 use foxsecura::protection::{
     ProtectionDecision,
     anti_nuke::server_integrity::server_guard::{
         ActionBurstDetector, ActionBurstDetectorConfig, ActionBurstInput,
+        detect_dangerous_permission_change,
     },
 };
 
@@ -46,6 +49,18 @@ fn burst_triggers_exactly_at_threshold() {
     assert_eq!(result.decision, ProtectionDecision::Block);
     assert_eq!(result.count, 3);
     assert_eq!(result.threshold, 3);
+}
+
+#[test]
+fn dangerous_permission_additions_are_detected() {
+    assert!(detect_dangerous_permission_change(
+        Permissions::empty(),
+        Permissions::ADMINISTRATOR,
+    ));
+    assert!(!detect_dangerous_permission_change(
+        Permissions::ADMINISTRATOR,
+        Permissions::ADMINISTRATOR,
+    ));
 }
 
 #[test]
