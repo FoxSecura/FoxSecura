@@ -2,10 +2,12 @@
 name = "foxsecura"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.98.1"
 description = "FoxSecura v2 — bot Discord de sécurité réécrit en Rust."
 license = "AGPL-3.0-only"
 repository = "https://github.com/FoxSecura/FoxSecura-v2"
 publish = false
 
 [dependencies]
+serenity = { version = "=0.12.5", default-features = false, features = ["builder", "cache", "client", "gateway", "http", "model", "rustls_backend"] }
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "signal"] }
