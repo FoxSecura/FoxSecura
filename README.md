@@ -1,16 +1,16 @@
-# FoxSecura v2
+# FoxSecura
 
 [![Rust](https://img.shields.io/badge/Rust-1.98.1-DEA584?style=plastic&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tokio](https://img.shields.io/badge/Tokio-1.53.1-000000?style=plastic&logo=tokio&logoColor=white)](https://tokio.rs/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0--only-663399?style=plastic&logo=gnu&logoColor=white)](https://www.gnu.org/licenses/agpl-3.0.html)
 
-FoxSecura v2 est la réécriture en **Rust** de FoxSecura, un bot Discord orienté **sécurité**, **protection** et **modération** des serveurs.
+FoxSecura est la réécriture en **Rust** de FoxSecura, un bot Discord orienté **sécurité**, **protection** et **modération** des serveurs.
 
 > Le projet est actuellement en phase de reconstruction.
 
 ## Stack technique
 
-FoxSecura v2 repose sur une stack Rust moderne et asynchrone :
+FoxSecura repose sur une stack Rust moderne et asynchrone :
 
 - **Rust 1.98.1** : langage principal du projet ;
 - **Tokio 1.53.1** : runtime asynchrone ;
@@ -63,8 +63,8 @@ $env:DISCORD_TOKEN="votre_token"
 Clonez le dépôt puis vérifiez la compilation :
 
 ```bash
-git clone https://github.com/FoxSecura/FoxSecura-v2.git
-cd FoxSecura-v2
+git clone https://github.com/FoxSecura/FoxSecura.git
+cd FoxSecura
 cargo check
 ```
 
@@ -89,7 +89,7 @@ L'architecture modulaire, les commandes et les fonctionnalités de sécurité se
 
 ## Licence
 
-FoxSecura v2 est distribué sous la **GNU Affero General Public License v3.0 uniquement** (`AGPL-3.0-only`).
+FoxSecura est distribué sous la **GNU Affero General Public License v3.0 uniquement** (`AGPL-3.0-only`).
 
 Consultez le fichier [`LICENSE`](LICENSE) pour le texte complet de la licence.
 
