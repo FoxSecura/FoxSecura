@@ -1,5 +1,9 @@
 # FoxSecura v2
 
+[![Rust](https://img.shields.io/badge/Rust-1.98.1-DEA584?style=plastic&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Tokio](https://img.shields.io/badge/Tokio-1.53.1-000000?style=plastic&logo=tokio&logoColor=white)](https://tokio.rs/)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0--only-663399?style=plastic&logo=gnu&logoColor=white)](https://www.gnu.org/licenses/agpl-3.0.html)
+
 FoxSecura v2 est la réécriture en **Rust** de FoxSecura, un bot Discord orienté sécurité et protection des serveurs.
 
 > Le projet est actuellement en phase de reconstruction.
