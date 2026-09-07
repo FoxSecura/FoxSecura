@@ -4,7 +4,8 @@
 //! Modération sémantique assistée par IA.
 //!
 //! Les détecteurs déterministes restent dans Anti-Spam, Anti-Raid, Anti-Nuke
-//! et AutoMod. Cette famille ne doit pas réimplémenter leurs responsabilités.
+//! et AutoMod. Le modèle classe, le moteur de règles décide et seule la couche
+//! d'action décrit les conséquences à appliquer.
 
 pub mod action;
 pub mod analysis;
@@ -24,4 +25,8 @@ pub mod settings;
 pub mod telemetry;
 pub mod types;
 
-pub use types::{AiClassification, AiModerationCategory, AiRecommendedAction, AiSeverity};
+pub use types::{
+    AiAnalysisOutcome, AiAnalysisRequest, AiClassification, AiFailureReason,
+    AiMessageSnapshot, AiModerationCategory, AiProviderVerdict, AiRecommendedAction,
+    AiSafetyTaxonomy, AiSafetyVerdict, AiSeverity, AiSkipReason,
+};
