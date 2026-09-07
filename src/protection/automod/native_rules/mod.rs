@@ -5,3 +5,15 @@
 //!
 //! La protection contre la modification ou la suppression abusive de ces règles
 //! reste dans `anti_nuke::server_integrity::automod_rule_guard`.
+
+mod reconciler;
+mod spec;
+
+pub use reconciler::{
+    ExistingAutoModRule, RuleMutation, SyncPlan, UpdateMode, plan_reconciliation,
+};
+pub use spec::{
+    AUTOMOD_RULE_PREFIX, AutoModActionType, AutoModEventType, AutoModRuleKey, AutoModRuleSkipReason,
+    AutoModRuleSpec, AutoModRuleTriggerMetadata, AutoModRuleTriggerType, KeywordPreset,
+    build_rule_specs, rule_name_matches_spec,
+};

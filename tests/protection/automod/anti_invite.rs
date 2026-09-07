@@ -1,10 +1,7 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use foxsecura::protection::{
-    ProtectionDecision,
-    automod::anti_invite::detect_invite_link,
-};
+use foxsecura::protection::{ProtectionDecision, automod::anti_invite::detect_invite_link};
 
 #[test]
 fn detects_discord_gg_invite() {
@@ -36,6 +33,18 @@ fn detects_invite_inside_markdown_link() {
     let result = detect_invite_link("[Serveur](https://discord.gg/FoxSecura)");
 
     assert_eq!(result.decision, ProtectionDecision::Block);
+}
+
+#[test]
+fn detects_supported_invite_aliases() {
+    assert_eq!(
+        detect_invite_link("https://discord.me/FoxSecura").decision,
+        ProtectionDecision::Block
+    );
+    assert_eq!(
+        detect_invite_link("https://dsc.gg/FoxSecura").decision,
+        ProtectionDecision::Block
+    );
 }
 
 #[test]

@@ -25,7 +25,10 @@ pub fn detect_invite_link(content: &str) -> AntiInviteDetectionResult {
 }
 
 fn is_discord_invite(signal: &UrlSignal) -> bool {
-    if host_matches(&signal.hostname, "discord.gg") {
+    if host_matches(&signal.hostname, "discord.gg")
+        || host_matches(&signal.hostname, "discord.me")
+        || host_matches(&signal.hostname, "dsc.gg")
+    {
         return signal
             .path
             .strip_prefix('/')
@@ -53,5 +56,5 @@ fn has_valid_invite_code(value: &str) -> bool {
     !code.is_empty()
         && code
             .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
 }

@@ -3,4 +3,12 @@
 
 mod detector;
 
+pub const INVITE_PATTERNS: &[&str] = &[
+    "discord.gg/*",
+    "discord.com/invite/*",
+    "discordapp.com/invite/*",
+    "discord.me/*",
+    "dsc.gg/*",
+];
+
 pub use detector::{AntiInviteDetectionResult, detect_invite_link};
