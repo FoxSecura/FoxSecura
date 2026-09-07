@@ -4,11 +4,12 @@
 use std::time::Duration;
 
 use foxsecura::protection::anti_spam::{
-    AntiSpamConfig, AntiSpamDecision, MessageWindow, evaluate,
+    ProtectionDecision,
+    message_flood::{MessageFloodConfig, MessageWindow, evaluate},
 };
 
-fn config(enabled: bool) -> AntiSpamConfig {
-    AntiSpamConfig::new(enabled, 5, Duration::from_secs(5))
+fn config(enabled: bool) -> MessageFloodConfig {
+    MessageFloodConfig::new(enabled, 5, Duration::from_secs(5))
 }
 
 #[test]
@@ -18,7 +19,7 @@ fn disabled_protection_allows_messages() {
         MessageWindow::new(20, Duration::from_secs(1)),
     );
 
-    assert_eq!(decision, AntiSpamDecision::Allow);
+    assert_eq!(decision, ProtectionDecision::Allow);
 }
 
 #[test]
@@ -28,7 +29,7 @@ fn message_count_at_limit_is_allowed() {
         MessageWindow::new(5, Duration::from_secs(5)),
     );
 
-    assert_eq!(decision, AntiSpamDecision::Allow);
+    assert_eq!(decision, ProtectionDecision::Allow);
 }
 
 #[test]
@@ -38,7 +39,7 @@ fn message_count_above_limit_is_blocked() {
         MessageWindow::new(6, Duration::from_secs(5)),
     );
 
-    assert_eq!(decision, AntiSpamDecision::Block);
+    assert_eq!(decision, ProtectionDecision::Block);
 }
 
 #[test]
@@ -48,5 +49,5 @@ fn messages_outside_the_window_are_allowed() {
         MessageWindow::new(20, Duration::from_secs(6)),
     );
 
-    assert_eq!(decision, AntiSpamDecision::Allow);
+    assert_eq!(decision, ProtectionDecision::Allow);
 }

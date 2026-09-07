@@ -4,13 +4,13 @@
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AntiSpamConfig {
+pub struct MessageFloodConfig {
     pub enabled: bool,
     pub message_limit: usize,
     pub window: Duration,
 }
 
-impl AntiSpamConfig {
+impl MessageFloodConfig {
     pub const fn new(enabled: bool, message_limit: usize, window: Duration) -> Self {
         Self {
             enabled,
@@ -20,7 +20,7 @@ impl AntiSpamConfig {
     }
 }
 
-impl Default for AntiSpamConfig {
+impl Default for MessageFloodConfig {
     fn default() -> Self {
         Self::new(false, 5, Duration::from_secs(5))
     }

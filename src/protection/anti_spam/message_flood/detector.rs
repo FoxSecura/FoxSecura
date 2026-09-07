@@ -3,7 +3,8 @@
 
 use std::time::Duration;
 
-use super::AntiSpamConfig;
+use super::MessageFloodConfig;
+use crate::protection::anti_spam::shared::ProtectionDecision;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MessageWindow {
@@ -20,19 +21,13 @@ impl MessageWindow {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AntiSpamDecision {
-    Allow,
-    Block,
-}
-
-pub fn evaluate(config: AntiSpamConfig, window: MessageWindow) -> AntiSpamDecision {
+pub fn evaluate(config: MessageFloodConfig, window: MessageWindow) -> ProtectionDecision {
     if !config.enabled
         || window.elapsed > config.window
         || window.message_count <= config.message_limit
     {
-        return AntiSpamDecision::Allow;
+        return ProtectionDecision::Allow;
     }
 
-    AntiSpamDecision::Block
+    ProtectionDecision::Block
 }
