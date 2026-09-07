@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0812">
+  <meta name="description" content="FoxSecura, bot Discord de sécurité open source écrit en Rust. Protection anti-spam, anti-raid, anti-nuke, AutoMod, modération IA, logs et configuration multilingue.">
+  <meta property="og:title" content="FoxSecura - Sécurité Discord moderne">
+  <meta property="og:description" content="Une architecture de sécurité Discord moderne, modulaire et open source, écrite en Rust.">
+  <meta property="og:type" content="website">
+  <title>FoxSecura - Sécurité Discord moderne</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%237c3aed'/%3E%3Ctext x='32' y='44' font-size='38' text-anchor='middle'%3E🦊%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="scroll-progress" aria-hidden="true"><span id="scroll-progress"></span></div>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header" id="top">
+    <div class="header-inner">
+      <a class="brand" href="#home" aria-label="FoxSecura">
+        <span class="brand-mark" aria-hidden="true">🦊</span>
+        <span class="brand-name">FoxSecura</span>
+        <span class="brand-status" data-i18n="nav.beta">dev</span>
+      </a>
+
+      <nav class="desktop-nav" aria-label="Navigation principale">
+        <a href="#protections" data-i18n="nav.protections">Protections</a>
+        <a href="#architecture" data-i18n="nav.architecture">Architecture</a>
+        <a href="#docs" data-i18n="nav.docs">Documentation</a>
+        <a href="#status" data-i18n="nav.status">État</a>
+      </nav>
+
+      <div class="header-actions">
+        <button class="icon-button search-trigger" type="button" aria-label="Rechercher" data-search-open>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m1.35-5.15a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/></svg>
+          <span class="shortcut">⌘K</span>
+        </button>
+
+        <label class="language-picker">
+          <span class="sr-only" data-i18n="a11y.language">Langue</span>
+          <select id="language-select" aria-label="Langue">
+            <option value="fr">FR</option>
+            <option value="en">EN</option>
+            <option value="de">DE</option>
+          </select>
+        </label>
+
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Changer de thème">
+          <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.7 6.7 0 0 0 9.8 9.8Z"/></svg>
+        </button>
+
+        <a class="github-button" href="https://github.com/FoxSecura/FoxSecura" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.29-5.27-5.72 0-1.26.45-2.3 1.19-3.11-.12-.29-.52-1.47.11-3.07 0 0 .97-.31 3.16 1.19A10.94 10.94 0 0 1 12 6.05c.98 0 1.96.13 2.88.38 2.19-1.5 3.15-1.19 3.15-1.19.63 1.6.23 2.78.11 3.07.74.81 1.19 1.85 1.19 3.11 0 4.44-2.71 5.42-5.29 5.71.42.36.79 1.07.79 2.16v3.26c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+          <span data-i18n="nav.github">GitHub</span>
+        </a>
+
+        <button class="mobile-menu-button" id="mobile-menu-button" type="button" aria-label="Ouvrir le menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+
+    <nav class="mobile-nav" id="mobile-nav" aria-label="Navigation mobile">
+      <a href="#protections" data-i18n="nav.protections">Protections</a>
+      <a href="#architecture" data-i18n="nav.architecture">Architecture</a>
+      <a href="#docs" data-i18n="nav.docs">Documentation</a>
+      <a href="#status" data-i18n="nav.status">État</a>
+      <a href="https://github.com/FoxSecura/FoxSecura" target="_blank" rel="noreferrer" data-i18n="nav.github">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero section" id="home" data-search="FoxSecura Discord security Rust protection bot">
+      <div class="hero-grid container">
+        <div class="hero-copy reveal">
+          <div class="eyebrow">
+            <span class="pulse-dot"></span>
+            <span data-i18n="hero.eyebrow">Sécurité Discord open source, écrite en Rust</span>
+          </div>
+
+          <h1>
+            <span data-i18n="hero.title1">Protégez votre serveur.</span>
+            <span class="gradient-text" data-i18n="hero.title2">Gardez le contrôle.</span>
+          </h1>
+
+          <p class="hero-lead" data-i18n="hero.lead">
+            FoxSecura construit une couche de sécurité Discord moderne autour de moteurs spécialisés, d'une configuration claire, de logs structurés et d'une modération IA strictement encadrée.
+          </p>
+
+          <div class="hero-actions">
+            <a class="button primary" href="#quickstart">
+              <span data-i18n="hero.ctaDocs">Commencer</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+            </a>
+            <a class="button secondary" href="https://github.com/FoxSecura/FoxSecura" target="_blank" rel="noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.29-5.27-5.72 0-1.26.45-2.3 1.19-3.11-.12-.29-.52-1.47.11-3.07 0 0 .97-.31 3.16 1.19A10.94 10.94 0 0 1 12 6.05c.98 0 1.96.13 2.88.38 2.19-1.5 3.15-1.19 3.15-1.19.63 1.6.23 2.78.11 3.07.74.81 1.19 1.85 1.19 3.11 0 4.44-2.71 5.42-5.29 5.71.42.36.79 1.07.79 2.16v3.26c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+              <span data-i18n="hero.ctaGithub">Voir le code</span>
+            </a>
+          </div>
+
+          <div class="hero-meta">
+            <div>
+              <strong>Rust 1.98.1</strong>
+              <span data-i18n="hero.metaRuntime">base performante</span>
+            </div>
+            <div>
+              <strong>AGPL-3.0-only</strong>
+              <span data-i18n="hero.metaLicense">open source</span>
+            </div>
+            <div>
+              <strong>EN · FR · DE</strong>
+              <span data-i18n="hero.metaI18n">multilingue</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" data-delay="120">
+          <div class="visual-glow"></div>
+          <div class="control-panel">
+            <div class="panel-topbar">
+              <div class="panel-brand">
+                <span class="mini-mark">🦊</span>
+                <div>
+                  <strong>FoxSecura</strong>
+                  <small data-i18n="hero.panelSubtitle">Security runtime</small>
+                </div>
+              </div>
+              <span class="online-pill"><span></span><b data-i18n="hero.operational">moteurs chargés</b></span>
+            </div>
+
+            <div class="metrics-row">
+              <div class="metric">
+                <span class="metric-icon violet">◆</span>
+                <div><small data-i18n="hero.metricFamilies">Familles</small><strong>5</strong></div>
+              </div>
+              <div class="metric">
+                <span class="metric-icon amber">⚡</span>
+                <div><small data-i18n="hero.metricCommands">Commandes</small><strong>3</strong></div>
+              </div>
+              <div class="metric">
+                <span class="metric-icon green">✓</span>
+                <div><small data-i18n="hero.metricLanguages">Langues</small><strong>3</strong></div>
+              </div>
+            </div>
+
+            <div class="activity-card">
+              <div class="activity-heading">
+                <span data-i18n="hero.activity">Moteurs de protection</span>
+                <span class="live-chip" data-i18n="hero.tested">testés</span>
+              </div>
+
+              <div class="event-line">
+                <span class="event-dot critical"></span>
+                <div><strong>Anti-Nuke</strong><small data-i18n="hero.eventNuke">Rafales d'actions sensibles</small></div>
+                <span class="event-status" data-i18n="hero.ready">prêt</span>
+              </div>
+              <div class="event-line">
+                <span class="event-dot warning"></span>
+                <div><strong>Anti-Raid</strong><small data-i18n="hero.eventRaid">Arrivées, webhooks, identités</small></div>
+                <span class="event-status" data-i18n="hero.ready">prêt</span>
+              </div>
+              <div class="event-line">
+                <span class="event-dot safe"></span>
+                <div><strong>AI Moderation</strong><small>OpenAI · omni-moderation-latest</small></div>
+                <span class="event-status" data-i18n="hero.ready">prêt</span>
+              </div>
+            </div>
+
+            <div class="panel-footer">
+              <span><i></i> Serenity 0.12.5</span>
+              <span><i></i> Tokio 1.53.1</span>
+              <span><i></i> SQLite</span>
+            </div>
+          </div>
+
+          <div class="floating-card floating-one">
+            <span class="floating-icon">🛡️</span>
+            <div><strong>Anti-Spam</strong><small data-i18n="hero.floatingDetectors">détecteurs spécialisés</small></div>
+          </div>
+          <div class="floating-card floating-two">
+            <span class="floating-icon">🌐</span>
+            <div><strong>i18n</strong><small>English · Français · Deutsch</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stack-strip" aria-label="Technologies">
+      <div class="container stack-inner">
+        <span data-i18n="stack.built">Construit avec</span>
+        <b>Rust 1.98.1</b>
+        <i></i>
+        <b>Tokio 1.53.1</b>
+        <i></i>
+        <b>Serenity 0.12.5</b>
+        <i></i>
+        <b>Poise 0.7.0</b>
+        <i></i>
+        <b>SQLite</b>
+        <i></i>
+        <b>OpenAI Moderation</b>
+      </div>
+    </section>
+
+    <section class="section protection-section" id="protections">
+      <div class="container">
+        <div class="section-heading centered reveal">
+          <span class="section-kicker" data-i18n="protections.kicker">Défense en profondeur</span>
+          <h2 data-i18n="protections.title">Cinq moteurs. Une seule stratégie.</h2>
+          <p data-i18n="protections.lead">
+            Chaque famille possède une responsabilité claire. Les primitives communes sont mutualisées pour éviter les doubles détections et les compteurs concurrents.
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card purple reveal" data-search="Anti-Spam flood scam malicious links mentions ghost ping slowmode">
+            <div class="feature-icon">⚡</div>
+            <div class="feature-head">
+              <h3>Anti-Spam</h3>
+              <span class="status-badge ready" data-i18n="common.engineReady">Moteur prêt</span>
+            </div>
+            <p data-i18n="protections.spam">
+              Flood, mentions massives, ghost ping, liens malveillants, pièces jointes suspectes, scam et slowmode automatique.
+            </p>
+            <div class="tag-row"><span>Flood</span><span>Scam</span><span>Links</span></div>
+          </article>
+
+          <article class="feature-card orange reveal" data-delay="60" data-search="Anti-Raid bot new account impersonation double account honeypot webhook joins">
+            <div class="feature-icon">🚨</div>
+            <div class="feature-head">
+              <h3>Anti-Raid</h3>
+              <span class="status-badge ready" data-i18n="common.engineReady">Moteur prêt</span>
+            </div>
+            <p data-i18n="protections.raid">
+              Rafales d'arrivées, bots, nouveaux comptes, doubles comptes, usurpation, honeypot et surveillance des webhooks.
+            </p>
+            <div class="tag-row"><span>Join burst</span><span>Identity</span><span>Webhook</span></div>
+          </article>
+
+          <article class="feature-card red reveal" data-delay="120" data-search="Anti-Nuke mass ban kick timeout roles channels server integrity panic mode">
+            <div class="feature-icon">🧨</div>
+            <div class="feature-head">
+              <h3>Anti-Nuke</h3>
+              <span class="status-badge ready" data-i18n="common.engineReady">Moteur prêt</span>
+            </div>
+            <p data-i18n="protections.nuke">
+              Actions massives, suppressions de ressources, changements sensibles, permissions, intégrité serveur et mode panique.
+            </p>
+            <div class="tag-row"><span>Burst</span><span>Integrity</span><span>Panic</span></div>
+          </article>
+
+          <article class="feature-card blue reveal" data-delay="180" data-search="AutoMod invites adult links bad words member profile native Discord rules">
+            <div class="feature-icon">🧩</div>
+            <div class="feature-head">
+              <h3>AutoMod</h3>
+              <span class="status-badge ready" data-i18n="common.engineReady">Moteur prêt</span>
+            </div>
+            <p data-i18n="protections.automod">
+              Invitations, liens adultes, mots interdits, profils membres et réconciliation des règles AutoMod natives Discord.
+            </p>
+            <div class="tag-row"><span>Native rules</span><span>Keywords</span><span>Profiles</span></div>
+          </article>
+
+          <article class="feature-card green feature-wide reveal" data-delay="240" data-search="AI Moderation OpenAI omni-moderation-latest semantic content safety circuit breaker cache policy">
+            <div class="feature-icon">🧠</div>
+            <div class="feature-head">
+              <h3>AI Moderation</h3>
+              <span class="status-badge ready" data-i18n="common.engineReady">Moteur prêt</span>
+            </div>
+            <p data-i18n="protections.ai">
+              Classification sémantique avec OpenAI `omni-moderation-latest`, policy FoxSecura, validation stricte, cache, limite de concurrence et circuit breaker.
+            </p>
+            <div class="ai-principle">
+              <span data-i18n="protections.aiPrinciple">Le modèle classe</span>
+              <b>→</b>
+              <span data-i18n="protections.rulesPrinciple">FoxSecura décide</span>
+              <b>→</b>
+              <span data-i18n="protections.actionPrinciple">La couche action applique</span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section architecture-section" id="architecture">
+      <div class="container architecture-grid">
+        <div class="architecture-copy reveal">
+          <span class="section-kicker" data-i18n="architecture.kicker">Architecture lisible</span>
+          <h2 data-i18n="architecture.title">Séparer pour mieux sécuriser.</h2>
+          <p data-i18n="architecture.lead">
+            FoxSecura garde les responsabilités simples : Discord fournit les événements, les moteurs analysent, la décision reste typée, puis logs et persistance conservent le contexte.
+          </p>
+
+          <div class="principles-list">
+            <div class="principle"><span>01</span><div><strong data-i18n="architecture.p1Title">Détecteurs purs quand possible</strong><p data-i18n="architecture.p1Text">Faciles à tester, sans dépendance Discord inutile.</p></div></div>
+            <div class="principle"><span>02</span><div><strong data-i18n="architecture.p2Title">Primitives partagées</strong><p data-i18n="architecture.p2Text">Compteurs temporels, signaux URL et décisions communes restent centralisés.</p></div></div>
+            <div class="principle"><span>03</span><div><strong data-i18n="architecture.p3Title">Persistance explicite</strong><p data-i18n="architecture.p3Text">SQLite, migrations versionnées et repositories compréhensibles.</p></div></div>
+          </div>
+        </div>
+
+        <div class="architecture-map reveal" data-delay="120" aria-label="Schéma d'architecture FoxSecura">
+          <div class="arch-node input">
+            <small data-i18n="architecture.nodeDiscord">Entrée</small>
+            <strong>Discord Gateway</strong>
+            <span>Serenity</span>
+          </div>
+          <div class="arch-connector vertical"></div>
+          <div class="arch-node core">
+            <small data-i18n="architecture.nodeCore">Orchestration</small>
+            <strong>FoxSecura Core</strong>
+            <span>Poise + Tokio</span>
+          </div>
+          <div class="arch-split">
+            <div class="arch-connector branch left"></div>
+            <div class="arch-connector branch center"></div>
+            <div class="arch-connector branch right"></div>
+          </div>
+          <div class="arch-children">
+            <div class="arch-node child"><small data-i18n="architecture.nodeDetect">Détection</small><strong>Protection</strong><span>5 engines</span></div>
+            <div class="arch-node child"><small data-i18n="architecture.nodeObserve">Observation</small><strong>Logs</strong><span>6 channels</span></div>
+            <div class="arch-node child"><small data-i18n="architecture.nodePersist">Persistance</small><strong>Database</strong><span>SQLite</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section commands-section" id="docs">
+      <div class="container">
+        <div class="section-heading reveal">
+          <span class="section-kicker" data-i18n="commands.kicker">Interface minimale</span>
+          <h2 data-i18n="commands.title">Trois commandes. Pas de bruit.</h2>
+          <p data-i18n="commands.lead">
+            FoxSecura garde une surface de commandes volontairement petite. La configuration complexe passe par des panneaux interactifs au lieu d'une collection de commandes difficiles à retenir.
+          </p>
+        </div>
+
+        <div class="command-grid">
+          <article class="command-card reveal" data-search="/config configuration dashboard categories ephemeral">
+            <div class="command-line"><code>/config</code><span data-i18n="commands.guildOnly">serveur uniquement</span></div>
+            <p data-i18n="commands.config">Ouvre le dashboard privé avec un sélecteur de catégories pour administrer FoxSecura.</p>
+            <ul>
+              <li data-i18n="commands.config1">Réponse éphémère</li>
+              <li data-i18n="commands.config2">11 catégories organisées</li>
+              <li data-i18n="commands.config3">Interface traduite EN / FR / DE</li>
+            </ul>
+          </article>
+          <article class="command-card reveal" data-delay="80" data-search="/help help commands documentation">
+            <div class="command-line"><code>/help</code><span data-i18n="commands.private">privé</span></div>
+            <p data-i18n="commands.help">Présente les commandes principales du bot dans la langue de l'utilisateur.</p>
+            <ul>
+              <li data-i18n="commands.help1">Simple et rapide</li>
+              <li data-i18n="commands.help2">Aucune commande gadget</li>
+              <li data-i18n="commands.help3">Informations localisées</li>
+            </ul>
+          </article>
+          <article class="command-card reveal" data-delay="160" data-search="/status status gateway framework runtime security modules">
+            <div class="command-line"><code>/status</code><span data-i18n="commands.guildOnly">serveur uniquement</span></div>
+            <p data-i18n="commands.status">Affiche l'état du runtime, du Gateway, du framework, des commandes et des moteurs de sécurité.</p>
+            <ul>
+              <li data-i18n="commands.status1">État applicatif</li>
+              <li data-i18n="commands.status2">Versions et framework</li>
+              <li data-i18n="commands.status3">Moteurs de protection</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section quickstart-section" id="quickstart">
+      <div class="container quickstart-grid">
+        <div class="quickstart-copy reveal">
+          <span class="section-kicker" data-i18n="quickstart.kicker">Développement</span>
+          <h2 data-i18n="quickstart.title">Lancer FoxSecura localement.</h2>
+          <p data-i18n="quickstart.lead">
+            Le dépôt fixe les versions principales pour conserver un environnement reproductible. Rust 1.98.1 est défini dans le toolchain du projet.
+          </p>
+
+          <div class="requirements">
+            <div><span>01</span><p><strong>Rust 1.98.1</strong><small data-i18n="quickstart.reqRust">toolchain du projet</small></p></div>
+            <div><span>02</span><p><strong>Discord Bot Token</strong><small>DISCORD_TOKEN</small></p></div>
+            <div><span>03</span><p><strong>Server Members Intent</strong><small data-i18n="quickstart.reqIntent">intent privilégié requis</small></p></div>
+            <div><span>04</span><p><strong>OpenAI API Key</strong><small data-i18n="quickstart.reqOpenAI">pour AI Moderation</small></p></div>
+          </div>
+        </div>
+
+        <div class="code-window reveal" data-delay="120">
+          <div class="code-window-bar">
+            <div class="window-dots"><i></i><i></i><i></i></div>
+            <span>terminal</span>
+            <button class="copy-button" type="button" data-copy-target="install-code" data-i18n="common.copy">Copier</button>
+          </div>
+          <pre id="install-code"><code><span class="c-comment"># Clone</span>
+git clone https://github.com/FoxSecura/FoxSecura.git
+cd FoxSecura
+
+<span class="c-comment"># Secrets</span>
+export DISCORD_TOKEN="<span class="c-value">your_discord_token</span>"
+export OPENAI_API_KEY="<span class="c-value">your_openai_key</span>"
+
+<span class="c-comment"># Verify</span>
+cargo check
+cargo test
+
+<span class="c-comment"># Run</span>
+cargo run</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section detail-section">
+      <div class="container detail-grid">
+        <article class="detail-card ai-card reveal" data-search="OpenAI omni moderation latest AI privacy API key moderation">
+          <div class="detail-label"><span>AI</span><b data-i18n="details.aiLabel">Modération sémantique</b></div>
+          <h3 data-i18n="details.aiTitle">OpenAI, mais avec des limites strictes.</h3>
+          <p data-i18n="details.aiText">
+            FoxSecura utilise uniquement `omni-moderation-latest` via l'endpoint Moderations. Le provider ne voit aucun objet Discord et ne peut jamais appliquer directement une sanction.
+          </p>
+          <div class="mini-code">
+            <span>provider</span><strong>OpenAI</strong>
+            <span>model</span><strong>omni-moderation-latest</strong>
+            <span>env</span><strong>OPENAI_API_KEY</strong>
+          </div>
+        </article>
+
+        <article class="detail-card logs-card reveal" data-delay="80" data-search="logs logging channels moderation member server role message i18n">
+          <div class="detail-label"><span>LOG</span><b data-i18n="details.logsLabel">Observabilité</b></div>
+          <h3 data-i18n="details.logsTitle">Des logs structurés et localisés.</h3>
+          <p data-i18n="details.logsText">
+            Six types de salons sont définis pour séparer messages, serveur, membres, salons, rôles et modération. Les libellés destinés aux humains passent par le catalogue i18n.
+          </p>
+          <div class="channel-list">
+            <span># fs-message-logs</span><span># fs-server-logs</span><span># fs-member-logs</span>
+            <span># fs-channel-logs</span><span># fs-role-logs</span><span># fs-mod-logs</span>
+          </div>
+        </article>
+
+        <article class="detail-card db-card reveal" data-delay="160" data-search="SQLite database migrations WAL guild config log channels rusqlite">
+          <div class="detail-label"><span>DB</span><b data-i18n="details.dbLabel">Persistance</b></div>
+          <h3 data-i18n="details.dbTitle">SQLite simple et versionné.</h3>
+          <p data-i18n="details.dbText">
+            Le socle database utilise rusqlite avec SQLite embarqué, WAL, clés étrangères, migrations versionnées et repositories typés.
+          </p>
+          <div class="db-schema">
+            <div><strong>guild_configs</strong><small>guild_id · language · timestamps</small></div>
+            <div><strong>guild_log_channels</strong><small>guild_id · log_type · channel_id</small></div>
+            <div><strong>schema_migrations</strong><small>version · name · applied_at</small></div>
+          </div>
+        </article>
+
+        <article class="detail-card i18n-card reveal" data-delay="240" data-search="i18n internationalization English French German locale">
+          <div class="detail-label"><span>🌐</span><b data-i18n="details.i18nLabel">Internationalisation</b></div>
+          <h3 data-i18n="details.i18nTitle">Trois langues, un catalogue typé.</h3>
+          <p data-i18n="details.i18nText">
+            Pas de forêt de fichiers JSON. Les clés sont typées et chaque texte doit exister en anglais, français et allemand.
+          </p>
+          <div class="language-cards">
+            <span><b>EN</b> English</span>
+            <span><b>FR</b> Français</span>
+            <span><b>DE</b> Deutsch</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section docs-reference-section">
+      <div class="container reference-layout">
+        <aside class="reference-sidebar reveal">
+          <span class="section-kicker" data-i18n="reference.kicker">Référence</span>
+          <h2 data-i18n="reference.title">Ce qu'il faut savoir.</h2>
+          <nav class="reference-nav" aria-label="Documentation de référence">
+            <a href="#intents" class="active" data-reference-link data-i18n="reference.intents">Intents Discord</a>
+            <a href="#environment" data-reference-link data-i18n="reference.environment">Variables d'environnement</a>
+            <a href="#database" data-reference-link data-i18n="reference.database">Database</a>
+            <a href="#security-model" data-reference-link data-i18n="reference.security">Modèle de sécurité</a>
+            <a href="#license" data-reference-link data-i18n="reference.license">Licence</a>
+          </nav>
+        </aside>
+
+        <div class="reference-content reveal" data-delay="100">
+          <article id="intents" class="reference-article" data-search="Discord intents GUILDS GUILD_MODERATION GUILD_MEMBERS privileged">
+            <h3 data-i18n="reference.intents">Intents Discord</h3>
+            <p data-i18n="reference.intentsText">FoxSecura demande actuellement trois intents Gateway. `GUILD_MEMBERS` est privilégié et doit être activé dans le Discord Developer Portal.</p>
+            <div class="token-list"><code>GUILDS</code><code>GUILD_MODERATION</code><code>GUILD_MEMBERS</code></div>
+          </article>
+
+          <article id="environment" class="reference-article" data-search="environment variables DISCORD_TOKEN OPENAI_API_KEY DATABASE path">
+            <h3 data-i18n="reference.environment">Variables d'environnement</h3>
+            <div class="env-table">
+              <div class="env-row"><code>DISCORD_TOKEN</code><span data-i18n="reference.discordToken">Requis pour connecter le bot au Gateway Discord.</span><b data-i18n="common.required">Requis</b></div>
+              <div class="env-row"><code>OPENAI_API_KEY</code><span data-i18n="reference.openaiKey">Active le provider OpenAI pour AI Moderation.</span><b data-i18n="common.feature">Fonction</b></div>
+            </div>
+            <p class="note" data-i18n="reference.secretNote">Ne commitez jamais ces secrets dans Git.</p>
+          </article>
+
+          <article id="database" class="reference-article" data-search="database path data foxsecura sqlite3 schema version migration">
+            <h3 data-i18n="reference.database">Database</h3>
+            <p data-i18n="reference.databaseText">Le chemin par défaut défini par le client est `data/foxsecura.sqlite3`. Le schéma démarre à la version 1 et les migrations sont transactionnelles.</p>
+            <div class="inline-specs">
+              <span><small data-i18n="reference.defaultPath">Chemin</small><strong>data/foxsecura.sqlite3</strong></span>
+              <span><small data-i18n="reference.schema">Schéma</small><strong>v1</strong></span>
+              <span><small>journal_mode</small><strong>WAL</strong></span>
+            </div>
+          </article>
+
+          <article id="security-model" class="reference-article" data-search="security model permissions architecture detectors decision action AI provider">
+            <h3 data-i18n="reference.security">Modèle de sécurité</h3>
+            <p data-i18n="reference.securityText">Les moteurs produisent des signaux et décisions typées. La logique de détection est séparée des effets Discord. Pour l'IA, le provider ne reçoit pas les objets Discord et ne renvoie jamais une sanction.</p>
+            <div class="security-flow"><span data-i18n="reference.input">Événement</span><b>→</b><span data-i18n="reference.detect">Détection</span><b>→</b><span data-i18n="reference.decision">Décision</span><b>→</b><span data-i18n="reference.action">Action</span><b>→</b><span>Log</span></div>
+          </article>
+
+          <article id="license" class="reference-article" data-search="license AGPL 3 only open source GNU Affero">
+            <h3 data-i18n="reference.license">Licence</h3>
+            <p data-i18n="reference.licenseText">FoxSecura est distribué sous GNU Affero General Public License v3.0 uniquement, SPDX `AGPL-3.0-only`.</p>
+            <a class="text-link" href="https://github.com/FoxSecura/FoxSecura/blob/main/LICENSE" target="_blank" rel="noreferrer"><span data-i18n="reference.readLicense">Lire la licence</span> <b>↗</b></a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section status-section" id="status">
+      <div class="container">
+        <div class="section-heading centered reveal">
+          <span class="section-kicker" data-i18n="status.kicker">État du projet</span>
+          <h2 data-i18n="status.title">Une base solide, encore en intégration.</h2>
+          <p data-i18n="status.lead">Le site distingue ce qui est déjà implémenté de ce qui reste à brancher pour éviter de présenter FoxSecura comme terminé avant qu'il ne le soit.</p>
+        </div>
+
+        <div class="status-board reveal">
+          <div class="status-column">
+            <div class="status-column-title"><span class="status-light green"></span><strong data-i18n="status.done">Implémenté et testé</strong></div>
+            <ul>
+              <li><b>✓</b><span data-i18n="status.itemProtections">Moteurs Anti-Spam, Anti-Raid, Anti-Nuke, AutoMod et AI Moderation</span></li>
+              <li><b>✓</b><span data-i18n="status.itemI18n">i18n typé EN / FR / DE</span></li>
+              <li><b>✓</b><span data-i18n="status.itemLogs">Modèles et formatage des logs</span></li>
+              <li><b>✓</b><span data-i18n="status.itemDb">Socle SQLite, migrations et repositories initiaux</span></li>
+              <li><b>✓</b><span data-i18n="status.itemCommands">Commandes /config, /help et /status</span></li>
+            </ul>
+          </div>
+          <div class="status-column">
+            <div class="status-column-title"><span class="status-light amber"></span><strong data-i18n="status.progress">Intégration en cours</strong></div>
+            <ul>
+              <li><b>↗</b><span data-i18n="status.itemEvents">Branchement complet des moteurs aux événements Discord</span></li>
+              <li><b>↗</b><span data-i18n="status.itemConfig">Persistance complète des réglages du dashboard /config</span></li>
+              <li><b>↗</b><span data-i18n="status.itemLogChannels">Création et maintenance automatiques des salons de logs</span></li>
+              <li><b>↗</b><span data-i18n="status.itemActions">Couche d'actions Discord et sanctions finales</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="ci-banner reveal">
+          <div><span class="ci-icon">✓</span><div><strong>GitHub Actions</strong><small data-i18n="status.ci">Chaque évolution Rust est validée avec cargo check et cargo test avant main.</small></div></div>
+          <a href="https://github.com/FoxSecura/FoxSecura/actions" target="_blank" rel="noreferrer"><span data-i18n="status.viewCi">Voir la CI</span> ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section faq-section">
+      <div class="container faq-grid">
+        <div class="faq-heading reveal">
+          <span class="section-kicker">FAQ</span>
+          <h2 data-i18n="faq.title">Questions fréquentes.</h2>
+          <p data-i18n="faq.lead">Les réponses importantes sur la philosophie et l'état actuel de FoxSecura.</p>
+          <a class="text-link" href="https://github.com/FoxSecura/FoxSecura/issues" target="_blank" rel="noreferrer"><span data-i18n="faq.issue">Ouvrir une issue</span> <b>↗</b></a>
+        </div>
+        <div class="faq-list reveal" data-delay="100">
+          <details open>
+            <summary data-i18n="faq.q1">FoxSecura est-il prêt pour la production ?</summary>
+            <p data-i18n="faq.a1">Pas encore. Les moteurs et leurs tests sont avancés, mais leur branchement complet aux événements Discord, à la configuration persistante et aux actions finales reste en cours.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q2">Pourquoi Rust ?</summary>
+            <p data-i18n="faq.a2">Pour une base performante, sûre, explicite et maintenable, adaptée aux traitements concurrents d'un bot de sécurité.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q3">L'IA peut-elle bannir un membre directement ?</summary>
+            <p data-i18n="faq.a3">Non. Le provider IA classe le contenu. Les règles FoxSecura décident ensuite de la conséquence, et la couche action reste séparée.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q4">Quelles langues sont prises en charge ?</summary>
+            <p data-i18n="faq.a4">Anglais, français et allemand. Les variantes de locales Discord comme en-US, fr-FR ou de-DE sont résolues automatiquement.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q5">Puis-je contribuer ?</summary>
+            <p data-i18n="faq.a5">Oui. Le dépôt est public sous AGPL-3.0-only. Consultez les issues et gardez les changements ciblés, testés et cohérents avec l'architecture.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="container">
+        <div class="cta-card reveal">
+          <div class="cta-glow"></div>
+          <div>
+            <span class="section-kicker" data-i18n="cta.kicker">Construire proprement</span>
+            <h2 data-i18n="cta.title">Suivez l'évolution de FoxSecura.</h2>
+            <p data-i18n="cta.text">Le développement est public. Explorez le code, les tests et les décisions d'architecture directement sur GitHub.</p>
+          </div>
+          <div class="cta-actions">
+            <a class="button primary light" href="https://github.com/FoxSecura/FoxSecura" target="_blank" rel="noreferrer"><span data-i18n="cta.repo">Ouvrir le dépôt</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+            <a class="button ghost-light" href="https://github.com/FoxSecura/FoxSecura/issues" target="_blank" rel="noreferrer" data-i18n="cta.issues">Voir les issues</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#home"><span class="brand-mark">🦊</span><span class="brand-name">FoxSecura</span></a>
+        <p data-i18n="footer.text">Sécurité Discord moderne, modulaire et open source, écrite en Rust.</p>
+        <span class="license-chip">AGPL-3.0-only</span>
+      </div>
+      <div class="footer-column">
+        <strong data-i18n="footer.product">Produit</strong>
+        <a href="#protections" data-i18n="nav.protections">Protections</a>
+        <a href="#architecture" data-i18n="nav.architecture">Architecture</a>
+        <a href="#status" data-i18n="nav.status">État</a>
+      </div>
+      <div class="footer-column">
+        <strong data-i18n="footer.developers">Développeurs</strong>
+        <a href="#quickstart" data-i18n="hero.ctaDocs">Commencer</a>
+        <a href="https://github.com/FoxSecura/FoxSecura/actions" target="_blank" rel="noreferrer">GitHub Actions</a>
+        <a href="https://github.com/FoxSecura/FoxSecura/issues" target="_blank" rel="noreferrer">Issues</a>
+      </div>
+      <div class="footer-column">
+        <strong data-i18n="footer.project">Projet</strong>
+        <a href="https://github.com/FoxSecura/FoxSecura" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/FoxSecura/FoxSecura/blob/main/LICENSE" target="_blank" rel="noreferrer" data-i18n="reference.license">Licence</a>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <span>© 2026 FoxSecura contributors.</span>
+      <a href="#top"><span data-i18n="footer.backTop">Retour en haut</span> ↑</a>
+    </div>
+  </footer>
+
+  <div class="search-dialog" id="search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title" hidden>
+    <div class="search-backdrop" data-search-close></div>
+    <div class="search-panel">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m1.35-5.15a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z"/></svg>
+        <input id="search-input" type="search" autocomplete="off" data-i18n-placeholder="search.placeholder" placeholder="Rechercher dans la documentation...">
+        <kbd>ESC</kbd>
+      </div>
+      <div class="search-content">
+        <p class="search-caption" id="search-title" data-i18n="search.caption">Navigation rapide</p>
+        <div class="search-results" id="search-results"></div>
+        <div class="search-empty" id="search-empty" hidden>
+          <span>⌕</span>
+          <strong data-i18n="search.emptyTitle">Aucun résultat</strong>
+          <p data-i18n="search.emptyText">Essayez avec un module, une commande ou une technologie.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <div class="noscript">JavaScript est requis uniquement pour le sélecteur de langue, le thème, la recherche et les animations. Le contenu principal reste lisible.</div>
+  </noscript>
+</body>
+</html>
