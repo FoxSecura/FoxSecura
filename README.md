@@ -12,10 +12,10 @@ FoxSecura v2 est la réécriture en **Rust** de FoxSecura, un bot Discord orient
 
 FoxSecura v2 repose sur une stack Rust moderne et asynchrone :
 
-- **Rust 1.98.1** — langage principal du projet ;
-- **Tokio 1.53.1** — runtime asynchrone ;
-- **Serenity 0.12.5** — client Discord, Gateway, événements et API Discord ;
-- **Poise 0.6.2** — framework de commandes construit au-dessus de Serenity.
+- **Rust 1.98.1** : langage principal du projet ;
+- **Tokio 1.53.1** : runtime asynchrone ;
+- **Serenity 0.12.5** : client Discord, Gateway, événements et API Discord ;
+- **Poise 0.6.2** : framework de commandes construit au-dessus de Serenity.
 
 Les versions principales sont actuellement épinglées dans `Cargo.toml` afin de conserver une base reproductible et maîtrisée.
 
