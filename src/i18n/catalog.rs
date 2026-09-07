@@ -198,9 +198,9 @@ catalog! {
         de: "FoxSecura | Hilfe"
     },
     HelpDescription => {
-        en: "Commands available in FoxSecura v2.",
-        fr: "Commandes disponibles dans FoxSecura v2.",
-        de: "Verfügbare Befehle in FoxSecura v2."
+        en: "Commands available in FoxSecura.",
+        fr: "Commandes disponibles dans FoxSecura.",
+        de: "Verfügbare Befehle in FoxSecura."
     },
     HelpConfigDescription => {
         en: "Opens the configuration dashboard with its category selector.",
@@ -223,9 +223,9 @@ catalog! {
         de: "FoxSecura | Status"
     },
     StatusDescription => {
-        en: "Current FoxSecura v2 runtime status.",
-        fr: "État d'exécution actuel de FoxSecura v2.",
-        de: "Aktueller Betriebsstatus von FoxSecura v2."
+        en: "Current FoxSecura runtime status.",
+        fr: "État d'exécution actuel de FoxSecura.",
+        de: "Aktueller Betriebsstatus von FoxSecura."
     },
     StatusApplication => {
         en: "Application",
