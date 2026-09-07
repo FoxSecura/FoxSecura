@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   check:
-    name: cargo check
+    name: cargo check and test
     runs-on: ubuntu-latest
 
     env:
@@ -29,3 +29,6 @@ jobs:
 
       - name: Cargo check
         run: cargo +1.98.1 check --all-targets
+
+      - name: Cargo test
+        run: cargo +1.98.1 test --all-targets
