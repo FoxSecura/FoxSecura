@@ -1,4 +1,6 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Protection contre les bots rejoignant le serveur selon la politique configurée.
+mod detector;
+
+pub use detector::{AntiBotDetectionResult, detect_bot_join};

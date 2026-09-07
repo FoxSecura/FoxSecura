@@ -1,4 +1,9 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Détection des comptes potentiellement dupliqués à partir d'indices d'identité distincts.
+mod detector;
+
+pub use detector::{
+    AccountIdentity, AntiDoubleAccountDetectionResult, AntiDoubleAccountInput,
+    detect_likely_double_account,
+};
