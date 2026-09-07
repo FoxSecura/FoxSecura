@@ -6,6 +6,7 @@ mod adapters;
 mod availability;
 mod context;
 mod model_input;
+mod openai_provider;
 mod policy;
 mod prefilter;
 mod rules;

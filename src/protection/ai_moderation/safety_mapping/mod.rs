@@ -3,7 +3,6 @@
 
 use super::{
     AiClassification, AiModerationCategory, AiSafetyTaxonomy, AiSafetyVerdict, AiSeverity,
-    policy::baseline_severity,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,8 +14,7 @@ pub struct MappedSafetyVerdict {
 #[derive(Debug, Clone, Copy)]
 struct LabelMapping {
     category: AiModerationCategory,
-    max_severity: Option<AiSeverity>,
-    inferred: bool,
+    severity: AiSeverity,
 }
 
 pub fn map_safety_verdict(verdict: &AiSafetyVerdict) -> MappedSafetyVerdict {
@@ -36,10 +34,11 @@ pub fn map_safety_verdict(verdict: &AiSafetyVerdict) -> MappedSafetyVerdict {
             unmapped_labels.push(label.clone());
             continue;
         };
+
         if !categories.contains(&mapping.category) {
             categories.push(mapping.category);
         }
-        severity = severity.max(resolve_severity(mapping));
+        severity = severity.max(mapping.severity);
     }
 
     let classification = if categories.is_empty() {
@@ -61,46 +60,55 @@ pub fn map_safety_verdict(verdict: &AiSafetyVerdict) -> MappedSafetyVerdict {
 }
 
 fn mapping_for(taxonomy: AiSafetyTaxonomy, label: &str) -> Option<LabelMapping> {
-    if !matches!(taxonomy, AiSafetyTaxonomy::NemotronContentSafety) {
+    if !matches!(taxonomy, AiSafetyTaxonomy::OpenAiModeration) {
         return None;
     }
 
-    let normalized = normalize_label(label);
-    match normalized.as_str() {
-        "threat" => Some(LabelMapping { category: AiModerationCategory::Threats, max_severity: None, inferred: false }),
-        "harassment" => Some(LabelMapping { category: AiModerationCategory::Toxicity, max_severity: None, inferred: false }),
-        "pii privacy" => Some(LabelMapping { category: AiModerationCategory::Doxxing, max_severity: Some(AiSeverity::Medium), inferred: false }),
-        "hate identity hate" => Some(LabelMapping { category: AiModerationCategory::HateSpeech, max_severity: None, inferred: true }),
-        "sexual" | "sexual minor" => Some(LabelMapping { category: AiModerationCategory::SexualContent, max_severity: None, inferred: true }),
-        "suicide and self harm" => Some(LabelMapping { category: AiModerationCategory::DangerousBehavior, max_severity: Some(AiSeverity::High), inferred: true }),
+    match label.to_ascii_lowercase().as_str() {
+        "harassment" => Some(LabelMapping {
+            category: AiModerationCategory::Toxicity,
+            severity: AiSeverity::Medium,
+        }),
+        "harassment/threatening" => Some(LabelMapping {
+            category: AiModerationCategory::Threats,
+            severity: AiSeverity::High,
+        }),
+        "hate" | "hate/threatening" => Some(LabelMapping {
+            category: AiModerationCategory::HateSpeech,
+            severity: AiSeverity::High,
+        }),
+        "illicit" => Some(LabelMapping {
+            category: AiModerationCategory::OtherHarmful,
+            severity: AiSeverity::Medium,
+        }),
+        "illicit/violent" => Some(LabelMapping {
+            category: AiModerationCategory::OtherHarmful,
+            severity: AiSeverity::High,
+        }),
+        "self-harm" | "self-harm/intent" => Some(LabelMapping {
+            category: AiModerationCategory::DangerousBehavior,
+            severity: AiSeverity::Medium,
+        }),
+        "self-harm/instructions" => Some(LabelMapping {
+            category: AiModerationCategory::DangerousBehavior,
+            severity: AiSeverity::Critical,
+        }),
+        "sexual" => Some(LabelMapping {
+            category: AiModerationCategory::SexualContent,
+            severity: AiSeverity::Medium,
+        }),
+        "sexual/minors" => Some(LabelMapping {
+            category: AiModerationCategory::SexualContent,
+            severity: AiSeverity::Critical,
+        }),
+        "violence" => Some(LabelMapping {
+            category: AiModerationCategory::OtherHarmful,
+            severity: AiSeverity::Medium,
+        }),
+        "violence/graphic" => Some(LabelMapping {
+            category: AiModerationCategory::OtherHarmful,
+            severity: AiSeverity::High,
+        }),
         _ => None,
     }
-}
-
-fn normalize_label(label: &str) -> String {
-    let mut normalized = String::new();
-    let mut pending_space = false;
-    for character in label.to_ascii_lowercase().chars() {
-        if character.is_ascii_alphanumeric() {
-            if pending_space && !normalized.is_empty() {
-                normalized.push(' ');
-            }
-            normalized.push(character);
-            pending_space = false;
-        } else {
-            pending_space = true;
-        }
-    }
-    normalized.trim().to_owned()
-}
-
-fn resolve_severity(mapping: LabelMapping) -> AiSeverity {
-    let mut severity = baseline_severity(mapping.category);
-    if mapping.inferred {
-        severity = severity.min(AiSeverity::High);
-    }
-    if let Some(maximum) = mapping.max_severity {
-        severity = severity.min(maximum);
-    }
-    severity
 }

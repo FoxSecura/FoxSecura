@@ -8,35 +8,42 @@ use foxsecura::protection::ai_moderation::{
 
 fn verdict(labels: &[&str]) -> AiSafetyVerdict {
     AiSafetyVerdict {
-        taxonomy: AiSafetyTaxonomy::NemotronContentSafety,
+        taxonomy: AiSafetyTaxonomy::OpenAiModeration,
         unsafe_content: true,
         labels: labels.iter().map(|label| (*label).to_owned()).collect(),
     }
 }
 
 #[test]
-fn maps_observed_threat_label() {
-    let mapped = map_safety_verdict(&verdict(&["Threat"]));
+fn maps_openai_threatening_harassment() {
+    let mapped = map_safety_verdict(&verdict(&["harassment/threatening"]));
     assert_eq!(mapped.classification.categories, vec![AiModerationCategory::Threats]);
     assert_eq!(mapped.classification.severity, AiSeverity::High);
 }
 
 #[test]
-fn privacy_label_is_capped_below_delete_threshold() {
-    let mapped = map_safety_verdict(&verdict(&["PII/Privacy"]));
-    assert_eq!(mapped.classification.categories, vec![AiModerationCategory::Doxxing]);
+fn self_harm_intent_is_kept_below_delete_threshold() {
+    let mapped = map_safety_verdict(&verdict(&["self-harm/intent"]));
+    assert_eq!(mapped.classification.categories, vec![AiModerationCategory::DangerousBehavior]);
     assert_eq!(mapped.classification.severity, AiSeverity::Medium);
 }
 
 #[test]
-fn self_harm_label_is_capped_at_high() {
-    let mapped = map_safety_verdict(&verdict(&["Suicide and Self Harm"]));
-    assert_eq!(mapped.classification.severity, AiSeverity::High);
+fn self_harm_instructions_are_critical() {
+    let mapped = map_safety_verdict(&verdict(&["self-harm/instructions"]));
+    assert_eq!(mapped.classification.severity, AiSeverity::Critical);
+}
+
+#[test]
+fn sexual_content_involving_minors_is_critical() {
+    let mapped = map_safety_verdict(&verdict(&["sexual/minors"]));
+    assert_eq!(mapped.classification.categories, vec![AiModerationCategory::SexualContent]);
+    assert_eq!(mapped.classification.severity, AiSeverity::Critical);
 }
 
 #[test]
 fn unknown_labels_never_create_a_violation() {
-    let mapped = map_safety_verdict(&verdict(&["Unknown Label"]));
+    let mapped = map_safety_verdict(&verdict(&["future-category"]));
     assert!(!mapped.classification.violation);
-    assert_eq!(mapped.unmapped_labels, vec!["Unknown Label"]);
+    assert_eq!(mapped.unmapped_labels, vec!["future-category"]);
 }

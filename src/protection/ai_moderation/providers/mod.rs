@@ -9,11 +9,11 @@ use std::{future::Future, pin::Pin};
 use super::AiFailureReason;
 
 pub mod adapters;
+pub mod openai;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiCompletionRequest {
-    pub system_prompt: String,
-    pub user_prompt: String,
+    pub input: String,
     pub timeout_ms: u64,
 }
 
@@ -46,7 +46,6 @@ pub trait AiModerationProvider: Send + Sync {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiProviderKind {
     OpenAiModeration,
-    OpenRouter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,5 +62,13 @@ impl AiProviderDescriptor {
             model: model.into(),
             configured,
         }
+    }
+
+    pub fn openai(configured: bool) -> Self {
+        Self::new(
+            AiProviderKind::OpenAiModeration,
+            openai::OPENAI_MODERATION_MODEL,
+            configured,
+        )
     }
 }

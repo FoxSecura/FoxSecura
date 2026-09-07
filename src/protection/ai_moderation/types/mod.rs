@@ -147,13 +147,13 @@ impl AiClassification {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AiSafetyTaxonomy {
-    NemotronContentSafety,
+    OpenAiModeration,
 }
 
 impl AiSafetyTaxonomy {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::NemotronContentSafety => "nemotron-content-safety",
+            Self::OpenAiModeration => "openai-moderation",
         }
     }
 }

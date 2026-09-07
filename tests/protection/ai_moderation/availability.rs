@@ -3,21 +3,24 @@
 
 use foxsecura::protection::ai_moderation::{
     availability::{AiAvailability, assess_availability},
-    providers::{AiProviderDescriptor, AiProviderKind},
+    providers::AiProviderDescriptor,
     settings::AiModerationSettings,
 };
 
 #[test]
 fn disabled_feature_is_not_reported_as_provider_failure() {
     let settings = AiModerationSettings::default();
-    let provider = AiProviderDescriptor::new(AiProviderKind::OpenRouter, "model", false);
+    let provider = AiProviderDescriptor::openai(false);
     assert_eq!(assess_availability(&settings, &provider), AiAvailability::Disabled);
 }
 
 #[test]
-fn enabled_feature_requires_configured_provider() {
+fn enabled_feature_requires_openai_api_key() {
     let mut settings = AiModerationSettings::default();
     settings.enabled = true;
-    let provider = AiProviderDescriptor::new(AiProviderKind::OpenRouter, "model", false);
-    assert_eq!(assess_availability(&settings, &provider), AiAvailability::ProviderNotConfigured);
+    let provider = AiProviderDescriptor::openai(false);
+    assert_eq!(
+        assess_availability(&settings, &provider),
+        AiAvailability::ProviderNotConfigured
+    );
 }
