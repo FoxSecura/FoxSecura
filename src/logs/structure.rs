@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use crate::i18n::{Language, TextKey, text};
+
 use super::LogType;
 
 pub const LOG_STRUCTURE_CATEGORY_NAME: &str = "🦊 FoxSecura Logs";
@@ -9,54 +11,61 @@ pub const LOG_STRUCTURE_CATEGORY_ALIASES: &[&str] = &[
     "FoxSecura Logs",
     "📜 FoxSecura Logs",
     "🦊 FoxSecura Logs",
-    "VulpesGuard Logs",
-    "📜 VulpesGuard Logs",
-    "🦊 VulpesGuard Logs",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogChannelDefinition {
     pub log_type: LogType,
-    pub label: &'static str,
+    pub label_key: TextKey,
     pub channel_name: &'static str,
-    pub purpose: &'static str,
+    pub purpose_key: TextKey,
+}
+
+impl LogChannelDefinition {
+    pub fn label(self, language: Language) -> &'static str {
+        text(language, self.label_key)
+    }
+
+    pub fn purpose(self, language: Language) -> &'static str {
+        text(language, self.purpose_key)
+    }
 }
 
 pub const LOG_CHANNEL_DEFINITIONS: &[LogChannelDefinition] = &[
     LogChannelDefinition {
         log_type: LogType::Message,
-        label: "Logs messages",
+        label_key: TextKey::LogsChannelMessageLabel,
         channel_name: "fs-message-logs",
-        purpose: "Modifications, suppressions et événements liés aux messages.",
+        purpose_key: TextKey::LogsChannelMessagePurpose,
     },
     LogChannelDefinition {
         log_type: LogType::Server,
-        label: "Logs serveur",
+        label_key: TextKey::LogsChannelServerLabel,
         channel_name: "fs-server-logs",
-        purpose: "Modifications du serveur et événements importants au niveau de la guilde.",
+        purpose_key: TextKey::LogsChannelServerPurpose,
     },
     LogChannelDefinition {
         log_type: LogType::Member,
-        label: "Logs membres",
+        label_key: TextKey::LogsChannelMemberLabel,
         channel_name: "fs-member-logs",
-        purpose: "Arrivées, départs, bots, pseudonymes et événements liés aux membres.",
+        purpose_key: TextKey::LogsChannelMemberPurpose,
     },
     LogChannelDefinition {
         log_type: LogType::Channel,
-        label: "Logs salons",
+        label_key: TextKey::LogsChannelChannelLabel,
         channel_name: "fs-channel-logs",
-        purpose: "Créations, suppressions, modifications et événements liés aux salons.",
+        purpose_key: TextKey::LogsChannelChannelPurpose,
     },
     LogChannelDefinition {
         log_type: LogType::Role,
-        label: "Logs rôles",
+        label_key: TextKey::LogsChannelRoleLabel,
         channel_name: "fs-role-logs",
-        purpose: "Créations, suppressions, modifications et événements liés aux rôles.",
+        purpose_key: TextKey::LogsChannelRolePurpose,
     },
     LogChannelDefinition {
         log_type: LogType::Moderation,
-        label: "Logs modération",
+        label_key: TextKey::LogsChannelModerationLabel,
         channel_name: "fs-mod-logs",
-        purpose: "Actions de modération, protections déclenchées et interventions de FoxSecura.",
+        purpose_key: TextKey::LogsChannelModerationPurpose,
     },
 ];
