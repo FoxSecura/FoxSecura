@@ -118,6 +118,5 @@ fn is_emoji_component(character: char) -> bool {
             | 0x2600..=0x27BF
             | 0x1F1E6..=0x1F1FF
             | 0x1F300..=0x1FAFF
-            | 0x1F3FB..=0x1F3FF
     )
 }
