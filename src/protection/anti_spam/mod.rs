@@ -14,6 +14,5 @@ pub mod auto_slowmode;
 pub mod invisible_char_filter;
 pub mod malicious_link;
 pub mod message_flood;
-pub mod shared;
 
-pub use shared::ProtectionDecision;
+pub use crate::protection::shared::ProtectionDecision;

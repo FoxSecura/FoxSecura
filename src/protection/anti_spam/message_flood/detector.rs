@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use super::MessageFloodConfig;
-use crate::protection::anti_spam::shared::ProtectionDecision;
+use crate::protection::shared::ProtectionDecision;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MessageWindow {
