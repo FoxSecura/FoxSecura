@@ -28,7 +28,7 @@ impl App {
 
     pub async fn run(self) -> Result<(), Error> {
         let options = poise::FrameworkOptions::<AppData, Error> {
-            commands: Vec::new(),
+            commands: crate::commands::all(),
             event_handler: |ctx, event, framework, data| {
                 Box::pin(events::handle(ctx, event, framework, data))
             },
@@ -37,8 +37,9 @@ impl App {
 
         let framework = poise::Framework::builder()
             .options(options)
-            .setup(|_ctx, ready, _framework| {
+            .setup(|ctx, ready, framework| {
                 Box::pin(async move {
+                    poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                     println!("FoxSecura connecté en tant que {}", ready.user.name);
                     Ok(AppData)
                 })
