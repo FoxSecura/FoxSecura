@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 mod app;
+mod commands;
 
 #[tokio::main]
 async fn main() -> Result<(), app::Error> {
