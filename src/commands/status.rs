@@ -5,23 +5,41 @@ use poise::serenity_prelude as serenity;
 
 use super::Context;
 use crate::app::Error;
+use foxsecura::i18n::{Language, TextKey, text};
 
 /// Affiche l'état actuel de FoxSecura.
 #[poise::command(slash_command, guild_only)]
 pub async fn status(ctx: Context<'_>) -> Result<(), Error> {
+    let language = Language::resolve(ctx.locale());
     let embed = serenity::CreateEmbed::new()
-        .title("FoxSecura | Statut")
-        .description("État d'exécution et de préparation de FoxSecura v2.")
-        .field("Application", "Opérationnelle", true)
-        .field("Gateway Discord", "Connecté", true)
-        .field("Framework", "Poise + Serenity", true)
-        .field("Commandes", "`/config` `/help` `/status`", false)
+        .title(text(language, TextKey::StatusTitle))
+        .description(text(language, TextKey::StatusDescription))
         .field(
-            "Modules de sécurité",
-            "Architecture en cours de reconstruction.",
+            text(language, TextKey::StatusApplication),
+            text(language, TextKey::StatusOperational),
+            true,
+        )
+        .field(
+            text(language, TextKey::StatusGateway),
+            text(language, TextKey::StatusConnected),
+            true,
+        )
+        .field(text(language, TextKey::StatusFramework), "Poise + Serenity", true)
+        .field(
+            text(language, TextKey::StatusCommands),
+            "`/config` `/help` `/status`",
             false,
         )
-        .field("Version", env!("CARGO_PKG_VERSION"), true);
+        .field(
+            text(language, TextKey::StatusSecurityModules),
+            text(language, TextKey::StatusSecurityModulesReady),
+            false,
+        )
+        .field(
+            text(language, TextKey::StatusVersion),
+            env!("CARGO_PKG_VERSION"),
+            true,
+        );
 
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
 

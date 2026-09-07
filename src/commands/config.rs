@@ -5,81 +5,85 @@ use poise::serenity_prelude as serenity;
 
 use super::Context;
 use crate::app::Error;
+use foxsecura::i18n::{Language, TextKey, text};
 
 const CATEGORY_SELECT_ID: &str = "foxsecura:config:category";
 
 #[derive(Clone, Copy)]
 struct Category {
     id: &'static str,
-    label: &'static str,
-    description: &'static str,
+    label: TextKey,
+    description: TextKey,
 }
 
 const CATEGORIES: &[Category] = &[
     Category {
         id: "general_settings",
-        label: "Paramètres généraux",
-        description: "Configuration générale de FoxSecura.",
+        label: TextKey::CategoryGeneralSettings,
+        description: TextKey::CategoryGeneralSettingsDescription,
     },
     Category {
         id: "anti_raid",
-        label: "Anti-Raid",
-        description: "Protection contre les raids et arrivées massives.",
+        label: TextKey::CategoryAntiRaid,
+        description: TextKey::CategoryAntiRaidDescription,
     },
     Category {
         id: "anti_spam",
-        label: "Anti-Spam",
-        description: "Protection contre le spam et les abus de messages.",
+        label: TextKey::CategoryAntiSpam,
+        description: TextKey::CategoryAntiSpamDescription,
     },
     Category {
         id: "server_protection",
-        label: "Protection serveur",
-        description: "Protection des salons, rôles et paramètres du serveur.",
+        label: TextKey::CategoryServerProtection,
+        description: TextKey::CategoryServerProtectionDescription,
     },
     Category {
         id: "access_control",
-        label: "Contrôle d'accès",
-        description: "Gestion des accès de confiance et restrictions.",
+        label: TextKey::CategoryAccessControl,
+        description: TextKey::CategoryAccessControlDescription,
     },
     Category {
         id: "anti_double_account",
-        label: "Anti-double compte",
-        description: "Vérification et protection contre les doubles comptes.",
+        label: TextKey::CategoryAntiDoubleAccount,
+        description: TextKey::CategoryAntiDoubleAccountDescription,
     },
     Category {
         id: "automod",
-        label: "AutoMod",
-        description: "Configuration des protections AutoMod.",
+        label: TextKey::CategoryAutomod,
+        description: TextKey::CategoryAutomodDescription,
     },
     Category {
         id: "ai_moderation",
-        label: "Modération IA",
-        description: "Configuration de la modération assistée par IA.",
+        label: TextKey::CategoryAiModeration,
+        description: TextKey::CategoryAiModerationDescription,
     },
     Category {
         id: "utils",
-        label: "Utilitaires",
-        description: "Fonctions utilitaires du serveur.",
+        label: TextKey::CategoryUtils,
+        description: TextKey::CategoryUtilsDescription,
     },
     Category {
         id: "backup_system",
-        label: "Sauvegarde",
-        description: "Sauvegarde et restauration de la configuration.",
+        label: TextKey::CategoryBackupSystem,
+        description: TextKey::CategoryBackupSystemDescription,
     },
     Category {
         id: "logs_health",
-        label: "Logs et santé",
-        description: "Journalisation, diagnostics et état du bot.",
+        label: TextKey::CategoryLogsHealth,
+        description: TextKey::CategoryLogsHealthDescription,
     },
 ];
 
 /// Ouvre le tableau de bord de configuration FoxSecura.
 #[poise::command(slash_command, guild_only, ephemeral)]
 pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
+    let language = Language::resolve(ctx.locale());
     ctx.send(
         poise::CreateReply::default()
-            .embed(build_embed(None))
-            .components(vec![serenity::CreateActionRow::SelectMenu(build_menu(None))])
+            .embed(build_embed(language, None))
+            .components(vec![serenity::CreateActionRow::SelectMenu(build_menu(
+                language, None,
+            ))])
             .ephemeral(true),
     )
     .await?;
@@ -109,11 +113,13 @@ pub async fn handle_component(
         return Ok(true);
     };
 
+    let language = Language::resolve(Some(component.locale.as_str()));
     let response = serenity::CreateInteractionResponseMessage::new()
-        .embed(build_embed(Some(category_id)))
-        .components(vec![serenity::CreateActionRow::SelectMenu(build_menu(Some(
-            category_id,
-        ))) ]);
+        .embed(build_embed(language, Some(category_id)))
+        .components(vec![serenity::CreateActionRow::SelectMenu(build_menu(
+            language,
+            Some(category_id),
+        ))]);
 
     component
         .create_response(
@@ -125,22 +131,34 @@ pub async fn handle_component(
     Ok(true)
 }
 
-fn build_embed(selected: Option<&str>) -> serenity::CreateEmbed {
+fn build_embed(language: Language, selected: Option<&str>) -> serenity::CreateEmbed {
     let mut embed = serenity::CreateEmbed::new()
-        .title("FoxSecura | Configuration")
-        .description("Sélectionnez une catégorie pour ouvrir le panneau correspondant.");
+        .title(text(language, TextKey::ConfigTitle))
+        .description(text(language, TextKey::ConfigDescription));
 
     if let Some(category_id) = selected {
         if let Some(category) = CATEGORIES.iter().find(|category| category.id == category_id) {
             embed = embed
-                .field("Catégorie", category.label, false)
-                .field("Description", category.description, false)
-                .field("État", "Ce panneau sera complété avec les réglages du module.", false);
+                .field(
+                    text(language, TextKey::ConfigFieldCategory),
+                    text(language, category.label),
+                    false,
+                )
+                .field(
+                    text(language, TextKey::ConfigFieldDescription),
+                    text(language, category.description),
+                    false,
+                )
+                .field(
+                    text(language, TextKey::ConfigFieldState),
+                    text(language, TextKey::ConfigStatePlaceholder),
+                    false,
+                );
         }
     } else {
         embed = embed.field(
-            "Tableau de bord",
-            "Choisissez une catégorie dans le sélecteur ci-dessous.",
+            text(language, TextKey::ConfigDashboard),
+            text(language, TextKey::ConfigDashboardPrompt),
             false,
         );
     }
@@ -148,12 +166,12 @@ fn build_embed(selected: Option<&str>) -> serenity::CreateEmbed {
     embed
 }
 
-fn build_menu(selected: Option<&str>) -> serenity::CreateSelectMenu {
+fn build_menu(language: Language, selected: Option<&str>) -> serenity::CreateSelectMenu {
     let options = CATEGORIES
         .iter()
         .map(|category| {
-            serenity::CreateSelectMenuOption::new(category.label, category.id)
-                .description(category.description)
+            serenity::CreateSelectMenuOption::new(text(language, category.label), category.id)
+                .description(text(language, category.description))
                 .default_selection(selected == Some(category.id))
         })
         .collect();
@@ -162,7 +180,7 @@ fn build_menu(selected: Option<&str>) -> serenity::CreateSelectMenu {
         CATEGORY_SELECT_ID,
         serenity::CreateSelectMenuKind::String { options },
     )
-    .placeholder("Sélectionnez une catégorie")
+    .placeholder(text(language, TextKey::ConfigSelectPlaceholder))
     .min_values(1)
     .max_values(1)
 }

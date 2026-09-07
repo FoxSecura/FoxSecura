@@ -5,26 +5,28 @@ use poise::serenity_prelude as serenity;
 
 use super::Context;
 use crate::app::Error;
+use foxsecura::i18n::{Language, TextKey, text};
 
 /// Affiche l'aide principale de FoxSecura.
 #[poise::command(slash_command, guild_only, ephemeral)]
 pub async fn help(ctx: Context<'_>) -> Result<(), Error> {
+    let language = Language::resolve(ctx.locale());
     let embed = serenity::CreateEmbed::new()
-        .title("FoxSecura | Aide")
-        .description("Commandes disponibles dans FoxSecura v2.")
+        .title(text(language, TextKey::HelpTitle))
+        .description(text(language, TextKey::HelpDescription))
         .field(
             "/config",
-            "Ouvre le tableau de bord de configuration avec sélecteur de catégories.",
+            text(language, TextKey::HelpConfigDescription),
             false,
         )
         .field(
             "/help",
-            "Affiche cette aide et les principales commandes du bot.",
+            text(language, TextKey::HelpHelpDescription),
             false,
         )
         .field(
             "/status",
-            "Affiche l'état d'exécution et de préparation actuel de FoxSecura.",
+            text(language, TextKey::HelpStatusDescription),
             false,
         );
 
