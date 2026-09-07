@@ -3,10 +3,11 @@
 
 use std::collections::HashSet;
 
+use foxsecura::i18n::Language;
 use foxsecura::logs::{
     format_security_log, ActionCode, ActionStatus, LogSeverity, LogType, SecurityActionOutcome,
     SecurityEvidence, SecurityIncident, SecurityIncidentError, LOG_CHANNEL_DEFINITIONS,
-    LOG_STRUCTURE_CATEGORY_NAME,
+    LOG_STRUCTURE_CATEGORY_ALIASES, LOG_STRUCTURE_CATEGORY_NAME,
 };
 
 fn successful_action(action: ActionCode) -> SecurityActionOutcome {
@@ -29,6 +30,32 @@ fn exposes_the_expected_log_structure() {
         .collect::<HashSet<_>>();
 
     assert_eq!(channel_names.len(), LOG_CHANNEL_DEFINITIONS.len());
+}
+
+#[test]
+fn obsolete_vulpesguard_log_aliases_are_not_supported() {
+    assert!(
+        LOG_STRUCTURE_CATEGORY_ALIASES
+            .iter()
+            .all(|alias| !alias.contains("VulpesGuard"))
+    );
+}
+
+#[test]
+fn log_channel_metadata_is_localized() {
+    let message_logs = LOG_CHANNEL_DEFINITIONS
+        .iter()
+        .find(|definition| definition.log_type == LogType::Message)
+        .expect("message log definition must exist");
+
+    assert_eq!(message_logs.label(Language::English), "Message logs");
+    assert_eq!(message_logs.label(Language::French), "Logs messages");
+    assert_eq!(message_logs.label(Language::German), "Nachrichtenprotokolle");
+
+    assert_ne!(
+        message_logs.purpose(Language::English),
+        message_logs.purpose(Language::German)
+    );
 }
 
 #[test]
@@ -86,20 +113,31 @@ fn critical_incident_with_evidence_is_valid() {
 }
 
 #[test]
-fn formats_security_incident_summary() {
+fn formats_security_incident_in_all_supported_languages() {
     let incident = SecurityIncident::new(
         "anti_spam",
         LogType::Message,
         LogSeverity::Warning,
-        "Spam détecté",
+        "Spam detected",
         vec![successful_action(ActionCode::DeleteMessage)],
     );
 
-    let formatted = format_security_log(&incident);
+    let english = format_security_log(Language::English, &incident);
+    let french = format_security_log(Language::French, &incident);
+    let german = format_security_log(Language::German, &incident);
 
-    assert!(formatted.contains(&incident.incident_id));
-    assert!(formatted.contains("Module: anti_spam"));
-    assert!(formatted.contains("Type: message"));
-    assert!(formatted.contains("Severity: warning"));
-    assert!(formatted.contains("delete_message:success"));
+    assert!(english.contains("FoxSecura Security Incident"));
+    assert!(english.contains("Type: Messages"));
+    assert!(english.contains("Severity: Warning"));
+    assert!(english.contains("Delete message: Success"));
+
+    assert!(french.contains("Incident de sécurité FoxSecura"));
+    assert!(french.contains("Type: Messages"));
+    assert!(french.contains("Sévérité: Avertissement"));
+    assert!(french.contains("Supprimer le message: Réussie"));
+
+    assert!(german.contains("FoxSecura-Sicherheitsvorfall"));
+    assert!(german.contains("Typ: Nachrichten"));
+    assert!(german.contains("Schweregrad: Warnung"));
+    assert!(german.contains("Nachricht löschen: Erfolgreich"));
 }
