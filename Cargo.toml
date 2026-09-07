@@ -9,5 +9,6 @@ repository = "https://github.com/FoxSecura/FoxSecura-v2"
 publish = false
 
 [dependencies]
+poise = "=0.6.2"
 serenity = { version = "=0.12.5", default-features = false, features = ["builder", "cache", "client", "gateway", "http", "model", "rustls_backend"] }
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "signal"] }
