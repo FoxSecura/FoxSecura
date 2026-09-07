@@ -6,6 +6,13 @@ pub struct UrlSignal {
     pub raw: String,
     pub hostname: String,
     pub path: String,
+    pub has_credentials: bool,
+}
+
+impl UrlSignal {
+    pub fn searchable(&self) -> String {
+        format!("{}{}", self.hostname, self.path).to_ascii_lowercase()
+    }
 }
 
 pub fn extract_url_signals(content: &str) -> Vec<UrlSignal> {
@@ -44,6 +51,7 @@ fn parse_url_signal(token: &str) -> Option<UrlSignal> {
         .find(|character: char| matches!(character, '/' | '?' | '#'))
         .unwrap_or(without_scheme.len());
     let authority = &without_scheme[..authority_end];
+    let has_credentials = authority.contains('@');
     let host_with_port = authority.rsplit('@').next().unwrap_or(authority);
     let hostname = host_with_port
         .split(':')
@@ -60,6 +68,7 @@ fn parse_url_signal(token: &str) -> Option<UrlSignal> {
         raw: candidate.to_owned(),
         hostname,
         path: without_scheme[authority_end..].to_owned(),
+        has_credentials,
     })
 }
 

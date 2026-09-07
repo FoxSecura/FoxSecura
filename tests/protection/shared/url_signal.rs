@@ -24,6 +24,12 @@ fn extracts_url_from_markdown_link() {
 }
 
 #[test]
+fn records_credentials_in_authority() {
+    let signals = extract_url_signals("https://user:pass@example.org/login");
+    assert!(signals[0].has_credentials);
+}
+
+#[test]
 fn host_matching_accepts_subdomains_only() {
     assert!(host_matches("canary.discord.com", "discord.com"));
     assert!(host_matches("discord.com", "discord.com"));

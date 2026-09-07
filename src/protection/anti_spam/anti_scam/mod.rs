@@ -1,4 +1,9 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Protection dédiée aux messages et comportements associés aux arnaques.
+mod detector;
+
+pub use detector::{
+    AntiScamContext, AntiScamDetectionResult, AntiScamObservation, ScamConfidence,
+    detect_scam_message,
+};
