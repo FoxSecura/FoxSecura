@@ -29,9 +29,7 @@ impl App {
     pub async fn run(self) -> Result<(), Error> {
         let options = poise::FrameworkOptions::<AppData, Error> {
             commands: crate::commands::all(),
-            event_handler: |ctx, event, framework, data| {
-                Box::pin(events::handle(ctx, event, framework, data))
-            },
+            event_handler: |framework, event| Box::pin(events::handle(framework, event)),
             ..Default::default()
         };
 
