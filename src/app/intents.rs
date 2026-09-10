@@ -7,4 +7,26 @@ pub fn default() -> GatewayIntents {
     GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MODERATION
         | GatewayIntents::GUILD_MEMBERS
+        | GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_intents_cover_current_protection_families() {
+        let intents = default();
+
+        for required in [
+            GatewayIntents::GUILDS,
+            GatewayIntents::GUILD_MODERATION,
+            GatewayIntents::GUILD_MEMBERS,
+            GatewayIntents::GUILD_MESSAGES,
+            GatewayIntents::MESSAGE_CONTENT,
+        ] {
+            assert!(intents.contains(required));
+        }
+    }
 }
