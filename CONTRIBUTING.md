@@ -72,17 +72,16 @@ Le fait qu'un module de protection soit implémenté et testé ne signifie pas n
 
 ## Style Rust
 
-Avant une PR, exécutez au minimum les validations qui sont également appliquées par la CI :
+Avant une PR, exécutez les validations bloquantes de la CI :
 
 ```bash
-cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
 
-Le code nouveau ou modifié doit suivre `rustfmt`. Le dépôt contient encore une dette de formatage historique : si `cargo fmt --all -- --check` signale des fichiers hors de votre périmètre, **n'ajoutez pas un reformatage global non lié** à votre PR. Limitez les changements de style aux fichiers que vous modifiez réellement ou ouvrez une PR de formatage dédiée.
+Vous pouvez également lancer `cargo clippy --all-targets` pour détecter des améliorations supplémentaires. Le dépôt possède toutefois une dette Clippy historique ; ne transformez pas un avertissement préexistant hors périmètre en refactorisation annexe.
 
-Les avertissements Clippy introduits par une contribution doivent être corrigés, sauf justification technique documentée.
+Le code nouveau ou modifié doit suivre `rustfmt`. Le dépôt contient également une dette de formatage historique : si `cargo fmt --all -- --check` signale des fichiers hors de votre périmètre, **n'ajoutez pas un reformatage global non lié** à votre PR. Limitez les changements de style aux fichiers que vous modifiez réellement ou ouvrez une PR de formatage dédiée.
 
 Les nouveaux fichiers Rust doivent conserver la convention SPDX du projet lorsqu'elle s'applique :
 
