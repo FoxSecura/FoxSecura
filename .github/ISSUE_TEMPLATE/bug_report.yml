@@ -1,0 +1,99 @@
+name: Bug
+
+description: Signaler un comportement incorrect ou une régression reproductible.
+title: "[Bug]: "
+labels: []
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de fournir une reproduction minimale. Pour une vulnérabilité exploitable ou un secret exposé, n'utilisez pas ce formulaire : consultez SECURITY.md.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Description
+      description: Décrivez clairement le comportement incorrect.
+      placeholder: Que se passe-t-il ?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+      description: Décrivez ce qui devrait se produire à la place.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Étapes de reproduction
+      description: Donnez les étapes minimales permettant de reproduire le problème.
+      placeholder: |
+        1. Configurer ...
+        2. Exécuter ...
+        3. Observer ...
+    validations:
+      required: true
+
+  - type: input
+    id: revision
+    attributes:
+      label: Version ou commit
+      description: Branche, tag ou SHA du commit testé.
+      placeholder: main / abc1234
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Zone concernée
+      options:
+        - Runtime Discord / commandes
+        - Anti-Nuke
+        - Anti-Raid
+        - Anti-Spam
+        - AutoMod
+        - Modération IA
+        - Base de données
+        - Logs / observabilité
+        - Internationalisation
+        - Documentation / Wiki
+        - CI / outillage
+        - Autre
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs utiles
+      description: Ajoutez uniquement les logs nécessaires après suppression des tokens, clés, données personnelles et autres secrets.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexte supplémentaire
+      description: Permissions Discord, configuration, plateforme ou détail utile à l'analyse.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Vérifications
+      options:
+        - label: J'ai vérifié qu'une issue similaire n'est pas déjà ouverte.
+          required: true
+        - label: Je n'ai inclus aucun token, secret ou donnée personnelle sensible.
+          required: true
+        - label: Ce rapport ne contient pas les détails exploitables d'une vulnérabilité devant être signalée en privé.
+          required: true

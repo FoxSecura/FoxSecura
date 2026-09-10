@@ -17,6 +17,7 @@
 
 ### Contribution
 
+- [Contribuer](https://github.com/FoxSecura/FoxSecura/wiki/Contributing)
 - [Développement et tests](https://github.com/FoxSecura/FoxSecura/wiki/Development-and-Testing)
 - [Sécurité](https://github.com/FoxSecura/FoxSecura/wiki/Security)
 - [Roadmap](https://github.com/FoxSecura/FoxSecura/wiki/Roadmap)
