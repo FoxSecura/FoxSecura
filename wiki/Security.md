@@ -2,6 +2,8 @@
 
 FoxSecura manipule des permissions Discord puissantes et des signaux de modération. La sécurité du bot ne dépend donc pas seulement de ses détecteurs : configuration, secrets, journalisation et comportement en panne sont tout aussi importants.
 
+Pour signaler une vulnérabilité ou un secret exposé, suivez la politique dédiée [`SECURITY.md`](https://github.com/FoxSecura/FoxSecura/security/policy). N'ouvrez pas d'issue publique contenant des détails exploitables.
+
 ## Secrets
 
 `DISCORD_TOKEN` doit être injecté par l'environnement. Les futures clés de fournisseurs IA ou services externes doivent être stockées dans un gestionnaire de secrets adapté à l'hébergement.
@@ -48,4 +50,4 @@ Les mises à jour de crates doivent être relues pour leurs changements de compo
 
 ## Signaler une vulnérabilité
 
-Évitez de publier immédiatement une vulnérabilité exploitable dans une issue publique avec un secret ou une procédure d'exploitation active. Utilisez les mécanismes privés de sécurité du dépôt lorsqu'ils sont disponibles, ou contactez les mainteneurs par un canal privé approprié avant divulgation coordonnée.
+La procédure officielle est maintenue dans [`SECURITY.md`](https://github.com/FoxSecura/FoxSecura/security/policy). Utilisez le mécanisme privé GitHub lorsqu'il est disponible et ne publiez jamais un secret réel ou une procédure d'exploitation active dans une issue publique.
