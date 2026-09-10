@@ -11,14 +11,13 @@ Le projet cible Rust 1.98.1, édition 2024. `rust-toolchain.toml` fournit égale
 Avant toute PR, exécutez au minimum :
 
 ```bash
-cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
 
-La GitHub Action `Cargo Check` exécute ces trois validations avec la toolchain 1.98.1.
+La GitHub Action `Cargo Check` exécute ces deux validations avec la toolchain 1.98.1.
 
-Les fichiers Rust modifiés doivent respecter `rustfmt`. Le dépôt contient toutefois une dette de formatage historique : une PR fonctionnelle ne doit pas embarquer un reformatage global sans rapport avec son objectif. Le nettoyage global doit rester une contribution dédiée afin de conserver des diffs relisibles.
+`cargo clippy --all-targets` est recommandé comme vérification complémentaire. Le dépôt contient actuellement des warnings Clippy préexistants et une dette de formatage historique. Les fichiers Rust modifiés doivent respecter `rustfmt`, mais une PR fonctionnelle ne doit pas embarquer un nettoyage global sans rapport avec son objectif. Ces baselines doivent être assainies dans des contributions dédiées afin de conserver des diffs relisibles.
 
 ## Organisation des tests
 
@@ -51,11 +50,12 @@ Une nouvelle dépendance doit avoir une utilité nette. Pour une fonction trivia
 2. créer une branche ciblée ;
 3. implémenter un diff minimal ;
 4. ajouter ou adapter les tests ;
-5. exécuter `clippy`, `check` et `test` ;
+5. exécuter `cargo check --all-targets` et `cargo test --all-targets` ;
 6. vérifier le formatage des fichiers Rust réellement modifiés ;
-7. relire les effets de bord, permissions et cas d'échec ;
-8. mettre à jour la documentation si nécessaire ;
-9. ouvrir une pull request descriptive en utilisant le template du dépôt.
+7. utiliser Clippy comme contrôle complémentaire et distinguer les warnings préexistants ;
+8. relire les effets de bord, permissions et cas d'échec ;
+9. mettre à jour la documentation si nécessaire ;
+10. ouvrir une pull request descriptive en utilisant le template du dépôt.
 
 ## Documentation
 
