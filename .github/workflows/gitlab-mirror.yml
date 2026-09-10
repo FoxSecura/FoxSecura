@@ -1,0 +1,120 @@
+name: GitLab Mirror
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foxsecura-gitlab-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror repository to GitLab
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check mirror configuration
+        id: configuration
+        shell: bash
+        env:
+          GITLAB_MIRROR_URL: ${{ secrets.GITLAB_MIRROR_URL }}
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GITLAB_MIRROR_URL}" || -z "${GITLAB_MIRROR_TOKEN}" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitLab mirroring is not configured yet. Add GITLAB_MIRROR_URL and GITLAB_MIRROR_TOKEN as GitHub Actions secrets, then run this workflow manually once."
+            {
+              echo "### GitLab mirror not configured"
+              echo
+              echo "Add the repository secrets \`GITLAB_MIRROR_URL\` and \`GITLAB_MIRROR_TOKEN\`, then run **GitLab Mirror** manually once to bootstrap the mirror."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "${GITLAB_MIRROR_URL}" != https://* ]]; then
+            echo "::error::GITLAB_MIRROR_URL must use HTTPS."
+            exit 1
+          fi
+
+          if [[ "${GITLAB_MIRROR_URL}" == *"@"* ]]; then
+            echo "::error::GITLAB_MIRROR_URL must not contain embedded credentials."
+            exit 1
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mirror current GitHub state
+        if: steps.configuration.outputs.configured == 'true'
+        shell: bash
+        env:
+          GITLAB_MIRROR_URL: ${{ secrets.GITLAB_MIRROR_URL }}
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          destination="${GITLAB_MIRROR_URL%/}"
+          destination_without_scheme="${destination#https://}"
+          authenticated_destination="https://oauth2:${GITLAB_MIRROR_TOKEN}@${destination_without_scheme}"
+
+          echo "::add-mask::${authenticated_destination}"
+
+          workdir="$(mktemp -d)"
+          repository="${workdir}/repository.git"
+
+          cleanup() {
+            rm -rf "$workdir"
+          }
+          trap cleanup EXIT
+
+          git init --bare --quiet "$repository"
+          git -C "$repository" remote add github "https://github.com/${GITHUB_REPOSITORY}.git"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "Bootstrapping all GitHub branches and tags to GitLab."
+            git -C "$repository" fetch --quiet --prune github \
+              '+refs/heads/*:refs/heads/*' \
+              '+refs/tags/*:refs/tags/*'
+
+            git -C "$repository" push --quiet "$authenticated_destination" \
+              '+refs/heads/*:refs/heads/*' \
+              '+refs/tags/*:refs/tags/*'
+
+            echo "GitLab mirror bootstrap completed."
+            exit 0
+          fi
+
+          ref="${GITHUB_REF}"
+          case "$ref" in
+            refs/heads/*|refs/tags/*)
+              ;;
+            *)
+              echo "::error::Unsupported Git ref: ${ref}"
+              exit 1
+              ;;
+          esac
+
+          if git -C "$repository" ls-remote --exit-code --quiet github "$ref" >/dev/null 2>&1; then
+            echo "Synchronizing current GitHub ref ${ref}."
+            git -C "$repository" fetch --quiet --no-tags github "+${ref}:${ref}"
+            git -C "$repository" push --quiet "$authenticated_destination" "+${ref}:${ref}"
+          else
+            echo "GitHub ref ${ref} no longer exists; checking whether it must be removed from GitLab."
+            if git -C "$repository" ls-remote --exit-code --quiet "$authenticated_destination" "$ref" >/dev/null 2>&1; then
+              git -C "$repository" push --quiet "$authenticated_destination" ":${ref}"
+              echo "Removed ${ref} from GitLab."
+            else
+              echo "${ref} is already absent from GitLab."
+            fi
+          fi
+
+          echo "GitLab mirror synchronization completed."
