@@ -1,0 +1,75 @@
+name: Amélioration
+
+description: Proposer une nouvelle fonctionnalité ou une amélioration ciblée.
+title: "[Feature]: "
+labels: []
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Les propositions doivent rester compatibles avec l'objectif de sécurité de FoxSecura et privilégier une solution simple, testable et maintenable.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problème à résoudre
+      description: Quel besoin concret ou quelle limite actuelle motive cette proposition ?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solution proposée
+      description: Décrivez le comportement souhaité sans imposer inutilement une implémentation précise.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Zone concernée
+      options:
+        - Runtime Discord / commandes
+        - Anti-Nuke
+        - Anti-Raid
+        - Anti-Spam
+        - AutoMod
+        - Modération IA
+        - Base de données
+        - Logs / observabilité
+        - Internationalisation
+        - Documentation / Wiki
+        - CI / outillage
+        - Autre
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Impacts sécurité
+      description: Décrivez les permissions, faux positifs, abus possibles, données manipulées et comportement en cas d'échec.
+      placeholder: Si aucun impact n'est identifié, expliquez brièvement pourquoi.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives envisagées
+      description: Autres solutions possibles, contournements actuels ou raisons de les écarter.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Vérifications
+      options:
+        - label: J'ai vérifié qu'une proposition similaire n'est pas déjà ouverte.
+          required: true
+        - label: Cette demande ne contient aucun secret ou donnée personnelle sensible.
+          required: true
