@@ -29,8 +29,8 @@ impl App {
     }
 
     pub async fn run(self) -> Result<(), Error> {
-        let database_path =
-            std::env::var_os("DATABASE_PATH").unwrap_or_else(|| DEFAULT_DATABASE_PATH.into());
+        let database_path = std::env::var_os("DATABASE_PATH")
+            .unwrap_or_else(|| DEFAULT_DATABASE_PATH.into());
         let app_data = AppData::open(database_path)?;
 
         let options = poise::FrameworkOptions::<AppData, Error> {
