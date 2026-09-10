@@ -2,16 +2,22 @@
 
 FoxSecura est un projet de sécurité : une modification petite et vérifiable est préférable à une abstraction large difficile à relire.
 
+Pour le parcours complet d'un nouveau contributeur, consultez également [Contribuer](Contributing) et [`CONTRIBUTING.md`](https://github.com/FoxSecura/FoxSecura/blob/main/CONTRIBUTING.md).
+
 ## Environnement
 
-Le projet cible Rust 1.98.1, édition 2024. Avant toute PR :
+Le projet cible Rust 1.98.1, édition 2024. `rust-toolchain.toml` fournit également `rustfmt` et `clippy`.
+
+Avant toute PR :
 
 ```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
 
-La GitHub Action `Cargo Check` exécute ces deux commandes avec la toolchain 1.98.1.
+La GitHub Action `Cargo Check` exécute les mêmes validations avec la toolchain 1.98.1.
 
 ## Organisation des tests
 
@@ -28,7 +34,9 @@ La structure de `tests/protection` suit celle de `src/protection`, notamment pou
 
 Pour chaque nouvelle règle, couvrir au minimum : un cas réellement détecté, un cas clairement légitime, la limite exacte du seuil, les entrées vides/minimales et les cas d'exemption pertinents.
 
-Les protections temporelles doivent contrôler les fenêtres et les bornes; les protections textuelles doivent inclure des variantes Unicode ou de casse si cela fait partie de leur modèle de menace.
+Les protections temporelles doivent contrôler les fenêtres et les bornes ; les protections textuelles doivent inclure des variantes Unicode ou de casse si cela fait partie de leur modèle de menace.
+
+Un correctif doit, lorsque possible, ajouter un test de non-régression qui reproduit le problème corrigé.
 
 ## Dépendances
 
@@ -41,10 +49,11 @@ Une nouvelle dépendance doit avoir une utilité nette. Pour une fonction trivia
 1. partir de `main` à jour ;
 2. créer une branche ciblée ;
 3. implémenter un diff minimal ;
-4. ajouter/adapter les tests ;
-5. exécuter check + tests ;
-6. relire les effets de bord et les permissions ;
-7. ouvrir une pull request descriptive.
+4. ajouter ou adapter les tests ;
+5. exécuter `fmt`, `clippy`, `check` et `test` ;
+6. relire les effets de bord, permissions et cas d'échec ;
+7. mettre à jour la documentation si nécessaire ;
+8. ouvrir une pull request descriptive en utilisant le template du dépôt.
 
 ## Documentation
 
