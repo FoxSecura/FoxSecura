@@ -14,10 +14,10 @@ Décrivez les impacts possibles sur les permissions Discord, sanctions, exemptio
 
 Cochez uniquement ce qui a réellement été exécuté.
 
-- [ ] `cargo fmt --all -- --check`
 - [ ] `cargo clippy --all-targets -- -D warnings`
 - [ ] `cargo check --all-targets`
 - [ ] `cargo test --all-targets`
+- [ ] Les fichiers Rust modifiés respectent `rustfmt` sans reformatage global hors périmètre
 - [ ] Tests spécifiques ajoutés ou adaptés si le comportement change
 
 ## Documentation et compatibilité
