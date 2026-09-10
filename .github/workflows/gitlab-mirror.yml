@@ -1,0 +1,93 @@
+name: GitLab Mirror
+
+on:
+  workflow_run:
+    workflows:
+      - GitLab Mirror Trigger
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foxsecura-gitlab-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror repository to GitLab
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check mirror configuration
+        id: configuration
+        shell: bash
+        env:
+          GITLAB_MIRROR_URL: ${{ secrets.GITLAB_MIRROR_URL }}
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GITLAB_MIRROR_URL}" || -z "${GITLAB_MIRROR_TOKEN}" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitLab mirroring is not configured yet. Add GITLAB_MIRROR_URL and GITLAB_MIRROR_TOKEN as GitHub Actions secrets, then run this workflow manually once."
+            {
+              echo "### GitLab mirror not configured"
+              echo
+              echo "Add the repository secrets \`GITLAB_MIRROR_URL\` and \`GITLAB_MIRROR_TOKEN\`, then run **GitLab Mirror** manually once to bootstrap the mirror."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "${GITLAB_MIRROR_URL}" != https://* ]]; then
+            echo "::error::GITLAB_MIRROR_URL must use HTTPS."
+            exit 1
+          fi
+
+          if [[ "${GITLAB_MIRROR_URL}" == *"@"* ]]; then
+            echo "::error::GITLAB_MIRROR_URL must not contain embedded credentials."
+            exit 1
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mirror current GitHub state
+        if: steps.configuration.outputs.configured == 'true'
+        shell: bash
+        env:
+          GITLAB_MIRROR_URL: ${{ secrets.GITLAB_MIRROR_URL }}
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          destination="${GITLAB_MIRROR_URL%/}"
+          destination_without_scheme="${destination#https://}"
+          authenticated_destination="https://oauth2:${GITLAB_MIRROR_TOKEN}@${destination_without_scheme}"
+
+          echo "::add-mask::${authenticated_destination}"
+
+          workdir="$(mktemp -d)"
+          repository="${workdir}/repository.git"
+
+          cleanup() {
+            rm -rf "$workdir"
+          }
+          trap cleanup EXIT
+
+          git init --bare --quiet "$repository"
+          git -C "$repository" remote add github "https://github.com/${GITHUB_REPOSITORY}.git"
+
+          echo "Reading all current GitHub branches and tags."
+          git -C "$repository" fetch --quiet --prune github \
+            '+refs/heads/*:refs/heads/*' \
+            '+refs/tags/*:refs/tags/*'
+
+          echo "Synchronizing GitLab branches and tags with GitHub."
+          git -C "$repository" push --quiet --prune "$authenticated_destination" \
+            '+refs/heads/*:refs/heads/*' \
+            '+refs/tags/*:refs/tags/*'
+
+          echo "GitLab mirror synchronization completed."

@@ -14,6 +14,7 @@
 - [Modération IA](https://github.com/FoxSecura/FoxSecura/wiki/AI-Moderation)
 - [Données, langues et logs](https://github.com/FoxSecura/FoxSecura/wiki/Data-I18n-and-Logs)
 - [Automatisation du Wiki](https://github.com/FoxSecura/FoxSecura/wiki/Wiki-Automation)
+- [Miroir GitHub → GitLab](https://github.com/FoxSecura/FoxSecura/wiki/GitLab-Mirroring)
 
 ### Contribution
 
