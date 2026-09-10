@@ -67,13 +67,11 @@ $env:DATABASE_PATH="data/foxsecura.sqlite3"
 
 ## Développement
 
-Clonez le dépôt puis vérifiez le formatage, le lint, la compilation et les tests :
+Clonez le dépôt puis vérifiez la compilation et les tests :
 
 ```bash
 git clone https://github.com/FoxSecura/FoxSecura.git
 cd FoxSecura
-cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
