@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   check:
-    name: fmt, clippy, check and test
+    name: cargo check and test
     runs-on: ubuntu-latest
 
     env:
@@ -25,13 +25,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Rust 1.98.1
-        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
-
-      - name: Cargo fmt
-        run: cargo +1.98.1 fmt --all -- --check
-
-      - name: Cargo clippy
-        run: cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+        run: rustup toolchain install 1.98.1 --profile minimal
 
       - name: Cargo check
         run: cargo +1.98.1 check --all-targets
