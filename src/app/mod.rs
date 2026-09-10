@@ -7,6 +7,8 @@ mod intents;
 
 use poise::serenity_prelude as serenity;
 
+use crate::database::DEFAULT_DATABASE_PATH;
+
 pub use data::AppData;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -27,6 +29,10 @@ impl App {
     }
 
     pub async fn run(self) -> Result<(), Error> {
+        let database_path =
+            std::env::var_os("DATABASE_PATH").unwrap_or_else(|| DEFAULT_DATABASE_PATH.into());
+        let app_data = AppData::open(database_path)?;
+
         let options = poise::FrameworkOptions::<AppData, Error> {
             commands: crate::commands::all(),
             event_handler: |framework, event| Box::pin(events::handle(framework, event)),
@@ -39,7 +45,7 @@ impl App {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                     println!("FoxSecura connecté en tant que {}", ready.user.name);
-                    Ok(AppData)
+                    Ok(app_data)
                 })
             })
             .build();
