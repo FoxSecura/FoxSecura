@@ -5,7 +5,7 @@ use poise::serenity_prelude as serenity;
 
 use super::Context;
 use crate::app::Error;
-use foxsecura::i18n::{Language, TextKey, text};
+use crate::i18n::{Language, TextKey, text};
 
 /// Affiche l'état actuel de FoxSecura.
 #[poise::command(slash_command, guild_only)]
