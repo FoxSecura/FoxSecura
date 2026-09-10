@@ -15,7 +15,8 @@ FoxSecura repose sur une stack Rust moderne et asynchrone :
 - **Rust 1.98.1** : langage principal du projet ;
 - **Tokio 1.53.1** : runtime asynchrone ;
 - **Serenity 0.12.5** : client Discord, Gateway, événements et API Discord ;
-- **Poise 0.7.0** : framework de commandes construit au-dessus de Serenity.
+- **Poise 0.7.0** : framework de commandes construit au-dessus de Serenity ;
+- **SQLite / rusqlite 0.40.2** : persistance locale des configurations et des salons de logs.
 
 Les versions principales sont actuellement épinglées dans `Cargo.toml` afin de conserver une base reproductible et maîtrisée.
 
@@ -32,40 +33,49 @@ Les versions principales sont actuellement épinglées dans `Cargo.toml` afin de
 - Rust **1.98.1** ;
 - Cargo ;
 - un token de bot Discord ;
-- l'intent privilégié **Server Members Intent** activé dans le Discord Developer Portal.
+- les intents privilégiés **Server Members Intent** et **Message Content Intent** activés dans le Discord Developer Portal.
 
-Le projet utilise également les intents Discord suivants :
+Le projet utilise les intents Discord suivants :
 
 - `GUILDS` ;
 - `GUILD_MODERATION` ;
-- `GUILD_MEMBERS`.
+- `GUILD_MEMBERS` ;
+- `GUILD_MESSAGES` ;
+- `MESSAGE_CONTENT`.
 
 ## Configuration
 
 Le token Discord doit être fourni avec la variable d'environnement `DISCORD_TOKEN`.
 
+La base SQLite utilise `data/foxsecura.sqlite3` par défaut. Son emplacement peut être remplacé avec la variable d'environnement `DATABASE_PATH`.
+
 Sous Linux ou macOS :
 
 ```bash
 export DISCORD_TOKEN="votre_token"
+export DATABASE_PATH="data/foxsecura.sqlite3"
 ```
 
 Sous PowerShell :
 
 ```powershell
 $env:DISCORD_TOKEN="votre_token"
+$env:DATABASE_PATH="data/foxsecura.sqlite3"
 ```
 
 > Ne stockez jamais le token du bot directement dans le code source ou dans un fichier suivi par Git.
 
 ## Développement
 
-Clonez le dépôt puis vérifiez la compilation :
+Clonez le dépôt puis vérifiez le formatage, le lint, la compilation et les tests :
 
 ```bash
 git clone https://github.com/FoxSecura/FoxSecura.git
 cd FoxSecura
-cargo check
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo check --all-targets
+cargo test --all-targets
 ```
 
 Pour démarrer FoxSecura :
@@ -79,13 +89,14 @@ cargo run
 La base actuelle fournit :
 
 - le runtime asynchrone Tokio ;
-- le client Discord Serenity ;
-- la connexion au Gateway Discord ;
-- les intents nécessaires à la future couche de sécurité ;
-- Poise comme framework prévu pour les commandes du bot ;
-- une base sous licence AGPLv3.
+- le client Discord Serenity et la connexion au Gateway ;
+- Poise pour les commandes `/config`, `/help` et `/status` ;
+- les familles de protection Anti-Spam, Anti-Raid, Anti-Nuke, AutoMod et AI Moderation ;
+- l'internationalisation anglais, français et allemand ;
+- les incidents et salons de logs structurés ;
+- la persistance SQLite des configurations de guilde et des salons de logs.
 
-L'architecture modulaire, les commandes et les fonctionnalités de sécurité seront ajoutées progressivement.
+L'intégration runtime complète des protections, leur configuration persistante détaillée et l'application finale de toutes les actions de modération restent en cours de reconstruction.
 
 ## Licence
 
