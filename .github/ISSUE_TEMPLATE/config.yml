@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Documentation FoxSecura
+    url: https://github.com/FoxSecura/FoxSecura/wiki
+    about: Consultez le Wiki avant d'ouvrir une issue de support ou de configuration.
+  - name: Politique de sécurité
+    url: https://github.com/FoxSecura/FoxSecura/security/policy
+    about: Pour une vulnérabilité ou un secret exposé, suivez la procédure de signalement privé.
