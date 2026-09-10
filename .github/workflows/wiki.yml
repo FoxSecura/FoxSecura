@@ -1,0 +1,108 @@
+name: Wiki
+
+on:
+  pull_request:
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foxsecura-wiki
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate wiki sources
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate wiki structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d wiki
+          test -f wiki/Home.md
+          test -f wiki/_Sidebar.md
+
+          invalid_file="$(find wiki -type f ! -name '*.md' -print -quit)"
+          if [[ -n "$invalid_file" ]]; then
+            echo "::error file=$invalid_file::Only Markdown files are allowed in wiki/."
+            exit 1
+          fi
+
+          empty_file="$(find wiki -type f -name '*.md' -size 0 -print -quit)"
+          if [[ -n "$empty_file" ]]; then
+            echo "::error file=$empty_file::Wiki pages must not be empty."
+            exit 1
+          fi
+
+          echo "Wiki source validation passed."
+
+  publish:
+    name: Publish GitHub Wiki
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Synchronize wiki
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          workdir="$(mktemp -d)"
+          target="$workdir/wiki"
+
+          cleanup() {
+            rm -rf "$workdir"
+          }
+          trap cleanup EXIT
+
+          if ! git clone --quiet "$remote" "$target"; then
+            echo "Wiki repository is not initialized yet; attempting first publication."
+            mkdir -p "$target"
+            git -C "$target" init --initial-branch=master
+            git -C "$target" remote add origin "$remote"
+          fi
+
+          rsync -a --delete --exclude='.git/' wiki/ "$target/"
+
+          git -C "$target" config user.name "github-actions[bot]"
+          git -C "$target" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$target" add -A
+
+          if git -C "$target" diff --cached --quiet; then
+            echo "Wiki is already up to date."
+            exit 0
+          fi
+
+          git -C "$target" commit -m "docs: sync wiki from ${GITHUB_SHA::7}"
+
+          current_branch="$(git -C "$target" branch --show-current)"
+          if [[ -z "$current_branch" ]]; then
+            current_branch="master"
+          fi
+
+          git -C "$target" push --set-upstream origin "HEAD:$current_branch"

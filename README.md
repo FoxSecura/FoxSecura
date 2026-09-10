@@ -1,96 +1,59 @@
 # FoxSecura
 
-[![Rust](https://img.shields.io/badge/Rust-1.98.1-DEA584?style=plastic&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Tokio](https://img.shields.io/badge/Tokio-1.53.1-000000?style=plastic&logo=tokio&logoColor=white)](https://tokio.rs/)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0--only-663399?style=plastic&logo=gnu&logoColor=white)](https://www.gnu.org/licenses/agpl-3.0.html)
+[![Rust](https://img.shields.io/badge/Rust-1.98.1-DEA584?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Cargo Check](https://github.com/FoxSecura/FoxSecura/actions/workflows/cargo-check.yml/badge.svg)](https://github.com/FoxSecura/FoxSecura/actions/workflows/cargo-check.yml)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0--only-663399?style=flat&logo=gnu&logoColor=white)](LICENSE)
 
-FoxSecura est la réécriture en **Rust** de FoxSecura, un bot Discord orienté **sécurité**, **protection** et **modération** des serveurs.
+**FoxSecura** est un bot Discord de sécurité écrit en Rust. Il vise à protéger les serveurs contre les raids, le spam, les abus de permissions, les destructions de ressources et différents contenus à risque.
 
-> Le projet est actuellement en phase de reconstruction.
+> FoxSecura V2 est en développement actif. Plusieurs moteurs de protection sont déjà présents dans le code et testés isolément, tandis que leur intégration complète au runtime Discord progresse par étapes.
 
-## Stack technique
+## Fonctionnalités
 
-FoxSecura repose sur une stack Rust moderne et asynchrone :
+- anti-raid et détection de comportements suspects à l'arrivée ;
+- anti-spam, anti-mentions, liens suspects et filtres de contenu ;
+- anti-nuke et garde des actions sensibles du serveur ;
+- AutoMod Discord et règles de modération locales ;
+- modération assistée par IA avec politique, préfiltrage et fournisseurs séparés ;
+- journalisation structurée des incidents de sécurité ;
+- persistance SQLite et migrations versionnées ;
+- interface multilingue français, anglais et allemand.
 
-- **Rust 1.98.1** : langage principal du projet ;
-- **Tokio 1.53.1** : runtime asynchrone ;
-- **Serenity 0.12.5** : client Discord, Gateway, événements et API Discord ;
-- **Poise 0.7.0** : framework de commandes construit au-dessus de Serenity.
+## Démarrage rapide
 
-Les versions principales sont actuellement épinglées dans `Cargo.toml` afin de conserver une base reproductible et maîtrisée.
-
-## Objectifs
-
-- disposer d'une base Rust moderne, robuste et maintenable ;
-- construire une architecture modulaire pour les fonctionnalités de sécurité ;
-- privilégier la fiabilité, les performances et la sûreté ;
-- séparer clairement les commandes, les événements Discord et les modules de sécurité ;
-- permettre une évolution progressive du bot sans dépendre de l'ancienne base propriétaire.
-
-## Prérequis
-
-- Rust **1.98.1** ;
-- Cargo ;
-- un token de bot Discord ;
-- l'intent privilégié **Server Members Intent** activé dans le Discord Developer Portal.
-
-Le projet utilise également les intents Discord suivants :
-
-- `GUILDS` ;
-- `GUILD_MODERATION` ;
-- `GUILD_MEMBERS`.
-
-## Configuration
-
-Le token Discord doit être fourni avec la variable d'environnement `DISCORD_TOKEN`.
-
-Sous Linux ou macOS :
+Prérequis : **Rust 1.98.1**, Cargo, un bot Discord et le **Server Members Intent** activé.
 
 ```bash
+git clone https://github.com/FoxSecura/FoxSecura.git
+cd FoxSecura
 export DISCORD_TOKEN="votre_token"
+cargo run
 ```
 
 Sous PowerShell :
 
 ```powershell
 $env:DISCORD_TOKEN="votre_token"
-```
-
-> Ne stockez jamais le token du bot directement dans le code source ou dans un fichier suivi par Git.
-
-## Développement
-
-Clonez le dépôt puis vérifiez la compilation :
-
-```bash
-git clone https://github.com/FoxSecura/FoxSecura.git
-cd FoxSecura
-cargo check
-```
-
-Pour démarrer FoxSecura :
-
-```bash
 cargo run
 ```
 
-## État du projet
+Ne stockez jamais un token Discord ou une clé d'API dans le dépôt.
 
-La base actuelle fournit :
+## Documentation
 
-- le runtime asynchrone Tokio ;
-- le client Discord Serenity ;
-- la connexion au Gateway Discord ;
-- les intents nécessaires à la future couche de sécurité ;
-- Poise comme framework prévu pour les commandes du bot ;
-- une base sous licence AGPLv3.
+La documentation détaillée est maintenue dans [`wiki/`](wiki/Home.md) puis publiée automatiquement vers le [GitHub Wiki](https://github.com/FoxSecura/FoxSecura/wiki).
 
-L'architecture modulaire, les commandes et les fonctionnalités de sécurité seront ajoutées progressivement.
+Pour contribuer :
+
+```bash
+cargo check --all-targets
+cargo test --all-targets
+```
+
+Consultez également le [`changelog.md`](changelog.md).
 
 ## Licence
 
-FoxSecura est distribué sous la **GNU Affero General Public License v3.0 uniquement** (`AGPL-3.0-only`).
-
-Consultez le fichier [`LICENSE`](LICENSE) pour le texte complet de la licence.
+FoxSecura est distribué sous **GNU Affero General Public License v3.0 uniquement** (`AGPL-3.0-only`). Voir [`LICENSE`](LICENSE).
 
 Copyright © 2026 FoxSecura contributors.
