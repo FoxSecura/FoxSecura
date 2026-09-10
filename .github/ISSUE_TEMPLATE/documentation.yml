@@ -1,0 +1,42 @@
+name: Documentation
+
+description: Signaler une documentation manquante, incorrecte ou difficile à comprendre.
+title: "[Docs]: "
+labels: []
+assignees: []
+
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Page ou emplacement
+      description: Indiquez le fichier, la page du Wiki ou la section concernée.
+      placeholder: wiki/Protection-Modules.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problème
+      description: Qu'est-ce qui est incorrect, ambigu, obsolète ou manquant ?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Amélioration souhaitée
+      description: Décrivez le contenu ou la clarification attendue.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Vérifications
+      options:
+        - label: J'ai vérifié qu'une issue similaire n'est pas déjà ouverte.
+          required: true
+        - label: Cette demande ne contient aucun secret ou donnée sensible.
+          required: true
