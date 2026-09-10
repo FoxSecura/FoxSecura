@@ -43,9 +43,15 @@ Ne stockez jamais un token Discord ou une clé d'API dans le dépôt.
 
 La documentation détaillée est maintenue dans [`wiki/`](wiki/Home.md) puis publiée automatiquement vers le [GitHub Wiki](https://github.com/FoxSecura/FoxSecura/wiki).
 
-Pour contribuer :
+## Contribuer
+
+Consultez [`CONTRIBUTING.md`](CONTRIBUTING.md) avant d'ouvrir une pull request. Les ressources communautaires sont également disponibles dans [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), [`SUPPORT.md`](SUPPORT.md) et [`SECURITY.md`](SECURITY.md).
+
+Validation locale recommandée :
 
 ```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
