@@ -47,15 +47,14 @@ La documentation détaillée est maintenue dans [`wiki/`](wiki/Home.md) puis pub
 
 Consultez [`CONTRIBUTING.md`](CONTRIBUTING.md) avant d'ouvrir une pull request. Les ressources communautaires sont également disponibles dans [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), [`SUPPORT.md`](SUPPORT.md) et [`SECURITY.md`](SECURITY.md).
 
-Validation locale recommandée :
+Validation locale minimale :
 
 ```bash
-cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
 
-Les fichiers Rust modifiés doivent respecter `rustfmt`. Consultez le guide de contribution pour la dette de formatage historique du dépôt.
+`cargo clippy --all-targets` est recommandé pour une vérification supplémentaire. Les fichiers Rust modifiés doivent respecter `rustfmt` ; le guide de contribution documente la dette de lint et de formatage historique du dépôt.
 
 Consultez également le [`changelog.md`](changelog.md).
 
