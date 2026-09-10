@@ -80,13 +80,19 @@ jobs:
           }
           trap cleanup EXIT
 
-          if ! git clone --quiet "$remote" "$target"; then
-            echo "Wiki repository is not initialized yet; attempting first publication."
-            mkdir -p "$target"
-            git -C "$target" init --initial-branch=master
-            git -C "$target" remote add origin "$remote"
+          if ! git ls-remote "$remote" >/dev/null 2>&1; then
+            echo "::warning::GitHub Wiki is enabled but its Git repository is not initialized yet. Create the first page once from the repository Wiki tab, then rerun this workflow manually."
+            {
+              echo "### Wiki publication skipped"
+              echo
+              echo "GitHub has not initialized \`${GITHUB_REPOSITORY}.wiki.git\` yet."
+              echo "Create the first page once from the repository **Wiki** tab, then rerun the **Wiki** workflow with \`workflow_dispatch\`."
+              echo "After that one-time bootstrap, pushes to \`main\` that change \`wiki/**\` will publish automatically."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
+          git clone --quiet "$remote" "$target"
           rsync -a --delete --exclude='.git/' wiki/ "$target/"
 
           git -C "$target" config user.name "github-actions[bot]"
@@ -99,10 +105,4 @@ jobs:
           fi
 
           git -C "$target" commit -m "docs: sync wiki from ${GITHUB_SHA::7}"
-
-          current_branch="$(git -C "$target" branch --show-current)"
-          if [[ -z "$current_branch" ]]; then
-            current_branch="master"
-          fi
-
-          git -C "$target" push --set-upstream origin "HEAD:$current_branch"
+          git -C "$target" push

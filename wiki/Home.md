@@ -35,6 +35,7 @@ Les versions majeures sont actuellement épinglées dans `Cargo.toml` afin de co
 - [Modération IA](https://github.com/FoxSecura/FoxSecura/wiki/AI-Moderation)
 - [Données, langues et logs](https://github.com/FoxSecura/FoxSecura/wiki/Data-I18n-and-Logs)
 - [Développement et tests](https://github.com/FoxSecura/FoxSecura/wiki/Development-and-Testing)
+- [Automatisation du Wiki](https://github.com/FoxSecura/FoxSecura/wiki/Wiki-Automation)
 - [Sécurité opérationnelle](https://github.com/FoxSecura/FoxSecura/wiki/Security)
 - [Roadmap](https://github.com/FoxSecura/FoxSecura/wiki/Roadmap)
 
