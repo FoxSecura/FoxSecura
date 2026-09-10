@@ -1,11 +1,11 @@
 name: GitLab Mirror
 
 on:
-  push:
-    branches:
-      - "**"
-    tags:
-      - "**"
+  workflow_run:
+    workflows:
+      - GitLab Mirror Trigger
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -18,6 +18,7 @@ concurrency:
 jobs:
   mirror:
     name: Mirror repository to GitLab
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -79,42 +80,14 @@ jobs:
           git init --bare --quiet "$repository"
           git -C "$repository" remote add github "https://github.com/${GITHUB_REPOSITORY}.git"
 
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "Bootstrapping all GitHub branches and tags to GitLab."
-            git -C "$repository" fetch --quiet --prune github \
-              '+refs/heads/*:refs/heads/*' \
-              '+refs/tags/*:refs/tags/*'
+          echo "Reading all current GitHub branches and tags."
+          git -C "$repository" fetch --quiet --prune github \
+            '+refs/heads/*:refs/heads/*' \
+            '+refs/tags/*:refs/tags/*'
 
-            git -C "$repository" push --quiet "$authenticated_destination" \
-              '+refs/heads/*:refs/heads/*' \
-              '+refs/tags/*:refs/tags/*'
-
-            echo "GitLab mirror bootstrap completed."
-            exit 0
-          fi
-
-          ref="${GITHUB_REF}"
-          case "$ref" in
-            refs/heads/*|refs/tags/*)
-              ;;
-            *)
-              echo "::error::Unsupported Git ref: ${ref}"
-              exit 1
-              ;;
-          esac
-
-          if git -C "$repository" ls-remote --exit-code --quiet github "$ref" >/dev/null 2>&1; then
-            echo "Synchronizing current GitHub ref ${ref}."
-            git -C "$repository" fetch --quiet --no-tags github "+${ref}:${ref}"
-            git -C "$repository" push --quiet "$authenticated_destination" "+${ref}:${ref}"
-          else
-            echo "GitHub ref ${ref} no longer exists; checking whether it must be removed from GitLab."
-            if git -C "$repository" ls-remote --exit-code --quiet "$authenticated_destination" "$ref" >/dev/null 2>&1; then
-              git -C "$repository" push --quiet "$authenticated_destination" ":${ref}"
-              echo "Removed ${ref} from GitLab."
-            else
-              echo "${ref} is already absent from GitLab."
-            fi
-          fi
+          echo "Synchronizing GitLab branches and tags with GitHub."
+          git -C "$repository" push --quiet --prune "$authenticated_destination" \
+            '+refs/heads/*:refs/heads/*' \
+            '+refs/tags/*:refs/tags/*'
 
           echo "GitLab mirror synchronization completed."
