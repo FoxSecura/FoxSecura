@@ -50,11 +50,12 @@ Consultez [`CONTRIBUTING.md`](CONTRIBUTING.md) avant d'ouvrir une pull request. 
 Validation locale recommandée :
 
 ```bash
-cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
+
+Les fichiers Rust modifiés doivent respecter `rustfmt`. Consultez le guide de contribution pour la dette de formatage historique du dépôt.
 
 Consultez également le [`changelog.md`](changelog.md).
 
