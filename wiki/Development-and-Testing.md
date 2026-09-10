@@ -8,16 +8,17 @@ Pour le parcours complet d'un nouveau contributeur, consultez également [Contri
 
 Le projet cible Rust 1.98.1, édition 2024. `rust-toolchain.toml` fournit également `rustfmt` et `clippy`.
 
-Avant toute PR :
+Avant toute PR, exécutez au minimum :
 
 ```bash
-cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
 
-La GitHub Action `Cargo Check` exécute les mêmes validations avec la toolchain 1.98.1.
+La GitHub Action `Cargo Check` exécute ces trois validations avec la toolchain 1.98.1.
+
+Les fichiers Rust modifiés doivent respecter `rustfmt`. Le dépôt contient toutefois une dette de formatage historique : une PR fonctionnelle ne doit pas embarquer un reformatage global sans rapport avec son objectif. Le nettoyage global doit rester une contribution dédiée afin de conserver des diffs relisibles.
 
 ## Organisation des tests
 
@@ -50,10 +51,11 @@ Une nouvelle dépendance doit avoir une utilité nette. Pour une fonction trivia
 2. créer une branche ciblée ;
 3. implémenter un diff minimal ;
 4. ajouter ou adapter les tests ;
-5. exécuter `fmt`, `clippy`, `check` et `test` ;
-6. relire les effets de bord, permissions et cas d'échec ;
-7. mettre à jour la documentation si nécessaire ;
-8. ouvrir une pull request descriptive en utilisant le template du dépôt.
+5. exécuter `clippy`, `check` et `test` ;
+6. vérifier le formatage des fichiers Rust réellement modifiés ;
+7. relire les effets de bord, permissions et cas d'échec ;
+8. mettre à jour la documentation si nécessaire ;
+9. ouvrir une pull request descriptive en utilisant le template du dépôt.
 
 ## Documentation
 
