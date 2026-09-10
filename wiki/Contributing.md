@@ -16,16 +16,17 @@ Cette page sert de point d'entrée pour les contributeurs. Les règles normative
 
 ## Validation locale
 
-Avant de pousser une contribution Rust :
+Avant de pousser une contribution Rust, exécutez au minimum :
 
 ```bash
-cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo check --all-targets
 cargo test --all-targets
 ```
 
 Le dépôt fixe Rust à la version 1.98.1 et fournit `rustfmt` et `clippy` via `rust-toolchain.toml`.
+
+Les fichiers Rust modifiés doivent respecter `rustfmt`. Le dépôt contient encore une dette de formatage historique : si une vérification globale signale des fichiers sans rapport avec votre contribution, ne mélangez pas leur reformatage à une PR fonctionnelle.
 
 ## Quel type d'issue ouvrir ?
 
