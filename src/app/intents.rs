@@ -7,4 +7,9 @@ pub fn default() -> GatewayIntents {
     GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MODERATION
         | GatewayIntents::GUILD_MEMBERS
+        | GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILD_WEBHOOKS
+        | GatewayIntents::AUTO_MODERATION_CONFIGURATION
+        | GatewayIntents::AUTO_MODERATION_EXECUTION
 }

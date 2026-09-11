@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 1;
+pub const LATEST_SCHEMA_VERSION: i64 = 2;
 
 struct Migration {
     version: i64,
@@ -34,6 +34,18 @@ CREATE TABLE guild_log_channels (
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (guild_id, log_type),
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+"#,
+}, Migration {
+    version: 2,
+    name: "temporary_slowmodes",
+    sql: r#"
+CREATE TABLE temporary_slowmodes (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT PRIMARY KEY NOT NULL,
+    previous_seconds INTEGER NOT NULL,
+    applied_seconds INTEGER NOT NULL,
+    restore_at INTEGER NOT NULL
 );
 "#,
 }];
