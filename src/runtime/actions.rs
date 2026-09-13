@@ -137,7 +137,9 @@ impl ProtectionRuntime {
                     Action::Kick { .. } => {
                         ctx.http.kick_member(guild, member.user.id, reason).await?;
                     }
-                    Action::NormalizeNickname { nickname, expected, .. } => {
+                    Action::NormalizeNickname {
+                        nickname, expected, ..
+                    } => {
                         if member.display_name() != expected || member.display_name() == nickname {
                             return Ok(ActionStatus::Skipped);
                         }

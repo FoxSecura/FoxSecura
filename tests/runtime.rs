@@ -916,10 +916,7 @@ fn failed_slowmode_can_retry_without_losing_original_state() {
 fn renamed_native_rules_can_be_restored_and_disabled_by_persistent_identity() {
     use foxsecura::{database::Database, protection::automod::native_rules::*};
     let db = Database::open_in_memory().unwrap();
-    for (index, spec) in build_rule_specs(&["insulte"])
-        .into_iter()
-        .enumerate()
-    {
+    for (index, spec) in build_rule_specs(&["insulte"]).into_iter().enumerate() {
         let id = 50 + index as u64;
         db.remember_managed_rule(1, id, &spec.name).unwrap();
         let names = db.managed_rule_names(1).unwrap();
@@ -939,6 +936,9 @@ fn renamed_native_rules_can_be_restored_and_disabled_by_persistent_identity() {
 #[test]
 fn documented_configuration_is_valid_and_covers_available_modules() {
     let config = parse_config(include_str!("../protection.example.json")).unwrap();
-    assert_eq!(config[&123456789012345678].enabled.len(), foxsecura::runtime::config::MODULES.len());
+    assert_eq!(
+        config[&123456789012345678].enabled.len(),
+        foxsecura::runtime::config::MODULES.len()
+    );
     assert!(!config[&123456789012345678].enforce);
 }

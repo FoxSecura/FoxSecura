@@ -19,7 +19,7 @@ La connexion est protégée par un `Mutex`, ce qui donne une surface de synchron
 
 ## Migrations
 
-Le schéma est versionné dans `schema_migrations`. La version actuelle (`1`) crée :
+Le schéma est versionné dans `schema_migrations`. La version actuelle est `2`. La migration initiale crée :
 
 ### `guild_configs`
 
@@ -32,6 +32,8 @@ Le schéma est versionné dans `schema_migrations`. La version actuelle (`1`) cr
 Associe une guild à un salon pour un type de log. Les types autorisés sont : `message`, `server`, `member`, `channel`, `role`, `moderation`.
 
 La clé primaire `(guild_id, log_type)` garantit un salon par type et par guild dans le schéma actuel. Une suppression de `guild_configs` cascade vers ses destinations de logs.
+
+La migration 2 ajoute `temporary_slowmodes` pour restaurer les ralentissements et `managed_automod_rules` pour retrouver les règles natives gérées après redémarrage ou renommage. La configuration des protections est chargée depuis le fichier désigné par `FOXSECURA_PROTECTION_CONFIG`.
 
 ## Validation de domaine
 

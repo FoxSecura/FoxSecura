@@ -4,7 +4,7 @@ Cette roadmap décrit les axes techniques visibles dans l'état actuel du dépô
 
 ## 1. Consolider le runtime Discord
 
-Le principal chantier est de relier progressivement les moteurs déjà testables aux événements Serenity : messages, membres, audit logs, créations/suppressions de ressources, webhooks et changements de serveur.
+Le raccordement aux messages, membres, audit logs, webhooks et AutoMod est disponible en 0.1.1. La suite du chantier concerne les essais sur un serveur Discord de validation et le suivi des erreurs opérationnelles.
 
 Chaque branchement doit conserver la séparation `snapshot → détection → décision → action → log` et éviter de déplacer la logique métier dans le handler global.
 
@@ -16,7 +16,7 @@ L'interface ne doit afficher un état « actif » que si la valeur est réelleme
 
 ## 3. Finaliser la chaîne d'incidents
 
-Le modèle `SecurityIncident` et les résultats d'action offrent une base pour unifier les logs. Il reste à brancher les détecteurs et exécuteurs de manière cohérente, puis à distribuer les incidents vers les salons configurés.
+Le modèle `SecurityIncident` et les résultats d'action offrent une base pour unifier les logs. Le runtime distribue les incidents vers les logs locaux et le salon configuré. Leur enrichissement en preuves et en codes d’erreur Discord plus précis reste à poursuivre.
 
 ## 4. Anti-Nuke opérationnel
 
@@ -28,11 +28,11 @@ Priorités : états temporels efficaces, nettoyage des fenêtres, configuration 
 
 ## 6. AutoMod natif
 
-Le modèle `spec + reconciler` doit devenir la voie principale pour synchroniser les règles Discord attendues. Les opérations doivent rester idempotentes et tolérer les modifications externes de manière explicite.
+Le runtime utilise le modèle `spec + reconciler` pour synchroniser les règles Discord attendues. Les opérations doivent rester idempotentes et tolérer les modifications externes de manière explicite.
 
 ## 7. Modération IA
 
-Avant activation générale : gestion sûre des secrets, branchement au runtime, limites de contexte, observabilité, circuit breaker, politique de fallback, coût maîtrisé et tests d'intégration avec fournisseurs simulés.
+Le raccordement avec préfiltrage, admission, cache, circuit breaker et fournisseur simulé est disponible. Avant activation générale, poursuivre les essais opérationnels et le suivi des faux positifs et des coûts.
 
 ## 8. Persistance
 
