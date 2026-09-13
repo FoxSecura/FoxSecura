@@ -45,7 +45,12 @@ CREATE TABLE temporary_slowmodes (
     channel_id TEXT PRIMARY KEY NOT NULL,
     previous_seconds INTEGER NOT NULL,
     applied_seconds INTEGER NOT NULL,
+    pending_seconds INTEGER,
     restore_at INTEGER NOT NULL
+);
+CREATE TABLE managed_automod_rules (
+    guild_id TEXT NOT NULL,
+    rule_id TEXT PRIMARY KEY NOT NULL
 );
 "#,
 }];

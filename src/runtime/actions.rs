@@ -16,7 +16,7 @@ impl ProtectionRuntime {
         let _guard = self.actions.lock().await;
         for planned in actions {
             let (code, user) = action_metadata(&planned.action);
-            let result = if !config.enforce && planned.action != Action::Alert {
+            let result = if !config.enforce && !matches!(planned.action, Action::Alert | Action::SyncAutoMod) {
                 Ok(ActionStatus::Skipped)
             } else {
                 self.apply(ctx, guild, config, &planned.action).await
@@ -36,10 +36,10 @@ impl ProtectionRuntime {
         let reason = Some("FoxSecura : protection automatique");
         match action {
             Action::Alert => {}
-            Action::DeleteMessage { channel, message } => {
+            Action::DeleteMessage { channel, message, expected_content } => {
                 let channel = serenity::ChannelId::new(*channel);
                 let current = channel.message(&ctx.http, serenity::MessageId::new(*message)).await?;
-                if current.guild_id != Some(guild) { return Ok(ActionStatus::Skipped); }
+                if current.guild_id != Some(guild) || current.content != *expected_content { return Ok(ActionStatus::Skipped); }
                 // Retirer le suivi avant la suppression pour éviter un ghost ping créé par FoxSecura.
                 self.engine.lock().map_err(|_| "État de protection inaccessible")?.discard_message(guild.get(), *message);
                 ctx.http.delete_message(channel, current.id, reason).await?;
@@ -146,8 +146,7 @@ impl ProtectionRuntime {
                 });
             }
             Action::SyncAutoMod => {
-                if !config.enabled("native_rules") { return Ok(ActionStatus::Skipped); }
-                super::automod::synchronize(ctx, guild, config).await?;
+                super::automod::synchronize(ctx, guild, config, &self.database).await?;
             }
         }
         Ok(ActionStatus::Success)
@@ -183,10 +182,12 @@ impl ProtectionRuntime {
         let mode = TemporarySlowmode {
             guild: guild.get(), channel: channel.id.get(), previous_seconds: previous,
             applied_seconds: seconds, restore_at: epoch().as_secs() as i64 + duration,
+            pending_seconds: Some(previous),
         };
         if !self.database.save_temporary_slowmode(&mode)? { return Ok(ActionStatus::Skipped); }
         ctx.http.edit_channel(channel.id, &json!({"rate_limit_per_user": seconds}),
             Some("FoxSecura : ralentissement temporaire")).await?;
+        self.database.confirm_temporary_slowmode(channel.id.get())?;
         Ok(ActionStatus::Success)
     }
 
@@ -205,7 +206,8 @@ impl ProtectionRuntime {
             };
             if let Some(channel) = channel {
                 if channel.guild_id.get() != mode.guild { continue; }
-                if channel.rate_limit_per_user.unwrap_or(0) == mode.applied_seconds {
+                if channel.rate_limit_per_user.unwrap_or(0) == mode.applied_seconds
+                    || mode.pending_seconds == Some(channel.rate_limit_per_user.unwrap_or(0)) {
                     if ctx.http.edit_channel(channel.id, &json!({"rate_limit_per_user": mode.previous_seconds}),
                         Some("FoxSecura : fin du ralentissement temporaire")).await.is_err()
                     { continue; }

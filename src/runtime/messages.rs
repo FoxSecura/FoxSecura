@@ -189,7 +189,7 @@ impl ProtectionEngine {
         }
         if let Some(module) = reasons.first().copied() {
             actions.push(PlannedAction::new(module, Action::DeleteMessage {
-                channel: message.channel, message: message.id,
+                channel: message.channel, message: message.id, expected_content: message.content.clone(),
             }));
             // Conserver toutes les causes, mais ne supprimer le message qu'une fois.
             actions.extend(reasons.into_iter().skip(1).map(|module| PlannedAction::new(module, Action::Alert)));
@@ -201,7 +201,7 @@ impl ProtectionEngine {
         &mut self, config: &GuildProtectionConfig, guild: u64, message: u64, now: Duration,
     ) -> Vec<PlannedAction> {
         if !config.enabled("anti_ghost_ping") { return Vec::new(); }
-        let result = self.ghost.detect_deleted(guild, message, now);
+        let result = self.ghost.detect_deleted_unattributed(guild, message, now);
         if result.decision != ProtectionDecision::Block { return Vec::new(); }
         // Discord ne fournit pas l'auteur de la suppression : alerte seule, pas de sanction.
         vec![PlannedAction::new("anti_ghost_ping", Action::Alert)]

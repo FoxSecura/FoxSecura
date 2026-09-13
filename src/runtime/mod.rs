@@ -108,6 +108,9 @@ impl ProtectionRuntime {
                         ctx.shard.chunk_guild(guild.id, None, false, serenity::ChunkGuildFilter::None, None);
                     }
                     self.execute(ctx, guild.id, vec![PlannedAction::new("native_rules", Action::SyncAutoMod)]).await?;
+                } else if self.database.has_managed_rules(guild.id.get())? {
+                    let _guard = self.actions.lock().await;
+                    automod::synchronize(ctx, guild.id, &GuildProtectionConfig::default(), &self.database).await?;
                 }
             }
             serenity::FullEvent::AutoModActionExecution { execution } => {
@@ -161,7 +164,7 @@ impl ProtectionRuntime {
                     if let Ok(current) = message.channel_id.message(&ctx.http, message.id).await {
                         if current.content == input.content {
                             actions.push(PlannedAction::new("ai_moderation", Action::DeleteMessage {
-                                channel: input.channel, message: input.id,
+                                channel: input.channel, message: input.id, expected_content: input.content.clone(),
                             }));
                         }
                     }
@@ -230,9 +233,7 @@ impl ProtectionRuntime {
             let current = ctx.http.get_automod_rules(guild).await.unwrap_or_default();
             current.iter().any(|rule| Some(rule.id.get()) == target && rule.creator_id.get() == bot
                 && rule.name.starts_with(crate::protection::automod::native_rules::AUTOMOD_RULE_PREFIX))
-                || entry.changes.as_deref().unwrap_or_default().iter().any(|change|
-                    matches!(change, serenity::audit_log::Change::Name { old: Some(name), .. }
-                        if name.starts_with(crate::protection::automod::native_rules::AUTOMOD_RULE_PREFIX)))
+                || target.is_some_and(|rule| self.database.is_managed_rule(guild.get(), rule).unwrap_or(false))
         } else { false };
         let context = audit::AuditContext {
             guild: guild.get(), owner, bot, executor_resolved: member.is_some(),

@@ -119,6 +119,29 @@ impl AntiGhostPingDetector {
         self.evaluate_incident(previous, timestamp)
     }
 
+    /// Une suppression sans auteur vérifié ne constitue pas une récidive attribuable.
+    pub fn detect_deleted_unattributed(
+        &mut self,
+        guild_id: u64,
+        message_id: u64,
+        timestamp: Duration,
+    ) -> GhostPingDetectionResult {
+        self.sweep_messages(timestamp);
+        let Some(previous) = self.messages.remove(&(guild_id, message_id)) else {
+            return empty_result(self.config.mention_threshold);
+        };
+        let count = mention_count(&previous);
+        GhostPingDetectionResult {
+            decision: if count >= self.config.mention_threshold {
+                ProtectionDecision::Block
+            } else { ProtectionDecision::Allow },
+            author_id: Some(previous.author_id), channel_id: Some(previous.channel_id),
+            mention_ids: previous.mention_ids, role_mention_ids: previous.role_mention_ids,
+            mentions_everyone: previous.mentions_everyone, mention_count: count,
+            threshold: self.config.mention_threshold, repeat_offense: false,
+        }
+    }
+
     pub fn detect_updated(
         &mut self,
         current: GhostPingMessage,

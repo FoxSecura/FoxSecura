@@ -16,7 +16,7 @@ use crate::protection::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Alert,
-    DeleteMessage { channel: u64, message: u64 },
+    DeleteMessage { channel: u64, message: u64, expected_content: String },
     Timeout { user: u64 },
     Kick { user: u64 },
     RemoveWebhook { webhook: u64 },

@@ -173,7 +173,7 @@ impl ProtectionEngine {
         }
         for module in &modules {
             actions.push(PlannedAction::new(module, Action::Alert));
-            if enabled("panic_mode") && self.panic.record(context.guild, *module, now).triggered {
+            if context.executor_resolved && enabled("panic_mode") && self.panic.record(context.guild, *module, now).triggered {
                 actions.push(PlannedAction::new("panic_mode", Action::Lockdown));
             }
         }

@@ -130,6 +130,15 @@ pub fn parse_config(content: &str) -> Result<HashMap<u64, GuildProtectionConfig>
         if config.enabled("limit_role") && config.limited_roles.is_empty() {
             return Err("limit_role exige limited_roles".into());
         }
+        if config.enabled("member_profile") && !config.enabled("native_rules") {
+            return Err("member_profile exige native_rules".into());
+        }
+        if config.enabled("anti_impersonation") && config.protected_names.is_empty() {
+            return Err("anti_impersonation exige protected_names".into());
+        }
+        if config.blocked_words.len() > 1000 || config.blocked_words.iter().any(|word| word.chars().count() > 60) {
+            return Err("Maximum : 1000 mots de 60 caractères".into());
+        }
         if config.exempt_roles.len() > 20 || config.ignored_channels.len() > 50 {
             return Err("Maximum : 20 rôles exemptés et 50 salons ignorés".into());
         }

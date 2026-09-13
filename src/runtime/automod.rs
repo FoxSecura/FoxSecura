@@ -37,16 +37,14 @@ pub fn rule_payload(spec: &AutoModRuleSpec, enabled: bool, config: &GuildProtect
 }
 
 pub async fn synchronize(
-    ctx: &serenity::Context, guild: serenity::GuildId, config: &GuildProtectionConfig,
+    ctx: &serenity::Context, guild: serenity::GuildId, config: &GuildProtectionConfig, database: &crate::database::Database,
 ) -> Result<(), Error> {
-    // Les règles natives ne peuvent pas fonctionner en observation avec une action bloquante.
-    if !config.enforce || !config.enabled("native_rules") { return Ok(()); }
     let words = if config.blocked_words.is_empty() {
         built_in_bad_words(BadWordsLanguage::French).into_iter().map(str::to_owned).collect()
     } else { config.blocked_words.clone() };
     let mut failures = 0;
     for spec in build_rule_specs(&words) {
-        let enabled = match spec.key {
+        let enabled = config.enforce && config.enabled("native_rules") && match spec.key {
             AutoModRuleKey::InviteLinkBlocking => config.enabled("anti_invite"),
             AutoModRuleKey::AdultLinksFiltering => config.enabled("adult_link"),
             AutoModRuleKey::BadWordsFilter => config.enabled("bad_words"),
@@ -57,6 +55,11 @@ pub async fn synchronize(
         let current = ctx.http.get_automod_rules(guild).await?;
         // Ne revendiquer que les règles créées par ce bot, même en cas d'homonymie.
         let bot = ctx.cache.current_user().id;
+        for rule in &current {
+            if rule.creator_id == bot && crate::protection::automod::native_rules::rule_name_matches_spec(&rule.name, &spec) {
+                database.remember_managed_rule(guild.get(), rule.id.get())?;
+            }
+        }
         let existing: Vec<ExistingAutoModRule> = current.iter().filter_map(|rule| {
             let trigger = match u8::from(rule.trigger.kind()) {
                 1 => AutoModRuleTriggerType::Keyword,
@@ -76,10 +79,16 @@ pub async fn synchronize(
         }
         for mutation in plan.mutations {
             let result = match mutation {
-                RuleMutation::Create { enabled } => ctx.http.create_automod_rule(guild,
-                    &rule_payload(&spec, enabled, config), Some("FoxSecura : synchronisation AutoMod")).await.map(|_| ()),
+                RuleMutation::Create { enabled } => match ctx.http.create_automod_rule(guild,
+                    &rule_payload(&spec, enabled, config), Some("FoxSecura : synchronisation AutoMod")).await {
+                    Ok(rule) => {
+                        database.remember_managed_rule(guild.get(), rule.id.get())?;
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                },
                 RuleMutation::Update { rule_id, enabled, mode } => {
-                    let payload = if mode == UpdateMode::DisableOnly { json!({"enabled": enabled}) }
+                    let payload = if !enabled || mode == UpdateMode::DisableOnly { json!({"enabled": enabled}) }
                         else {
                             let mut payload = rule_payload(&spec, enabled, config);
                             // Le type du trigger est immuable après création.
