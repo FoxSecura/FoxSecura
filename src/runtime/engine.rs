@@ -32,6 +32,7 @@ pub enum Action {
     },
     NormalizeNickname {
         user: u64,
+        expected: String,
         nickname: String,
     },
     RemoveRole {

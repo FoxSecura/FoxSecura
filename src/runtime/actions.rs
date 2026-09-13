@@ -74,7 +74,9 @@ impl ProtectionRuntime {
                 let current = channel
                     .message(&ctx.http, serenity::MessageId::new(*message))
                     .await?;
-                if current.guild_id != Some(guild) || super::MessageRevision::from(&current) != *expected {
+                if current.guild_id != Some(guild)
+                    || super::MessageRevision::from(&current) != *expected
+                {
                     return Ok(ActionStatus::Skipped);
                 }
                 // Retirer le suivi avant la suppression pour éviter un ghost ping créé par FoxSecura.
@@ -135,8 +137,8 @@ impl ProtectionRuntime {
                     Action::Kick { .. } => {
                         ctx.http.kick_member(guild, member.user.id, reason).await?;
                     }
-                    Action::NormalizeNickname { nickname, .. } => {
-                        if member.display_name() == nickname {
+                    Action::NormalizeNickname { nickname, expected, .. } => {
+                        if member.display_name() != expected || member.display_name() == nickname {
                             return Ok(ActionStatus::Skipped);
                         }
                         ctx.http

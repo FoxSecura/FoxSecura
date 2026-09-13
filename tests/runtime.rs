@@ -384,7 +384,7 @@ fn identity_signals_alert_while_hoisting_and_role_limits_plan_actions() {
     assert!(
         actions
             .iter()
-            .any(|a| matches!(a.action, Action::NormalizeNickname { .. }))
+            .any(|a| matches!(&a.action, Action::NormalizeNickname { expected, .. } if expected == &input.display_name))
     );
     assert!(
         actions
@@ -855,10 +855,22 @@ fn privileged_members_still_obey_bot_and_role_limits() {
     input.bot = true;
     input.role_counts = vec![(30, false, true, 2)];
     let actions = ProtectionEngine::default().member(&config, &input, Duration::ZERO, true);
-    assert!(actions.iter().any(|a| a.action == Action::Kick { user: 20 }));
-    assert!(actions.iter().any(|a| a.action == Action::RemoveRole { user: 20, role: 30 }));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.action == Action::Kick { user: 20 })
+    );
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.action == Action::RemoveRole { user: 20, role: 30 })
+    );
     input.exempt = true;
-    assert!(ProtectionEngine::default().member(&config, &input, Duration::ZERO, true).is_empty());
+    assert!(
+        ProtectionEngine::default()
+            .member(&config, &input, Duration::ZERO, true)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -875,27 +887,58 @@ fn attachment_only_correction_invalidates_pending_deletion() {
 fn failed_slowmode_can_retry_without_losing_original_state() {
     use foxsecura::database::{Database, TemporarySlowmode};
     let db = Database::open_in_memory().unwrap();
-    let mode = TemporarySlowmode { guild: 1, channel: 10, previous_seconds: 2, applied_seconds: 10, pending_seconds: Some(2), restore_at: 120 };
+    let mode = TemporarySlowmode {
+        guild: 1,
+        channel: 10,
+        previous_seconds: 2,
+        applied_seconds: 10,
+        pending_seconds: Some(2),
+        restore_at: 120,
+    };
     assert!(db.save_temporary_slowmode(&mode).unwrap());
     assert!(db.save_temporary_slowmode(&mode).unwrap());
     assert_eq!(db.temporary_slowmodes().unwrap(), vec![mode]);
     db.confirm_temporary_slowmode(10).unwrap();
-    assert!(!db.save_temporary_slowmode(&TemporarySlowmode { guild: 1, channel: 10, previous_seconds: 5, applied_seconds: 30, pending_seconds: Some(5), restore_at: 900 }).unwrap());
+    assert!(
+        !db.save_temporary_slowmode(&TemporarySlowmode {
+            guild: 1,
+            channel: 10,
+            previous_seconds: 5,
+            applied_seconds: 30,
+            pending_seconds: Some(5),
+            restore_at: 900
+        })
+        .unwrap()
+    );
 }
 
 #[test]
 fn renamed_native_rules_can_be_restored_and_disabled_by_persistent_identity() {
     use foxsecura::{database::Database, protection::automod::native_rules::*};
     let db = Database::open_in_memory().unwrap();
-    for (index, spec) in build_rule_specs(&["insulte".into()]).into_iter().enumerate() {
+    for (index, spec) in build_rule_specs(&["insulte"])
+        .into_iter()
+        .enumerate()
+    {
         let id = 50 + index as u64;
         db.remember_managed_rule(1, id, &spec.name).unwrap();
         let names = db.managed_rule_names(1).unwrap();
-        let rule = ExistingAutoModRule::new(id, foxsecura::runtime::automod::reconciliation_name(id, "renamed by staff", true, &names), spec.trigger_type);
+        let rule = ExistingAutoModRule::new(
+            id,
+            foxsecura::runtime::automod::reconciliation_name(id, "renamed by staff", true, &names),
+            spec.trigger_type,
+        );
         for enabled in [true, false] {
             let plan = plan_reconciliation(&[rule.clone()], &spec, enabled, false);
             assert!(plan.mutations.iter().any(|m| matches!(m, RuleMutation::Update { rule_id, enabled: value, .. } if *rule_id == id && *value == enabled)));
         }
         assert!(db.managed_rule_names(2).unwrap().is_empty());
     }
+}
+
+#[test]
+fn documented_configuration_is_valid_and_covers_available_modules() {
+    let config = parse_config(include_str!("../protection.example.json")).unwrap();
+    assert_eq!(config[&123456789012345678].enabled.len(), foxsecura::runtime::config::MODULES.len());
+    assert!(!config[&123456789012345678].enforce);
 }

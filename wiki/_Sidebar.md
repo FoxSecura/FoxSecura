@@ -7,6 +7,8 @@
 - [Installation et démarrage](https://github.com/FoxSecura/FoxSecura/wiki/Getting-Started)
 - [Configuration et commandes](https://github.com/FoxSecura/FoxSecura/wiki/Configuration-and-Commands)
 
+- [Runtime et activation des protections](https://github.com/FoxSecura/FoxSecura/wiki/Runtime-Protection)
+
 ### Technique
 
 - [Architecture](https://github.com/FoxSecura/FoxSecura/wiki/Architecture)

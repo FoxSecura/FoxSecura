@@ -77,7 +77,11 @@ impl From<&poise::serenity_prelude::Message> for MessageRevision {
     fn from(message: &poise::serenity_prelude::Message) -> Self {
         Self {
             content: message.content.clone(),
-            attachments: message.attachments.iter().map(|a| a.filename.clone()).collect(),
+            attachments: message
+                .attachments
+                .iter()
+                .map(|a| a.filename.clone())
+                .collect(),
             mentions: message.mentions.iter().map(|u| u.id.get()).collect(),
             role_mentions: message.mention_roles.iter().map(|r| r.get()).collect(),
             mentions_everyone: message.mention_everyone,

@@ -332,8 +332,8 @@ impl ProtectionRuntime {
                 || member.user.id == ctx.cache.current_user().id
                 || config.exempt(member.user.id.get(), &role_ids),
             profile_exempt: permissions.intersects(
-                    serenity::Permissions::ADMINISTRATOR | serenity::Permissions::MANAGE_GUILD,
-                ),
+                serenity::Permissions::ADMINISTRATOR | serenity::Permissions::MANAGE_GUILD,
+            ),
             display_name: member.display_name().to_owned(),
             username: member.user.name.clone(),
             avatar: member.user.avatar.map(|hash| hash.to_string()),

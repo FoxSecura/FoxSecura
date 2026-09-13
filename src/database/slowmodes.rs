@@ -92,7 +92,12 @@ impl Database {
 }
 
 impl Database {
-    pub fn remember_managed_rule(&self, guild: u64, rule: u64, name: &str) -> Result<(), DatabaseError> {
+    pub fn remember_managed_rule(
+        &self,
+        guild: u64,
+        rule: u64,
+        name: &str,
+    ) -> Result<(), DatabaseError> {
         self.connection()?.execute(
             "INSERT OR IGNORE INTO managed_automod_rules (guild_id, rule_id, rule_name) VALUES (?1, ?2, ?3)",
             params![guild.to_string(), rule.to_string(), name],
@@ -100,10 +105,16 @@ impl Database {
         Ok(())
     }
 
-    pub fn managed_rule_names(&self, guild: u64) -> Result<std::collections::HashMap<u64, String>, DatabaseError> {
+    pub fn managed_rule_names(
+        &self,
+        guild: u64,
+    ) -> Result<std::collections::HashMap<u64, String>, DatabaseError> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT rule_id, rule_name FROM managed_automod_rules WHERE guild_id = ?1")?;
-        let rows = statement.query_map(params![guild.to_string()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let mut statement = connection
+            .prepare("SELECT rule_id, rule_name FROM managed_automod_rules WHERE guild_id = ?1")?;
+        let rows = statement.query_map(params![guild.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
         let mut names = std::collections::HashMap::new();
         for row in rows {
             let (id, name) = row?;

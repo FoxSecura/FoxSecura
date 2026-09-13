@@ -45,9 +45,17 @@ pub fn rule_payload(
     })
 }
 
-pub fn reconciliation_name(id: u64, current: &str, owned: bool, managed: &std::collections::HashMap<u64, String>) -> String {
+pub fn reconciliation_name(
+    id: u64,
+    current: &str,
+    owned: bool,
+    managed: &std::collections::HashMap<u64, String>,
+) -> String {
     if owned {
-        managed.get(&id).cloned().unwrap_or_else(|| current.to_owned())
+        managed
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| current.to_owned())
     } else {
         format!("external:{id}")
     }
@@ -103,7 +111,12 @@ pub async fn synchronize(
                     6 => AutoModRuleTriggerType::MemberProfile,
                     _ => return None,
                 };
-                let name = reconciliation_name(rule.id.get(), &rule.name, rule.creator_id == bot, &managed);
+                let name = reconciliation_name(
+                    rule.id.get(),
+                    &rule.name,
+                    rule.creator_id == bot,
+                    &managed,
+                );
                 Some(ExistingAutoModRule::new(rule.id.get(), name, trigger))
             })
             .collect();

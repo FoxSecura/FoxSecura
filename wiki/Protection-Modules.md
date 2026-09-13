@@ -2,7 +2,7 @@
 
 Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les modules sont regroupés par famille de menace et s'appuient sur des primitives partagées lorsqu'une logique est commune.
 
-> La présence d'un module dans cette page décrit le code actuellement présent dans le dépôt. Elle ne garantit pas que le module soit déjà branché à tous les événements du runtime Discord.
+> Les modules sont raccordés au runtime. Le [guide d’activation](Runtime-Protection.md) indique leurs clés de configuration, événements, actions et limites.
 
 ## Anti-Nuke
 

@@ -6,7 +6,7 @@
 
 **FoxSecura** est un bot Discord de sécurité écrit en Rust. Il vise à protéger les serveurs contre les raids, le spam, les abus de permissions, les destructions de ressources et différents contenus à risque.
 
-> FoxSecura V2 est en développement actif. Plusieurs moteurs de protection sont déjà présents dans le code et testés isolément, tandis que leur intégration complète au runtime Discord progresse par étapes.
+> Les moteurs de protection sont raccordés au runtime Discord. Chaque serveur active explicitement ses modules ; le mode observation est utilisé par défaut. Consultez le [guide de configuration des protections](wiki/Runtime-Protection.md).
 
 ## Fonctionnalités
 
@@ -21,7 +21,7 @@
 
 ## Démarrage rapide
 
-Prérequis : **Rust 1.98.1**, Cargo, un bot Discord et le **Server Members Intent** activé.
+Prérequis : **Rust 1.98.1**, Cargo, un bot Discord et les **Server Members Intent** et **Message Content Intent** activés dans le portail développeur Discord.
 
 ```bash
 git clone https://github.com/FoxSecura/FoxSecura.git
@@ -36,6 +36,8 @@ Sous PowerShell :
 $env:DISCORD_TOKEN="votre_token"
 cargo run
 ```
+
+Pour activer les protections, copiez et adaptez [`protection.example.json`](protection.example.json), puis définissez `FOXSECURA_PROTECTION_CONFIG` vers ce fichier avant le démarrage. `/status` affiche le mode et le nombre de modules configurés.
 
 Ne stockez jamais un token Discord ou une clé d'API dans le dépôt.
 

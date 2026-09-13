@@ -60,7 +60,8 @@ impl ProtectionEngine {
                     Action::Kick { user: member.user },
                 ));
             }
-            if !member.bot && !member.profile_exempt
+            if !member.bot
+                && !member.profile_exempt
                 && config.enabled("anti_new_account")
                 && detect_new_account(AntiNewAccountInput {
                     account_created_at: member.created_at,
@@ -137,6 +138,7 @@ impl ProtectionEngine {
                         "anti_nickname_hoisting",
                         Action::NormalizeNickname {
                             user: member.user,
+                            expected: member.display_name.clone(),
                             nickname: nickname.chars().take(32).collect(),
                         },
                     ));
