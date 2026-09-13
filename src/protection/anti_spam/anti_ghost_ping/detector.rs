@@ -134,18 +134,21 @@ impl AntiGhostPingDetector {
         GhostPingDetectionResult {
             decision: if count >= self.config.mention_threshold {
                 ProtectionDecision::Block
-            } else { ProtectionDecision::Allow },
-            author_id: Some(previous.author_id), channel_id: Some(previous.channel_id),
-            mention_ids: previous.mention_ids, role_mention_ids: previous.role_mention_ids,
-            mentions_everyone: previous.mentions_everyone, mention_count: count,
-            threshold: self.config.mention_threshold, repeat_offense: false,
+            } else {
+                ProtectionDecision::Allow
+            },
+            author_id: Some(previous.author_id),
+            channel_id: Some(previous.channel_id),
+            mention_ids: previous.mention_ids,
+            role_mention_ids: previous.role_mention_ids,
+            mentions_everyone: previous.mentions_everyone,
+            mention_count: count,
+            threshold: self.config.mention_threshold,
+            repeat_offense: false,
         }
     }
 
-    pub fn detect_updated(
-        &mut self,
-        current: GhostPingMessage,
-    ) -> GhostPingDetectionResult {
+    pub fn detect_updated(&mut self, current: GhostPingMessage) -> GhostPingDetectionResult {
         self.sweep_messages(current.timestamp);
         let key = (current.guild_id, current.message_id);
         let previous = self.messages.get(&key).cloned();
@@ -176,7 +179,8 @@ impl AntiGhostPingDetector {
             .filter(|id| !current_roles.contains(id))
             .collect();
         let removed_everyone = previous.mentions_everyone && !current.mentions_everyone;
-        let removed_count = removed_users.len() + removed_roles.len() + usize::from(removed_everyone);
+        let removed_count =
+            removed_users.len() + removed_roles.len() + usize::from(removed_everyone);
 
         if removed_count < self.config.mention_threshold {
             return GhostPingDetectionResult {
@@ -289,13 +293,13 @@ impl AntiGhostPingDetector {
     }
 
     fn sweep_messages(&mut self, now: Duration) {
-        self.messages.retain(|_, message| {
-            now.saturating_sub(message.timestamp) <= self.config.message_ttl
-        });
+        self.messages
+            .retain(|_, message| now.saturating_sub(message.timestamp) <= self.config.message_ttl);
     }
 
     fn ensure_message_capacity(&mut self, key: &(u64, u64)) {
-        if self.messages.contains_key(key) || self.messages.len() < self.config.max_tracked_messages {
+        if self.messages.contains_key(key) || self.messages.len() < self.config.max_tracked_messages
+        {
             return;
         }
 

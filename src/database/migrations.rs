@@ -13,10 +13,11 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial",
-    sql: r#"
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial",
+        sql: r#"
 CREATE TABLE guild_configs (
     guild_id TEXT PRIMARY KEY NOT NULL,
     language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'de')),
@@ -36,10 +37,11 @@ CREATE TABLE guild_log_channels (
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
 );
 "#,
-}, Migration {
-    version: 2,
-    name: "temporary_slowmodes",
-    sql: r#"
+    },
+    Migration {
+        version: 2,
+        name: "temporary_slowmodes",
+        sql: r#"
 CREATE TABLE temporary_slowmodes (
     guild_id TEXT NOT NULL,
     channel_id TEXT PRIMARY KEY NOT NULL,
@@ -50,10 +52,12 @@ CREATE TABLE temporary_slowmodes (
 );
 CREATE TABLE managed_automod_rules (
     guild_id TEXT NOT NULL,
-    rule_id TEXT PRIMARY KEY NOT NULL
+    rule_id TEXT PRIMARY KEY NOT NULL,
+    rule_name TEXT NOT NULL
 );
 "#,
-}];
+    },
+];
 
 pub(crate) fn run_migrations(connection: &mut Connection) -> Result<(), DatabaseError> {
     connection.execute_batch(

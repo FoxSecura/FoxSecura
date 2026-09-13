@@ -15,6 +15,6 @@ mod slowmodes;
 
 pub use slowmodes::TemporarySlowmode;
 
-pub use client::{Database, DatabaseError, DEFAULT_DATABASE_PATH};
+pub use client::{DEFAULT_DATABASE_PATH, Database, DatabaseError};
 pub use migrations::LATEST_SCHEMA_VERSION;
 pub use models::{GuildConfig, GuildLogChannel};

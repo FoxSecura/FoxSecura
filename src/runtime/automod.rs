@@ -1,17 +1,22 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use poise::serenity_prelude as serenity;
-use serde_json::{Value, json};
+use super::{Error, GuildProtectionConfig};
 use crate::protection::automod::{
     bad_words::{BadWordsLanguage, built_in_bad_words},
-    native_rules::{AutoModRuleKey, AutoModRuleSpec, AutoModRuleTriggerType,
-        AutoModRuleTriggerMetadata, ExistingAutoModRule, RuleMutation, UpdateMode,
-        build_rule_specs, plan_reconciliation},
+    native_rules::{
+        AutoModRuleKey, AutoModRuleSpec, AutoModRuleTriggerMetadata, AutoModRuleTriggerType,
+        ExistingAutoModRule, RuleMutation, UpdateMode, build_rule_specs, plan_reconciliation,
+    },
 };
-use super::{Error, GuildProtectionConfig};
+use poise::serenity_prelude as serenity;
+use serde_json::{Value, json};
 
-pub fn rule_payload(spec: &AutoModRuleSpec, enabled: bool, config: &GuildProtectionConfig) -> Value {
+pub fn rule_payload(
+    spec: &AutoModRuleSpec,
+    enabled: bool,
+    config: &GuildProtectionConfig,
+) -> Value {
     let trigger_type = match spec.trigger_type {
         AutoModRuleTriggerType::Keyword => 1,
         AutoModRuleTriggerType::Spam => 3,
@@ -23,8 +28,12 @@ pub fn rule_payload(spec: &AutoModRuleSpec, enabled: bool, config: &GuildProtect
         AutoModRuleTriggerMetadata::None => json!({}),
         AutoModRuleTriggerMetadata::KeywordFilter(words) => json!({"keyword_filter": words}),
         AutoModRuleTriggerMetadata::KeywordPreset(_) => json!({"presets": [2]}),
-        AutoModRuleTriggerMetadata::MentionSpam { total_limit, raid_protection_enabled } =>
-            json!({"mention_total_limit": total_limit, "mention_raid_protection_enabled": raid_protection_enabled}),
+        AutoModRuleTriggerMetadata::MentionSpam {
+            total_limit,
+            raid_protection_enabled,
+        } => {
+            json!({"mention_total_limit": total_limit, "mention_raid_protection_enabled": raid_protection_enabled})
+        }
     };
     let profile = spec.trigger_type == AutoModRuleTriggerType::MemberProfile;
     json!({
@@ -36,70 +45,124 @@ pub fn rule_payload(spec: &AutoModRuleSpec, enabled: bool, config: &GuildProtect
     })
 }
 
+pub fn reconciliation_name(id: u64, current: &str, owned: bool, managed: &std::collections::HashMap<u64, String>) -> String {
+    if owned {
+        managed.get(&id).cloned().unwrap_or_else(|| current.to_owned())
+    } else {
+        format!("external:{id}")
+    }
+}
+
 pub async fn synchronize(
-    ctx: &serenity::Context, guild: serenity::GuildId, config: &GuildProtectionConfig, database: &crate::database::Database,
+    ctx: &serenity::Context,
+    guild: serenity::GuildId,
+    config: &GuildProtectionConfig,
+    database: &crate::database::Database,
 ) -> Result<(), Error> {
     let words = if config.blocked_words.is_empty() {
-        built_in_bad_words(BadWordsLanguage::French).into_iter().map(str::to_owned).collect()
-    } else { config.blocked_words.clone() };
+        built_in_bad_words(BadWordsLanguage::French)
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    } else {
+        config.blocked_words.clone()
+    };
     let mut failures = 0;
     for spec in build_rule_specs(&words) {
-        let enabled = config.enforce && config.enabled("native_rules") && match spec.key {
-            AutoModRuleKey::InviteLinkBlocking => config.enabled("anti_invite"),
-            AutoModRuleKey::AdultLinksFiltering => config.enabled("adult_link"),
-            AutoModRuleKey::BadWordsFilter => config.enabled("bad_words"),
-            AutoModRuleKey::MentionSpamBlocking => config.enabled("anti_mass_mention"),
-            AutoModRuleKey::GenericSpamBlocking => config.enabled("message_flood"),
-            AutoModRuleKey::MemberProfileFilter => config.enabled("member_profile"),
-        };
+        let enabled = config.enforce
+            && config.enabled("native_rules")
+            && match spec.key {
+                AutoModRuleKey::InviteLinkBlocking => config.enabled("anti_invite"),
+                AutoModRuleKey::AdultLinksFiltering => config.enabled("adult_link"),
+                AutoModRuleKey::BadWordsFilter => config.enabled("bad_words"),
+                AutoModRuleKey::MentionSpamBlocking => config.enabled("anti_mass_mention"),
+                AutoModRuleKey::GenericSpamBlocking => config.enabled("message_flood"),
+                AutoModRuleKey::MemberProfileFilter => config.enabled("member_profile"),
+            };
         let current = ctx.http.get_automod_rules(guild).await?;
         // Ne revendiquer que les règles créées par ce bot, même en cas d'homonymie.
         let bot = ctx.cache.current_user().id;
         for rule in &current {
-            if rule.creator_id == bot && crate::protection::automod::native_rules::rule_name_matches_spec(&rule.name, &spec) {
-                database.remember_managed_rule(guild.get(), rule.id.get())?;
+            if rule.creator_id == bot
+                && crate::protection::automod::native_rules::rule_name_matches_spec(
+                    &rule.name, &spec,
+                )
+            {
+                database.remember_managed_rule(guild.get(), rule.id.get(), &spec.name)?;
             }
         }
-        let existing: Vec<ExistingAutoModRule> = current.iter().filter_map(|rule| {
-            let trigger = match u8::from(rule.trigger.kind()) {
-                1 => AutoModRuleTriggerType::Keyword,
-                3 => AutoModRuleTriggerType::Spam,
-                4 => AutoModRuleTriggerType::KeywordPreset,
-                5 => AutoModRuleTriggerType::MentionSpam,
-                6 => AutoModRuleTriggerType::MemberProfile,
-                _ => return None,
-            };
-            let name = if rule.creator_id == bot { rule.name.clone() }
-                else { format!("external:{}", rule.id) };
-            Some(ExistingAutoModRule::new(rule.id.get(), name, trigger))
-        }).collect();
+        let managed = database.managed_rule_names(guild.get())?;
+        let existing: Vec<ExistingAutoModRule> = current
+            .iter()
+            .filter_map(|rule| {
+                let trigger = match u8::from(rule.trigger.kind()) {
+                    1 => AutoModRuleTriggerType::Keyword,
+                    3 => AutoModRuleTriggerType::Spam,
+                    4 => AutoModRuleTriggerType::KeywordPreset,
+                    5 => AutoModRuleTriggerType::MentionSpam,
+                    6 => AutoModRuleTriggerType::MemberProfile,
+                    _ => return None,
+                };
+                let name = reconciliation_name(rule.id.get(), &rule.name, rule.creator_id == bot, &managed);
+                Some(ExistingAutoModRule::new(rule.id.get(), name, trigger))
+            })
+            .collect();
         let plan = plan_reconciliation(&existing, &spec, enabled, false);
         if let Some(reason) = plan.skipped_reason {
-            eprintln!("FoxSecura : règle {:?} non synchronisée ({reason:?})", spec.key);
+            eprintln!(
+                "FoxSecura : règle {:?} non synchronisée ({reason:?})",
+                spec.key
+            );
         }
         for mutation in plan.mutations {
             let result = match mutation {
-                RuleMutation::Create { enabled } => match ctx.http.create_automod_rule(guild,
-                    &rule_payload(&spec, enabled, config), Some("FoxSecura : synchronisation AutoMod")).await {
+                RuleMutation::Create { enabled } => match ctx
+                    .http
+                    .create_automod_rule(
+                        guild,
+                        &rule_payload(&spec, enabled, config),
+                        Some("FoxSecura : synchronisation AutoMod"),
+                    )
+                    .await
+                {
                     Ok(rule) => {
-                        database.remember_managed_rule(guild.get(), rule.id.get())?;
+                        database.remember_managed_rule(guild.get(), rule.id.get(), &spec.name)?;
                         Ok(())
                     }
                     Err(error) => Err(error),
                 },
-                RuleMutation::Update { rule_id, enabled, mode } => {
-                    let payload = if !enabled || mode == UpdateMode::DisableOnly { json!({"enabled": enabled}) }
-                        else {
-                            let mut payload = rule_payload(&spec, enabled, config);
-                            // Le type du trigger est immuable après création.
-                            payload.as_object_mut().unwrap().remove("trigger_type");
-                            payload
-                        };
-                    ctx.http.edit_automod_rule(guild, serenity::RuleId::new(rule_id), &payload,
-                        Some("FoxSecura : synchronisation AutoMod")).await.map(|_| ())
+                RuleMutation::Update {
+                    rule_id,
+                    enabled,
+                    mode,
+                } => {
+                    let payload = if !enabled || mode == UpdateMode::DisableOnly {
+                        json!({"enabled": enabled})
+                    } else {
+                        let mut payload = rule_payload(&spec, enabled, config);
+                        // Le type du trigger est immuable après création.
+                        payload.as_object_mut().unwrap().remove("trigger_type");
+                        payload
+                    };
+                    ctx.http
+                        .edit_automod_rule(
+                            guild,
+                            serenity::RuleId::new(rule_id),
+                            &payload,
+                            Some("FoxSecura : synchronisation AutoMod"),
+                        )
+                        .await
+                        .map(|_| ())
                 }
-                RuleMutation::Delete { rule_id } => ctx.http.delete_automod_rule(
-                    guild, serenity::RuleId::new(rule_id), Some("FoxSecura : synchronisation AutoMod")).await,
+                RuleMutation::Delete { rule_id } => {
+                    ctx.http
+                        .delete_automod_rule(
+                            guild,
+                            serenity::RuleId::new(rule_id),
+                            Some("FoxSecura : synchronisation AutoMod"),
+                        )
+                        .await
+                }
             };
             if result.is_err() {
                 failures += 1;
@@ -109,5 +172,9 @@ pub async fn synchronize(
             }
         }
     }
-    if failures == 0 { Ok(()) } else { Err("Synchronisation AutoMod partielle".into()) }
+    if failures == 0 {
+        Ok(())
+    } else {
+        Err("Synchronisation AutoMod partielle".into())
+    }
 }

@@ -15,7 +15,11 @@ pub async fn handle(
         }
     }
 
-    framework.user_data.protection.handle(framework.serenity_context, event).await?;
+    framework
+        .user_data
+        .protection
+        .handle(framework.serenity_context, event)
+        .await?;
 
     Ok(())
 }

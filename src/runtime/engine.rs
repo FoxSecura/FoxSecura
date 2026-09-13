@@ -16,15 +16,40 @@ use crate::protection::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Alert,
-    DeleteMessage { channel: u64, message: u64, expected_content: String },
-    Timeout { user: u64 },
-    Kick { user: u64 },
-    RemoveWebhook { webhook: u64 },
-    NormalizeNickname { user: u64, nickname: String },
-    RemoveRole { user: u64, role: u64 },
-    ContainExecutor { user: u64 },
-    RollbackPermissions { role: u64, old: u64, expected: u64 },
-    Slowmode { channel: u64, seconds: u16 },
+    DeleteMessage {
+        channel: u64,
+        message: u64,
+        expected: super::MessageRevision,
+    },
+    Timeout {
+        user: u64,
+    },
+    Kick {
+        user: u64,
+    },
+    RemoveWebhook {
+        webhook: u64,
+    },
+    NormalizeNickname {
+        user: u64,
+        nickname: String,
+    },
+    RemoveRole {
+        user: u64,
+        role: u64,
+    },
+    ContainExecutor {
+        user: u64,
+    },
+    RollbackPermissions {
+        role: u64,
+        old: u64,
+        expected: u64,
+    },
+    Slowmode {
+        channel: u64,
+        seconds: u16,
+    },
     Lockdown,
     SyncAutoMod,
 }
@@ -57,13 +82,19 @@ pub struct ProtectionEngine {
 impl ProtectionEngine {
     /// Déduplication bornée des événements Discord ; les éditions restent indépendantes.
     pub(crate) fn admit(&mut self, guild: u64, id: u64, kind: &'static str, now: Duration) -> bool {
-        self.seen.retain(|_, at| now.saturating_sub(*at) < Duration::from_secs(600));
+        self.seen
+            .retain(|_, at| now.saturating_sub(*at) < Duration::from_secs(600));
         let key = (guild, id, kind);
         if self.seen.contains_key(&key) {
             return false;
         }
         if self.seen.len() >= 10_000 {
-            if let Some(oldest) = self.seen.iter().min_by_key(|(_, at)| *at).map(|(key, _)| *key) {
+            if let Some(oldest) = self
+                .seen
+                .iter()
+                .min_by_key(|(_, at)| *at)
+                .map(|(key, _)| *key)
+            {
                 self.seen.remove(&oldest);
             }
         }

@@ -39,7 +39,8 @@ impl App {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                     println!("FoxSecura connecté en tant que {}", ready.user.name);
-                    let protection = std::sync::Arc::new(foxsecura::runtime::ProtectionRuntime::from_env()?);
+                    let protection =
+                        std::sync::Arc::new(foxsecura::runtime::ProtectionRuntime::from_env()?);
                     protection.start_maintenance(ctx.clone());
                     Ok(AppData { protection })
                 })
