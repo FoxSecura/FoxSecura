@@ -4,32 +4,13 @@ FoxSecura privilégie une architecture où les détecteurs et règles de sécuri
 
 ## Vue d'ensemble
 
-```text
-Discord Gateway
-      │
-      ▼
-src/app ─────────► src/commands
-      │
-      └──────────► événements / composants
-
-src/lib.rs
-  ├── database
-  ├── i18n
-  ├── logs
-  └── protection
-       ├── shared
-       ├── anti_nuke
-       ├── anti_raid
-       ├── anti_spam
-       ├── automod
-       └── ai_moderation
-```
+Le Gateway transmet les événements à `src/app`. Les composants vont vers `src/commands` ; les événements de sécurité vont vers `src/runtime`, qui construit les snapshots pour `src/protection`, planifie les actions, les applique via Serenity et produit les logs. SQLite conserve la configuration générale et les états nécessaires à la restauration.
 
 ## `src/app`
 
-`App` possède le token Discord et les `GatewayIntents`. `App::from_env()` récupère `DISCORD_TOKEN`; `App::run()` construit Poise puis Serenity. Les commandes sont fournies par `crate::commands::all()` et l'event handler central passe aujourd'hui principalement les interactions de composants au module de commandes.
+`App` possède le token Discord et les `GatewayIntents`. `App::from_env()` récupère `DISCORD_TOKEN`; `App::run()` construit Poise puis Serenity. Les commandes sont fournies par `crate::commands::all()` et l'event handler central route les interactions de composants et les événements messages, membres, audit et AutoMod.
 
-`AppData` est volontairement léger à ce stade. Cette surface pourra accueillir progressivement les services réellement nécessaires au runtime sans faire dépendre les moteurs purs de l'état global Discord.
+`AppData` partage un `Arc<ProtectionRuntime>` : configuration par serveur, détecteurs en mémoire, client SQLite, admission IA et sérialisation des actions. Les verrous des détecteurs sont libérés avant les appels réseau. Une maintenance restaure les ralentissements expirés toutes les 30 secondes, y compris après redémarrage.
 
 ## `src/commands`
 
@@ -41,7 +22,7 @@ La commande ne doit pas être confondue avec un moteur de persistance complet : 
 
 La couche de données est divisée en client, migrations, modèles et repository. Les identifiants Discord sont stockés sous forme textuelle dans SQLite puis validés lors de la lecture. Cette approche évite les problèmes de plage d'entiers tout en conservant les snowflakes comme `u64` dans le domaine Rust.
 
-La version de schéma actuelle est suivie dans `schema_migrations`. La migration initiale crée la configuration de guild et les destinations de logs.
+La version de schéma actuelle est suivie dans `schema_migrations`. La migration initiale crée la configuration de guild et les destinations de logs. La migration 2 conserve les ralentissements temporaires et l’identité des règles AutoMod gérées, y compris leur nom canonique.
 
 ## `src/i18n`
 
@@ -73,10 +54,4 @@ Cette séparation permet de tester une décision sans appeler Discord et de test
 
 ## État d'intégration
 
-Le code contient déjà de nombreux détecteurs et tests. En revanche, le handler Discord exécutable ne relaie pas encore tous les événements vers toutes les protections. Toute documentation ou PR doit donc distinguer clairement :
-
-- module implémenté ;
-- module testé ;
-- module branché au runtime ;
-- module configurable par guild ;
-- module considéré stable pour production.
+Les 43 clés de modules disponibles sont raccordées aux événements pertinents. La configuration des protections est chargée depuis un fichier JSON au démarrage ; `/config` reste un tableau de bord sans modification de ces réglages. Voir [Runtime et activation](Runtime-Protection.md) pour les actions, exemptions et limites. Les tests valident les décisions et la persistance sans connecter un bot à Discord.

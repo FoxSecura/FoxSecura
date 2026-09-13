@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 1;
+pub const LATEST_SCHEMA_VERSION: i64 = 2;
 
 struct Migration {
     version: i64,
@@ -13,10 +13,11 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial",
-    sql: r#"
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial",
+        sql: r#"
 CREATE TABLE guild_configs (
     guild_id TEXT PRIMARY KEY NOT NULL,
     language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'de')),
@@ -36,7 +37,27 @@ CREATE TABLE guild_log_channels (
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
 );
 "#,
-}];
+    },
+    Migration {
+        version: 2,
+        name: "temporary_slowmodes",
+        sql: r#"
+CREATE TABLE temporary_slowmodes (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT PRIMARY KEY NOT NULL,
+    previous_seconds INTEGER NOT NULL,
+    applied_seconds INTEGER NOT NULL,
+    pending_seconds INTEGER,
+    restore_at INTEGER NOT NULL
+);
+CREATE TABLE managed_automod_rules (
+    guild_id TEXT NOT NULL,
+    rule_id TEXT PRIMARY KEY NOT NULL,
+    rule_name TEXT NOT NULL
+);
+"#,
+    },
+];
 
 pub(crate) fn run_migrations(connection: &mut Connection) -> Result<(), DatabaseError> {
     connection.execute_batch(

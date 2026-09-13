@@ -1,0 +1,62 @@
+{
+  "123456789012345678": {
+    "enforce": false,
+    "enabled": [
+      "anti_everyone",
+      "anti_ghost_ping",
+      "anti_mass_mention",
+      "anti_ping_owner",
+      "anti_scam",
+      "anti_spam_ping",
+      "attachment_filter",
+      "auto_slowmode",
+      "invisible_char_filter",
+      "malicious_link",
+      "message_flood",
+      "anti_bot",
+      "anti_double_account",
+      "anti_impersonation",
+      "anti_new_account",
+      "anti_nickname_hoisting",
+      "honeypot",
+      "join_burst",
+      "webhook_message",
+      "webhook_watch",
+      "anti_mass_ban",
+      "anti_mass_kick",
+      "anti_mass_timeout",
+      "anti_mass_unban",
+      "anti_channel_delete",
+      "anti_role_delete",
+      "anti_mass_channel_create",
+      "anti_mass_role_create",
+      "anti_mass_role_grant",
+      "anti_emoji_sticker_nuke",
+      "anti_permissions",
+      "anti_external_application",
+      "anti_server_edit",
+      "anti_vanity_change",
+      "automod_rule_guard",
+      "limit_role",
+      "panic_mode",
+      "adult_link",
+      "anti_invite",
+      "bad_words",
+      "member_profile",
+      "native_rules",
+      "ai_moderation"
+    ],
+    "exempt_users": [],
+    "exempt_roles": [],
+    "ignored_channels": [],
+    "log_channel": "123456789012345679",
+    "honeypot_channel": "123456789012345680",
+    "limited_roles": {
+      "123456789012345681": 2
+    },
+    "protected_names": [
+      "Administration"
+    ],
+    "minimum_account_age_days": 7
+  }
+}

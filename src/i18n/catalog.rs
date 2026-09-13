@@ -267,6 +267,21 @@ catalog! {
         fr: "Moteurs de protection chargés.",
         de: "Schutzmodule geladen."
     },
+    StatusProtectionEnforcing => {
+        en: "Configured modules — enforcement requested",
+        fr: "Modules configurés — actions automatiques demandées",
+        de: "Konfigurierte Module — automatische Aktionen angefordert"
+    },
+    StatusProtectionObserving => {
+        en: "Configured modules — observation",
+        fr: "Modules configurés — observation",
+        de: "Konfigurierte Module — Beobachtung"
+    },
+    StatusProtectionInactive => {
+        en: "No protection configured",
+        fr: "Aucune protection configurée",
+        de: "Kein Schutz konfiguriert"
+    },
     StatusVersion => {
         en: "Version",
         fr: "Version",

@@ -10,7 +10,7 @@ Le registre de commandes contient actuellement :
 | --- | --- |
 | `/config` | ouvre le tableau de bord de configuration dans une réponse éphémère |
 | `/help` | présente l'aide disponible |
-| `/status` | expose l'état général prévu par le module de statut |
+| `/status` | affiche le mode de protection, le nombre de modules configurés et la version |
 
 Les commandes sont enregistrées globalement au démarrage du framework.
 
@@ -34,17 +34,9 @@ Le composant utilise l'identifiant interne `foxsecura:config:category`. Lorsqu'u
 
 ## Important : interface et configuration persistée
 
-Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 1 stocke pour l'instant la langue d'une guild et les salons associés aux types de logs.
+Les protections se règlent dans le fichier JSON désigné par `FOXSECURA_PROTECTION_CONFIG`, chargé au démarrage. `/config` reste un tableau de bord ; il ne modifie pas ces réglages. `/status` affiche la configuration demandée, sans garantir que Discord autorise toutes les actions. Voir le [guide complet](Runtime-Protection.md).
 
-Cela signifie qu'une catégorie visible dans `/config` peut représenter une **surface d'interface prévue** avant que son stockage et son exécution soient entièrement branchés. Les futures PR doivent éviter de présenter un réglage comme actif tant que les trois couches suivantes ne sont pas reliées :
-
-```text
-UI de configuration
-      ↓
-validation + persistance
-      ↓
-runtime / moteur de protection
-```
+SQLite, en version de schéma 2, conserve la langue, les salons de logs, les ralentissements temporaires et les identifiants des règles AutoMod gérées.
 
 ## Langue
 
@@ -64,7 +56,12 @@ La configuration par défaut active :
 
 - `GUILDS` ;
 - `GUILD_MODERATION` ;
-- `GUILD_MEMBERS`.
+- `GUILD_MEMBERS` ;
+- `GUILD_MESSAGES` et `MESSAGE_CONTENT` ;
+- `GUILD_WEBHOOKS` ;
+- `AUTO_MODERATION_CONFIGURATION` et `AUTO_MODERATION_EXECUTION`.
+
+Activez Server Members Intent et Message Content Intent dans le portail développeur.
 
 Chaque nouvel intent privilégié doit être justifié. FoxSecura ne doit pas demander plus de données Discord que ce qui est nécessaire aux fonctionnalités réellement activées.
 

@@ -6,7 +6,7 @@ Cette page décrit l'environnement minimal pour développer ou lancer FoxSecura 
 
 Vous devez disposer de Git, de Cargo et de **Rust 1.98.1**. Le dépôt contient également `rust-toolchain.toml` et `Cargo.toml` fixe `rust-version = "1.98.1"`.
 
-Côté Discord, créez une application et un bot depuis le Discord Developer Portal. Le runtime actuel demande les intents `GUILDS`, `GUILD_MODERATION` et `GUILD_MEMBERS`; le **Server Members Intent** doit donc être activé pour le bot.
+Côté Discord, créez une application et un bot depuis le Discord Developer Portal. Activez **Server Members Intent** et **Message Content Intent**. Les [intents et permissions du runtime](Runtime-Protection.md) couvrent les messages, membres, audit, webhooks et AutoMod.
 
 ## Cloner et vérifier le projet
 
@@ -55,11 +55,11 @@ data/foxsecura.sqlite3
 
 Lorsqu'une `Database` est ouverte, le parent du fichier est créé si nécessaire, SQLite active les clés étrangères, utilise `synchronous = NORMAL`, tente le mode WAL et applique les migrations versionnées.
 
-Le `AppData` du runtime actuel reste minimal. Il ne faut donc pas supposer que chaque service de bibliothèque est déjà instancié automatiquement au démarrage du bot.
+`AppData` initialise le runtime et sa base SQLite au démarrage. `FOXSECURA_DATABASE_PATH` remplace le chemin par défaut. Pour les protections, adaptez `protection.example.json`, définissez `FOXSECURA_PROTECTION_CONFIG` vers ce fichier puis redémarrez. Voir [Runtime et activation](Runtime-Protection.md).
 
 ## Modération IA
 
-Le dépôt contient une architecture de modération IA avec fournisseur OpenAI, taxonomie, politique locale, préfiltrage, timeout et règles de décision. Cette couche doit être considérée comme un moteur séparé dont l'activation et le branchement opérationnel doivent être explicitement configurés.
+Le dépôt contient une architecture de modération IA avec fournisseur OpenAI, taxonomie, politique locale, préfiltrage, timeout et règles de décision. Le runtime l’utilise pour les serveurs ayant activé `ai_moderation`, si `OPENAI_API_KEY` est présente. Le mode observation reste le défaut.
 
 Ne placez jamais une clé fournisseur dans le code, un fichier Markdown, un log ou un commit. Utilisez uniquement un mécanisme de secret adapté au futur environnement de déploiement.
 

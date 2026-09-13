@@ -11,6 +11,20 @@ use foxsecura::i18n::{Language, TextKey, text};
 #[poise::command(slash_command, guild_only)]
 pub async fn status(ctx: Context<'_>) -> Result<(), Error> {
     let language = Language::resolve(ctx.locale());
+    let configuration = ctx
+        .guild_id()
+        .and_then(|guild| ctx.data().protection.configuration(guild.get()));
+    let (mode, count) = match configuration {
+        Some(config) if !config.enabled.is_empty() => (
+            if config.enforce {
+                TextKey::StatusProtectionEnforcing
+            } else {
+                TextKey::StatusProtectionObserving
+            },
+            config.enabled.len(),
+        ),
+        _ => (TextKey::StatusProtectionInactive, 0),
+    };
     let embed = serenity::CreateEmbed::new()
         .title(text(language, TextKey::StatusTitle))
         .description(text(language, TextKey::StatusDescription))
@@ -24,7 +38,11 @@ pub async fn status(ctx: Context<'_>) -> Result<(), Error> {
             text(language, TextKey::StatusConnected),
             true,
         )
-        .field(text(language, TextKey::StatusFramework), "Poise + Serenity", true)
+        .field(
+            text(language, TextKey::StatusFramework),
+            "Poise + Serenity",
+            true,
+        )
         .field(
             text(language, TextKey::StatusCommands),
             "`/config` `/help` `/status`",
@@ -32,7 +50,7 @@ pub async fn status(ctx: Context<'_>) -> Result<(), Error> {
         )
         .field(
             text(language, TextKey::StatusSecurityModules),
-            text(language, TextKey::StatusSecurityModulesReady),
+            format!("{} ({count})", text(language, mode)),
             false,
         )
         .field(

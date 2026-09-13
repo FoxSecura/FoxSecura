@@ -4,6 +4,32 @@ Toutes les modifications importantes de FoxSecura sont documentées dans ce fich
 
 Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la première base Rust complète du projet, construite le 7 septembre 2026.
 
+## [0.1.1] - 2026-09-13
+
+### Raccordement des protections
+
+- Branchement des 43 clés de protection disponibles aux événements Discord : messages et modifications/suppressions, arrivées et profils, journal d'audit et AutoMod.
+- Ajout du runtime partagé, des snapshots de détection, de la planification des actions et de leur journalisation.
+- Configuration explicite par serveur via `FOXSECURA_PROTECTION_CONFIG`, avec validation stricte et mode observation par défaut ; ajout de `protection.example.json`.
+- Raccordement Anti-Spam, Anti-Raid et Anti-Nuke : filtres de messages, mentions, rafales, webhooks, profils, quotas de rôles, confinement et garde des permissions.
+- Synchronisation des règles AutoMod natives, gestion des conflits et suivi persistant des règles créées par FoxSecura, y compris après renommage.
+- Raccordement du fournisseur de modération IA existant avec activation explicite, admission, cache, délai maximal et repli sans sanction en cas d'échec.
+- Ajout des intents messages, contenu, webhooks et AutoMod ; documentation des intents privilégiés et permissions nécessaires.
+
+### Fiabilité et exploitation
+
+- Revalidation des messages et pseudos avant modification pour respecter les corrections récentes ; distinction entre suppressions de messages non attribuées et récidives de ghost ping par modification.
+- Vérification des exemptions, permissions et hiérarchie avant les actions sur les membres ; les privilèges administratifs ne contournent pas l'anti-nuke, l'anti-bot ou les quotas de rôles.
+- Migration SQLite 2 : ralentissements temporaires persistants, reprise après redémarrage ou échec d'appel, escalade sans perte de la valeur initiale et restauration respectant les modifications manuelles.
+- `/status` affiche le mode demandé et le nombre de modules configurés. `/config` reste un tableau de bord ; les réglages des protections sont chargés depuis le fichier au démarrage.
+- Ajout du guide de configuration runtime et mise à jour de la documentation d'architecture, d'installation et de persistance.
+
+### Tests
+
+- Ajout de 28 tests de raccordement : activation et isolation, seuils et fenêtres temporelles, exemptions, événements répétés, modifications, plans d'action, AutoMod, persistance et fournisseur IA simulé.
+- Validation de `cargo check --all-targets` et `cargo test --all-targets` sous Rust 1.98.1 : 199 tests réussis.
+- Contrôle `rustfmt` ciblé sur les fichiers Rust modifiés dans la CI. Les essais n'effectuent aucune action sur un serveur Discord réel.
+
 ## [0.1.0] - 2026-09-07
 
 ### Fondation du projet

@@ -27,6 +27,11 @@ jobs:
       - name: Install Rust 1.98.1
         run: rustup toolchain install 1.98.1 --profile minimal
 
+      - name: Check formatting of modified Rust files
+        run: |
+          rustup component add rustfmt --toolchain 1.98.1
+          rustfmt +1.98.1 --check --edition 2024 --config skip_children=true src/commands/status.rs src/i18n/catalog.rs src/lib.rs src/app/mod.rs src/app/data.rs src/app/events.rs src/app/intents.rs src/database/mod.rs src/database/migrations.rs src/database/slowmodes.rs src/protection/anti_spam/anti_ghost_ping/detector.rs tests/runtime.rs src/runtime/members.rs src/runtime/mod.rs src/runtime/audit.rs src/runtime/config.rs src/runtime/messages.rs src/runtime/actions.rs src/runtime/ai.rs src/runtime/automod.rs src/runtime/engine.rs
+
       - name: Cargo check
         run: cargo +1.98.1 check --all-targets
 
