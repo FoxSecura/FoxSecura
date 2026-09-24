@@ -4,7 +4,7 @@
 mod data;
 mod events;
 mod intents;
-mod pipeline;
+pub(crate) mod pipeline;
 
 use std::sync::Arc;
 

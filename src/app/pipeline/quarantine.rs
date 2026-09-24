@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Quarantaine au runtime : verrou du rôle sur les salons, libération et
-//! maintenance des libérations en attente.
+//! Quarantaine au runtime : création et validation du rôle, verrou du rôle
+//! sur les salons, mise en quarantaine, libération et maintenance des
+//! libérations en attente.
 //!
 //! Les décisions sont dans `foxsecura::protection::quarantine` ; ce module
 //! relève l'état du cache (verrou du cache relâché avant tout `.await`) et
@@ -23,11 +24,12 @@ use std::time::Duration;
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::quarantine::{
     BotRoleStanding, ChannelFacts, DiscordFailure, MemberChannel, MemberLocks, MemberPresence,
-    Overwrite, OverwriteBits, OverwriteTarget, QUARANTINE_AUDIT_LABEL, QuarantineEffects,
-    QuarantineFacts, QuarantineOutcome, QuarantineRequest, QuarantineRoleLookup, RecordedOverwrite,
-    ReleaseEffects, ReleaseFacts, ReleaseOutcome, RoleFacts, StoreError, UNKNOWN_MEMBER,
-    is_lockable, lockable_channels, quarantine_member, quarantine_role_removed, release_member,
-    role_lock_overwrite, should_resume_pending,
+    Overwrite, OverwriteBits, OverwriteTarget, QUARANTINE_AUDIT_LABEL, QUARANTINE_ROLE_NAME,
+    QuarantineEffects, QuarantineFacts, QuarantineOutcome, QuarantineRequest, QuarantineRoleLookup,
+    QuarantineRoleRefusal, RecordedOverwrite, ReleaseEffects, ReleaseFacts, ReleaseOutcome,
+    RoleFacts, StoreError, UNKNOWN_MEMBER, is_lockable, lockable_channels, quarantine_member,
+    quarantine_role_position, quarantine_role_removed, release_member, role_lock_overwrite,
+    should_resume_pending, validate_quarantine_role,
 };
 use foxsecura::protection::shared::{SanctionKind, SanctionOutcome, audit_reason};
 use poise::serenity_prelude as serenity;
@@ -187,6 +189,191 @@ fn channel_facts(guild: &serenity::Guild) -> Vec<ChannelFacts> {
     guild.channels.values().map(convert_channel).collect()
 }
 
+/// Bilan d'une pose du verrou du rôle.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RoleLockSummary {
+    pub locked: usize,
+    pub unchanged: usize,
+    pub failed: usize,
+}
+
+/// Pose le verrou du rôle de quarantaine sur tous les salons verrouillables.
+pub async fn apply_role_lock(
+    ctx: &serenity::Context,
+    guild_id: u64,
+    role_id: u64,
+) -> RoleLockSummary {
+    let planned = {
+        let Some(guild) = ctx.cache.guild(serenity::GuildId::new(guild_id)) else {
+            return RoleLockSummary::default();
+        };
+        let channels = channel_facts(&guild);
+        lockable_channels(&channels)
+            .into_iter()
+            .filter_map(|id| channels.iter().find(|channel| channel.id == id))
+            .map(|channel| {
+                (
+                    channel.id,
+                    role_lock_overwrite(channel.overwrite(OverwriteTarget::Role(role_id))),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let reason = role_lock_reason();
+    let mut summary = RoleLockSummary::default();
+    for (channel_id, overwrite) in planned {
+        let Some(overwrite) = overwrite else {
+            summary.unchanged += 1;
+            continue;
+        };
+        match put_overwrite(
+            ctx,
+            channel_id,
+            OverwriteTarget::Role(role_id),
+            overwrite,
+            &reason,
+        )
+        .await
+        {
+            Ok(()) => summary.locked += 1,
+            Err(error) => {
+                summary.failed += 1;
+                eprintln!(
+                    "[quarantine] verrou du rôle {role_id} impossible sur le salon {channel_id} : {}",
+                    error.details
+                );
+            }
+        }
+    }
+
+    println!(
+        "[quarantine] verrou du rôle {role_id} sur la guilde {guild_id} : {} posés, {} inchangés, {} échecs",
+        summary.locked, summary.unchanged, summary.failed
+    );
+    summary
+}
+
+/// Pose le verrou du rôle en arrière-plan : sur un gros serveur, un appel
+/// par salon verrouillable dépasse le délai de réponse d'une interaction.
+pub fn spawn_role_lock(ctx: serenity::Context, guild_id: u64, role_id: u64) {
+    tokio::spawn(async move {
+        apply_role_lock(&ctx, guild_id, role_id).await;
+    });
+}
+
+/// Refus de la création ou de la sélection d'un rôle de quarantaine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuarantineRoleError {
+    Refused(QuarantineRoleRefusal),
+    /// Rôle ou serveur absent du cache.
+    UnknownRole,
+    /// FoxSecura n'a pas `MANAGE_ROLES` : il ne peut pas créer de rôle.
+    MissingManageRoles,
+    Discord(DiscordFailure),
+}
+
+/// Valide un rôle existant d'après le cache (V1) : `@everyone`, rôle géré,
+/// rôle non gérable par le bot, permission dangereuse.
+pub fn check_selected_role(
+    ctx: &serenity::Context,
+    guild_id: u64,
+    role_id: u64,
+) -> Result<(), QuarantineRoleError> {
+    let guild = ctx
+        .cache
+        .guild(serenity::GuildId::new(guild_id))
+        .ok_or(QuarantineRoleError::UnknownRole)?;
+    let role = guild
+        .roles
+        .get(&serenity::RoleId::new(role_id))
+        .map(role_facts)
+        .ok_or(QuarantineRoleError::UnknownRole)?;
+    // Bot absent du cache : aucune preuve qu'il gère le rôle.
+    let bot =
+        bot_role_standing(&guild, ctx.cache.current_user().id.get()).unwrap_or(BotRoleStanding {
+            top_role_position: 0,
+            manage_roles: false,
+        });
+    validate_quarantine_role(guild_id, &role, bot).map_err(QuarantineRoleError::Refused)
+}
+
+/// Crée le rôle « FoxSecura Quarantine » sans aucune permission, juste sous
+/// le rôle le plus haut du bot.
+///
+/// Un échec du placement n'annule pas la création : créé tout en bas, le
+/// rôle reste sous celui du bot, donc gérable.
+pub async fn create_quarantine_role(
+    ctx: &serenity::Context,
+    guild_id: u64,
+) -> Result<u64, QuarantineRoleError> {
+    let bot_id = ctx.cache.current_user().id.get();
+    let bot_roles: Vec<serenity::RoleId> = {
+        let guild = ctx
+            .cache
+            .guild(serenity::GuildId::new(guild_id))
+            .ok_or(QuarantineRoleError::UnknownRole)?;
+        let standing = bot_role_standing(&guild, bot_id);
+        if !standing.is_some_and(|standing| standing.manage_roles) {
+            return Err(QuarantineRoleError::MissingManageRoles);
+        }
+        guild
+            .members
+            .get(&serenity::UserId::new(bot_id))
+            .map(|member| member.roles.clone())
+            .unwrap_or_default()
+    };
+
+    let guild = serenity::GuildId::new(guild_id);
+    let reason = audit_reason(QUARANTINE_AUDIT_LABEL, "quarantine role created");
+    let role = ctx
+        .http
+        .create_role(
+            guild,
+            &serenity::EditRole::new()
+                .name(QUARANTINE_ROLE_NAME)
+                .permissions(serenity::Permissions::empty())
+                .hoist(false)
+                .mentionable(false),
+            Some(&reason),
+        )
+        .await
+        .map_err(|error| QuarantineRoleError::Discord(discord_failure(error)))?;
+
+    // Positions relues après la création : Discord a décalé les rôles.
+    match ctx.http.get_guild_roles(guild).await {
+        Ok(roles) => {
+            let bot_top = roles
+                .iter()
+                .filter(|candidate| bot_roles.contains(&candidate.id))
+                .map(|candidate| candidate.position)
+                .max()
+                .unwrap_or(0);
+            let position = quarantine_role_position(bot_top);
+            let current = roles
+                .iter()
+                .find(|candidate| candidate.id == role.id)
+                .map(|candidate| candidate.position);
+            if current != Some(position)
+                && let Err(error) = ctx
+                    .http
+                    .edit_role_position(guild, role.id, position, Some(&reason))
+                    .await
+            {
+                eprintln!(
+                    "[quarantine] placement du rôle {} impossible ({guild_id}) : {error}",
+                    role.id
+                );
+            }
+        }
+        Err(error) => eprintln!(
+            "[quarantine] rôles de la guilde {guild_id} illisibles après la création : {error}"
+        ),
+    }
+
+    Ok(role.id.get())
+}
+
 /// Salon ou catégorie créé : réapplique le verrou du rôle s'il est
 /// verrouillable (un salon créé synchronisé hérite de sa catégorie).
 pub async fn handle_channel_create(
@@ -320,6 +507,8 @@ fn convert_channel(channel: &serenity::GuildChannel) -> ChannelFacts {
 /// Origine d'une libération.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseTrigger {
+    /// Action « Libérer un membre » de `/config`.
+    Staff,
     /// Rôle de quarantaine retiré à la main par l'équipe.
     RoleRemovedByHand,
     /// Reprise d'une libération en attente.

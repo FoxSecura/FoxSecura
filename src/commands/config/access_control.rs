@@ -143,9 +143,10 @@ pub fn parse_user_id(value: &str) -> Option<u64> {
     digits.parse::<u64>().ok().filter(|id| *id != 0)
 }
 
-/// Modal de saisie de l'identifiant.
-pub fn blacklist_modal(language: Language, edit: BlacklistEdit) -> serenity::CreateModal {
-    let input = serenity::CreateInputText::new(
+/// Champ de saisie d'un identifiant d'utilisateur (ou d'une mention), lu
+/// par [`submitted_user_id`].
+pub fn user_id_input(language: Language) -> serenity::CreateInputText {
+    serenity::CreateInputText::new(
         serenity::InputTextStyle::Short,
         text(language, TextKey::ConfigBlacklistInput),
         USER_ID_INPUT_ID,
@@ -153,7 +154,12 @@ pub fn blacklist_modal(language: Language, edit: BlacklistEdit) -> serenity::Cre
     .min_length(*SNOWFLAKE_DIGITS.start() as u16)
     // Mention `<@!…>` comprise.
     .max_length((*SNOWFLAKE_DIGITS.end() + 4) as u16)
-    .required(true);
+    .required(true)
+}
+
+/// Modal de saisie de l'identifiant.
+pub fn blacklist_modal(language: Language, edit: BlacklistEdit) -> serenity::CreateModal {
+    let input = user_id_input(language);
 
     let title = match edit {
         BlacklistEdit::Add => TextKey::ConfigBlacklistAddButton,

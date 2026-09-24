@@ -11,9 +11,11 @@ mod content_filters;
 use poise::serenity_prelude as serenity;
 
 use super::Context;
+use crate::app::pipeline::quarantine::{self, QuarantineRoleError, ReleaseTrigger};
 use crate::app::{AppData, Error, run_database};
 use access::{Access, Right};
 use access_control::{BlacklistEdit, BlacklistRefusal, ListTarget};
+use anti_raid::QuarantineAction;
 use bad_words::BadWordsAction;
 use content_filters::ModuleToggle;
 use foxsecura::database::{BadWordsSettings, DatabaseError, GuildExemptions};
@@ -21,6 +23,7 @@ use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::anti_raid::anti_new_account::DEFAULT_MIN_ACCOUNT_AGE_DAYS;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
 use foxsecura::protection::automod::bad_words::parse_custom_words;
+use foxsecura::protection::quarantine::QuarantineRoleRefusal;
 use foxsecura::protection::shared::ModuleSet;
 
 const CATEGORY_SELECT_ID: &str = "foxsecura:config:category";
@@ -108,6 +111,8 @@ enum CategoryView {
     AntiRaid {
         modules: ModuleSet,
         min_age_days: u16,
+        quarantine_role_id: Option<u64>,
+        access: Access,
     },
 }
 
@@ -142,8 +147,8 @@ pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
 /// ne lui appartient pas.
 ///
 /// Le droit exigé par le composant est revérifié à chaque interaction : les
-/// listes blanche et noire exigent le propriétaire ou `ADMINISTRATOR`, le
-/// reste l'accès normal à `/config`.
+/// listes blanche et noire et la quarantaine exigent le propriétaire ou
+/// `ADMINISTRATOR`, le reste l'accès normal à `/config`.
 pub async fn handle_component(
     ctx: &serenity::Context,
     data: &AppData,
@@ -154,10 +159,12 @@ pub async fn handle_component(
     let module_toggle = content_filters::parse_toggle(custom_id);
     let bad_words_action = bad_words::parse_action(custom_id);
     let blacklist_edit = BlacklistEdit::from_button(custom_id);
+    let quarantine_action = QuarantineAction::from_custom_id(custom_id);
     let required = match (list_target, &module_toggle) {
         (Some(target), _) => target.required_right(),
         (None, Some(_)) => Right::Config,
         (None, None) if blacklist_edit.is_some() => Right::Blacklist,
+        (None, None) if quarantine_action.is_some() => Right::Whitelist,
         (None, None) if bad_words_action.is_some() => Right::Config,
         (None, None)
             if [
@@ -182,11 +189,16 @@ pub async fn handle_component(
         component.user.id,
     );
     let Some(guild_id) = component.guild_id.filter(|_| access.allows(required)) else {
-        respond_ephemeral_component(ctx, component, text(language, denied_key(required, access)))
-            .await?;
+        let denied = denied_key(required, access, quarantine_action.is_some());
+        respond_ephemeral_component(ctx, component, text(language, denied)).await?;
         return Ok(true);
     };
     let guild_id = guild_id.get();
+
+    if let Some(action) = quarantine_action {
+        handle_quarantine(ctx, data, component, language, guild_id, access, action).await?;
+        return Ok(true);
+    }
 
     if let Some(target) = list_target {
         let ids = access_control::selected_ids(&component.data.kind);
@@ -531,10 +543,11 @@ async fn handle_bad_words(
 }
 
 /// Traite la soumission des modals du tableau de bord (seuils Anti-Spam,
-/// mots interdits personnalisés, âge minimal des comptes, liste noire).
+/// mots interdits personnalisés, âge minimal des comptes, liste noire,
+/// libération d'un membre).
 ///
-/// Le droit est revérifié à la soumission : la liste noire exige le
-/// propriétaire ou `ADMINISTRATOR`.
+/// Le droit est revérifié à la soumission : la liste noire et la libération
+/// exigent le propriétaire ou `ADMINISTRATOR`.
 pub async fn handle_modal(
     ctx: &serenity::Context,
     data: &AppData,
@@ -542,8 +555,11 @@ pub async fn handle_modal(
 ) -> Result<bool, Error> {
     let custom_id = modal.data.custom_id.as_str();
     let blacklist_edit = BlacklistEdit::from_modal(custom_id);
+    let release = custom_id == anti_raid::QUARANTINE_RELEASE_MODAL_ID;
     let required = if blacklist_edit.is_some() {
         Right::Blacklist
+    } else if release {
+        QuarantineAction::Release.required_right()
     } else if [
         anti_spam::LIMITS_MODAL_ID,
         bad_words::MODAL_ID,
@@ -560,11 +576,15 @@ pub async fn handle_modal(
     let access =
         access::interaction_access(ctx, modal.guild_id, modal.member.as_ref(), modal.user.id);
     let Some(guild_id) = modal.guild_id.filter(|_| access.allows(required)) else {
-        respond_ephemeral_modal(ctx, modal, text(language, denied_key(required, access))).await?;
+        let denied = denied_key(required, access, release);
+        respond_ephemeral_modal(ctx, modal, text(language, denied)).await?;
         return Ok(true);
     };
     let guild_id = guild_id.get();
 
+    if release {
+        return release_member(ctx, data, modal, language, guild_id).await;
+    }
     if let Some(edit) = blacklist_edit {
         return save_blacklist(ctx, data, modal, language, guild_id, access, edit).await;
     }
@@ -752,9 +772,228 @@ async fn save_min_age(
     Ok(true)
 }
 
+/// Quarantaine : création ou sélection du rôle, ouverture du modal de
+/// libération.
+async fn handle_quarantine(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    action: QuarantineAction,
+) -> Result<(), Error> {
+    match action {
+        QuarantineAction::OpenRelease => {
+            component
+                .create_response(
+                    &ctx.http,
+                    serenity::CreateInteractionResponse::Modal(anti_raid::release_modal(language)),
+                )
+                .await?;
+        }
+        QuarantineAction::SelectRole => {
+            let Some(role_id) = anti_raid::selected_role(&component.data.kind) else {
+                component
+                    .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+                    .await?;
+                return Ok(());
+            };
+            if let Err(error) = quarantine::check_selected_role(ctx, guild_id, role_id) {
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    &quarantine_role_message(language, &error),
+                )
+                .await?;
+                return Ok(());
+            }
+            component
+                .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+                .await?;
+            save_quarantine_role(ctx, data, component, language, guild_id, access, role_id).await?;
+        }
+        QuarantineAction::CreateRole => {
+            // Plusieurs appels Discord : réponse différée, puis modification.
+            component
+                .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+                .await?;
+            match quarantine::create_quarantine_role(ctx, guild_id).await {
+                Ok(role_id) => {
+                    save_quarantine_role(ctx, data, component, language, guild_id, access, role_id)
+                        .await?;
+                }
+                Err(error) => {
+                    if let QuarantineRoleError::Discord(failure) = &error {
+                        eprintln!(
+                            "[config] création du rôle de quarantaine impossible ({guild_id}) : {}",
+                            failure.details
+                        );
+                    }
+                    followup_ephemeral(ctx, component, &quarantine_role_message(language, &error))
+                        .await?;
+                }
+            }
+        }
+        // Identifiant de modal reçu comme composant : forgé, rien n'est écrit.
+        QuarantineAction::Release => {
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Enregistre le rôle de quarantaine (réponse déjà différée), réaffiche la
+/// catégorie Anti-Raid et pose le verrou des salons en arrière-plan.
+async fn save_quarantine_role(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    role_id: u64,
+) -> Result<(), Error> {
+    let saved = run_database(&data.database, move |database| {
+        database.set_quarantine_role(guild_id, role_id)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            let view = view.as_ref();
+            let category = Some(anti_raid::CATEGORY_ID);
+            component
+                .edit_response(
+                    &ctx.http,
+                    serenity::EditInteractionResponse::new()
+                        .embed(build_embed(language, category, view))
+                        .components(build_components(language, category, view)),
+                )
+                .await?;
+            quarantine::spawn_role_lock(ctx.clone(), guild_id, role_id);
+            followup_ephemeral(
+                ctx,
+                component,
+                text(language, TextKey::ConfigQuarantineSaved),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!(
+                "[config] enregistrement du rôle de quarantaine impossible ({guild_id}) : {error}"
+            );
+            followup_ephemeral(ctx, component, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Libère un membre (propriétaire ou `ADMINISTRATOR`) et répond par un
+/// message éphémère. La réponse est différée : la restauration fait un appel
+/// par salon enregistré.
+async fn release_member(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+) -> Result<bool, Error> {
+    let Some(user_id) = anti_raid::submitted_release(&modal.data.components) else {
+        respond_ephemeral_modal(
+            ctx,
+            modal,
+            text(language, TextKey::ConfigBlacklistInvalidId),
+        )
+        .await?;
+        return Ok(true);
+    };
+
+    modal
+        .create_response(
+            &ctx.http,
+            serenity::CreateInteractionResponse::Defer(
+                serenity::CreateInteractionResponseMessage::new().ephemeral(true),
+            ),
+        )
+        .await?;
+    let released = quarantine::release(
+        ctx,
+        &data.database,
+        data.protection.quarantine_locks(),
+        guild_id,
+        user_id,
+        ReleaseTrigger::Staff,
+    )
+    .await;
+    let content = match released {
+        Ok(Some(outcome)) => anti_raid::release_summary(language, &outcome),
+        Ok(None) => text(language, TextKey::ConfigQuarantineReleaseNothing).to_owned(),
+        Err(error) => {
+            eprintln!("[config] libération de {user_id} impossible ({guild_id}) : {error}");
+            text(language, TextKey::ConfigSaveFailed).to_owned()
+        }
+    };
+    modal
+        .edit_response(
+            &ctx.http,
+            serenity::EditInteractionResponse::new().content(content),
+        )
+        .await?;
+    Ok(true)
+}
+
+/// Message d'un refus de rôle de quarantaine ; rien n'a été modifié.
+fn quarantine_role_message(language: Language, error: &QuarantineRoleError) -> String {
+    let key = match error {
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::Everyone) => {
+            TextKey::ConfigQuarantineRoleEveryone
+        }
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::Managed) => {
+            TextKey::ConfigQuarantineRoleManaged
+        }
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::NotManageable) => {
+            TextKey::ConfigQuarantineRoleNotManageable
+        }
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::DangerousPermissions(permissions)) => {
+            return format!(
+                "{} {}",
+                text(language, TextKey::ConfigQuarantineRoleDangerous),
+                permissions.get_permission_names().join(", ")
+            );
+        }
+        QuarantineRoleError::UnknownRole => TextKey::ConfigQuarantineRoleUnknown,
+        QuarantineRoleError::MissingManageRoles => TextKey::ConfigQuarantineMissingManageRoles,
+        QuarantineRoleError::Discord(_) => TextKey::ConfigQuarantineCreateFailed,
+    };
+    text(language, key).to_owned()
+}
+
+async fn followup_ephemeral(
+    ctx: &serenity::Context,
+    component: &serenity::ComponentInteraction,
+    content: &str,
+) -> Result<(), Error> {
+    component
+        .create_followup(
+            &ctx.http,
+            serenity::CreateInteractionResponseFollowup::new()
+                .content(content)
+                .ephemeral(true),
+        )
+        .await?;
+    Ok(())
+}
+
 /// Message de refus selon le droit manquant.
-fn denied_key(required: Right, access: Access) -> TextKey {
+fn denied_key(required: Right, access: Access, quarantine: bool) -> TextKey {
     match required {
+        Right::Whitelist if access.config && quarantine => TextKey::ConfigQuarantineAccessDenied,
         Right::Whitelist if access.config => TextKey::ConfigWhitelistAccessDenied,
         Right::Blacklist if access.config => TextKey::ConfigBlacklistAccessDenied,
         _ => TextKey::ConfigAccessDenied,
@@ -892,9 +1131,13 @@ async fn load_view(
             .await?;
             Some(CategoryView::AntiRaid {
                 modules,
-                min_age_days: config.map_or(DEFAULT_MIN_ACCOUNT_AGE_DAYS, |guild_config| {
-                    guild_config.new_account_min_age_days
-                }),
+                min_age_days: config
+                    .as_ref()
+                    .map_or(DEFAULT_MIN_ACCOUNT_AGE_DAYS, |guild_config| {
+                        guild_config.new_account_min_age_days
+                    }),
+                quarantine_role_id: config.and_then(|guild_config| guild_config.quarantine_role_id),
+                access,
             })
         }
         _ => None,
@@ -1022,8 +1265,15 @@ fn build_embed(
                     Some(CategoryView::AntiRaid {
                         modules,
                         min_age_days,
+                        quarantine_role_id,
+                        ..
                     }),
-                ) => embed.fields(anti_raid::state_fields(language, *modules, *min_age_days)),
+                ) => embed.fields(anti_raid::state_fields(
+                    language,
+                    *modules,
+                    *min_age_days,
+                    *quarantine_role_id,
+                )),
                 _ => embed.field(
                     text(language, TextKey::ConfigFieldState),
                     text(language, TextKey::ConfigStatePlaceholder),
@@ -1074,8 +1324,13 @@ fn build_components(
         (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
             rows.extend(access_control::selects(language, *access));
         }
-        (Some(anti_raid::CATEGORY_ID), Some(CategoryView::AntiRaid { modules, .. })) => {
-            rows.extend(anti_raid::buttons(language, *modules));
+        (
+            Some(anti_raid::CATEGORY_ID),
+            Some(CategoryView::AntiRaid {
+                modules, access, ..
+            }),
+        ) => {
+            rows.extend(anti_raid::buttons(language, *modules, *access));
         }
         _ => {}
     }
