@@ -318,5 +318,7 @@ const fn action_key(action: ActionCode) -> TextKey {
         ActionCode::RequestStaffReview => TextKey::LogsActionRequestStaffReview,
         ActionCode::RecordAlert => TextKey::LogsActionRecordAlert,
         ActionCode::NotifyMember => TextKey::LogsActionNotifyMember,
+        ActionCode::RemoveDangerousRoles => TextKey::LogsActionRemoveDangerousRoles,
+        ActionCode::LockMemberChannels => TextKey::LogsActionLockMemberChannels,
     }
 }

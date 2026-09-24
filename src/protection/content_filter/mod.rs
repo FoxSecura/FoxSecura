@@ -347,7 +347,8 @@ fn detect_module(
         // `CONTENT_FILTERS`, ils n'analysent jamais un message.
         ProtectionModule::AntiBot
         | ProtectionModule::AntiNewAccount
-        | ProtectionModule::AntiNicknameHoisting => None,
+        | ProtectionModule::AntiNicknameHoisting
+        | ProtectionModule::AntiImpersonation => None,
     }
 }
 

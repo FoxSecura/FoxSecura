@@ -542,6 +542,16 @@ catalog! {
         fr: "Notifier le membre",
         de: "Mitglied benachrichtigen"
     },
+    LogsActionRemoveDangerousRoles => {
+        en: "Remove dangerous roles",
+        fr: "Retirer les rôles dangereux",
+        de: "Gefährliche Rollen entfernen"
+    },
+    LogsActionLockMemberChannels => {
+        en: "Lock channels for the member",
+        fr: "Verrouiller les salons pour le membre",
+        de: "Kanäle für das Mitglied sperren"
+    },
     LogsFieldActor => {
         en: "Member",
         fr: "Membre",
@@ -1048,9 +1058,14 @@ catalog! {
         de: "Neues Konto gebannt: Das Mitglied prüfen und den Bann aufheben, falls es ein legitimer Neuling ist (Fehlalarm)."
     },
     NewAccountRecommendationBanFailed => {
-        en: "The ban was not applied and the fallback quarantine is not available yet: the recent account is still on the server. Check the ban hierarchy (Ban Members, FoxSecura's role above the member) and review the member.",
-        fr: "Le ban n'a pas été appliqué et la quarantaine de repli n'est pas encore disponible : le compte récent est resté sur le serveur. Vérifiez la hiérarchie du ban (Bannir des membres, rôle de FoxSecura au-dessus du membre) et examinez le membre.",
-        de: "Der Bann wurde nicht angewendet und die Ersatz-Quarantäne ist noch nicht verfügbar: Das neue Konto ist noch auf dem Server. Die Bann-Hierarchie prüfen (Mitglieder bannen, Rolle von FoxSecura über dem Mitglied) und das Mitglied überprüfen."
+        en: "Neither the ban nor the fallback quarantine was applied: the recent account is still on the server without restriction. Check the ban hierarchy (Ban Members, FoxSecura's role above the member), the quarantine role (/config, Anti-Raid) and review the member.",
+        fr: "Ni le ban ni la quarantaine de repli n'ont été appliqués : le compte récent est resté sur le serveur sans restriction. Vérifiez la hiérarchie du ban (Bannir des membres, rôle de FoxSecura au-dessus du membre), le rôle de quarantaine (/config, Anti-Raid) et examinez le membre.",
+        de: "Weder der Bann noch die Ersatz-Quarantäne wurden angewendet: Das neue Konto ist ohne Einschränkung auf dem Server. Die Bann-Hierarchie prüfen (Mitglieder bannen, Rolle von FoxSecura über dem Mitglied), die Quarantäne-Rolle (/config, Anti-Raid) und das Mitglied überprüfen."
+    },
+    NewAccountRecommendationQuarantined => {
+        en: "The ban was not applied: the recent account was quarantined instead (or timed out if the quarantine role could not be assigned). Check the ban hierarchy, then ban the member or release them from /config (Anti-Raid).",
+        fr: "Le ban n'a pas été appliqué : le compte récent a été mis en quarantaine à la place (ou exclu temporairement si le rôle de quarantaine n'a pas pu être posé). Vérifiez la hiérarchie du ban, puis bannissez le membre ou libérez-le depuis /config (Anti-Raid).",
+        de: "Der Bann wurde nicht angewendet: Das neue Konto wurde stattdessen unter Quarantäne gestellt (oder getimeoutet, falls die Quarantäne-Rolle nicht vergeben werden konnte). Die Bann-Hierarchie prüfen, dann das Mitglied bannen oder über /config (Anti-Raid) freigeben."
     },
     LogsEvidenceAccountAge => {
         en: "Account age",
@@ -1092,15 +1107,150 @@ catalog! {
         fr: "Vérifiez que FoxSecura a Gérer les pseudos et un rôle au-dessus du membre. Le propriétaire du serveur ne peut jamais être renommé par un bot.",
         de: "Prüfen, ob FoxSecura Spitznamen verwalten und eine Rolle über dem Mitglied hat. Der Serverinhaber kann nie von einem Bot umbenannt werden."
     },
+    ModuleAntiImpersonation => {
+        en: "Impersonation",
+        fr: "Usurpation d'identité",
+        de: "Identitätsdiebstahl"
+    },
+    ImpersonationSummary => {
+        en: "A joining member uses the name of the owner or of a privileged member.",
+        fr: "Un membre arrivé utilise le nom du propriétaire ou d'un membre privilégié.",
+        de: "Ein beigetretenes Mitglied verwendet den Namen des Inhabers oder eines privilegierten Mitglieds."
+    },
+    ImpersonationEvidenceName => {
+        en: "Member name",
+        fr: "Nom du membre",
+        de: "Name des Mitglieds"
+    },
+    ImpersonationEvidenceProtected => {
+        en: "Protected name",
+        fr: "Nom protégé",
+        de: "Geschützter Name"
+    },
+    ImpersonationRecommendationQuarantined => {
+        en: "Member quarantined. Check whether it is a real impersonation: ban them, or release them from /config (Anti-Raid) if it is a false positive.",
+        fr: "Membre mis en quarantaine. Vérifiez s'il s'agit d'une vraie usurpation : bannissez-le, ou libérez-le depuis /config (Anti-Raid) s'il s'agit d'un faux positif.",
+        de: "Mitglied unter Quarantäne gestellt. Prüfen, ob es ein echter Identitätsdiebstahl ist: bannen, oder bei einem Fehlalarm über /config (Anti-Raid) freigeben."
+    },
+    QuarantineRecommendationFailed => {
+        en: "The quarantine was not applied: the member is still on the server without restriction. Configure the quarantine role in /config (Anti-Raid), check Manage Roles and that FoxSecura's role is above it, then review the member.",
+        fr: "La quarantaine n'a pas été appliquée : le membre est resté sur le serveur sans restriction. Configurez le rôle de quarantaine dans /config (Anti-Raid), vérifiez Gérer les rôles et que le rôle de FoxSecura est au-dessus, puis examinez le membre.",
+        de: "Die Quarantäne wurde nicht angewendet: Das Mitglied ist ohne Einschränkung auf dem Server. Die Quarantäne-Rolle in /config (Anti-Raid) konfigurieren, Rollen verwalten prüfen und dass die Rolle von FoxSecura darüber liegt, dann das Mitglied überprüfen."
+    },
+    QuarantineEvidenceRemovedRoles => {
+        en: "Dangerous roles removed (not restored on release)",
+        fr: "Rôles dangereux retirés (non rendus à la libération)",
+        de: "Entfernte gefährliche Rollen (bei Freigabe nicht zurückgegeben)"
+    },
     ConfigMemberProtection => {
         en: "Member arrivals",
         fr: "Arrivées de membres",
         de: "Beitritte von Mitgliedern"
     },
     ConfigMemberProtectionNotice => {
-        en: "Applied when a member joins, in this order: blacklist (always active, see Access control), anti-bot (kicks bots missing from the whitelist, Kick Members), new accounts (bans accounts younger than the minimum age and purges 7 days of messages, Ban Members), hoisted nicknames (renames names starting with a symbol, also on name changes, Manage Nicknames). A ban or kick stops the chain. FoxSecura's role must be above members. A false positive bans a legitimate newcomer: review every incident. Whitelisted members and the owner are never banned as new accounts; nicknames are corrected for everyone except the owner. The Server Members intent is required.",
-        fr: "Appliqué à l'arrivée d'un membre, dans cet ordre : liste noire (toujours active, voir Contrôle d'accès), anti-bot (expulse les bots absents de la liste blanche, Expulser des membres), nouveaux comptes (bannit les comptes plus récents que l'âge minimal et purge 7 jours de messages, Bannir des membres), pseudos hoistés (renomme les noms qui commencent par un symbole, aussi lors d'un changement de nom, Gérer les pseudos). Un ban ou une expulsion arrête la chaîne. Le rôle de FoxSecura doit être au-dessus des membres. Un faux positif bannit un nouveau venu légitime : examinez chaque incident. Les membres de la liste blanche et le propriétaire ne sont jamais bannis comme nouveaux comptes ; les pseudos sont corrigés pour tous, sauf le propriétaire. L'intent Server Members est requis.",
-        de: "Wird beim Beitritt eines Mitglieds in dieser Reihenfolge angewendet: Blacklist (immer aktiv, siehe Zugriffskontrolle), Anti-Bot (kickt Bots, die nicht auf der Whitelist stehen, Mitglieder kicken), neue Konten (bannt Konten unter dem Mindestalter und löscht 7 Tage Nachrichten, Mitglieder bannen), gehoistete Spitznamen (benennt Namen um, die mit einem Symbol beginnen, auch bei Namensänderungen, Spitznamen verwalten). Ein Bann oder Kick beendet die Kette. Die Rolle von FoxSecura muss über den Mitgliedern liegen. Ein Fehlalarm bannt einen legitimen Neuling: Jeden Vorfall prüfen. Mitglieder auf der Whitelist und der Inhaber werden nie als neue Konten gebannt; Spitznamen werden für alle außer dem Inhaber korrigiert. Der Server-Members-Intent ist erforderlich."
+        en: "Applied when a member joins, in this order: blacklist (always active, see Access control), anti-bot (kicks bots missing from the whitelist), new accounts (ban and 7-day purge; if the ban fails, quarantine, or a 10-minute timeout without a usable quarantine role), impersonation (a name matching the owner or a member with Administrator or Manage Server: quarantine), hoisted nicknames (rename, also on name changes). A ban, kick or quarantine stops the chain. FoxSecura's role must be above members; permissions: Kick Members, Ban Members, Timeout Members, Manage Nicknames, Manage Roles. Whitelisted members and the owner are never banned or quarantined. A false positive hits a legitimate member: review every incident. The Server Members intent is required.",
+        fr: "Appliqué à l'arrivée d'un membre, dans cet ordre : liste noire (toujours active, voir Contrôle d'accès), anti-bot (expulse les bots absents de la liste blanche), nouveaux comptes (ban et purge de 7 jours ; ban impossible : quarantaine, ou timeout de 10 minutes sans rôle de quarantaine utilisable), usurpation (nom identique à celui du propriétaire ou d'un membre avec Administrateur ou Gérer le serveur : quarantaine), pseudos hoistés (renommage, aussi lors d'un changement de nom). Un ban, une expulsion ou une quarantaine arrête la chaîne. Le rôle de FoxSecura doit être au-dessus des membres ; permissions : Expulser, Bannir, Exclure temporairement, Gérer les pseudos, Gérer les rôles. La liste blanche et le propriétaire ne sont jamais bannis ni mis en quarantaine. Un faux positif touche un membre légitime : examinez chaque incident. L'intent Server Members est requis.",
+        de: "Beim Beitritt eines Mitglieds in dieser Reihenfolge: Blacklist (immer aktiv, siehe Zugriffskontrolle), Anti-Bot (kickt Bots, die nicht auf der Whitelist stehen), neue Konten (Bann und 7 Tage Nachrichten löschen; scheitert der Bann: Quarantäne, ohne nutzbare Quarantäne-Rolle 10 Minuten Timeout), Identitätsdiebstahl (Name wie der des Inhabers oder eines Mitglieds mit Administrator oder Server verwalten: Quarantäne), gehoistete Spitznamen (Umbenennung, auch bei Namensänderungen). Bann, Kick oder Quarantäne beenden die Kette. Die Rolle von FoxSecura muss über den Mitgliedern liegen; Rechte: Kicken, Bannen, Timeout, Spitznamen verwalten, Rollen verwalten. Whitelist und Inhaber werden nie gebannt oder unter Quarantäne gestellt. Ein Fehlalarm trifft ein legitimes Mitglied: Jeden Vorfall prüfen. Der Server-Members-Intent ist erforderlich."
+    },
+    ConfigQuarantineRole => {
+        en: "Quarantine role",
+        fr: "Rôle de quarantaine",
+        de: "Quarantäne-Rolle"
+    },
+    ConfigQuarantineNotConfigured => {
+        en: "Not configured: no member can be quarantined (new accounts fall back to a timeout).",
+        fr: "Non configuré : aucun membre ne peut être mis en quarantaine (les nouveaux comptes retombent sur un timeout).",
+        de: "Nicht konfiguriert: Kein Mitglied kann unter Quarantäne gestellt werden (neue Konten erhalten ersatzweise einen Timeout)."
+    },
+    ConfigQuarantine => {
+        en: "Quarantine",
+        fr: "Quarantaine",
+        de: "Quarantäne"
+    },
+    ConfigQuarantineNotice => {
+        en: "Create: a “FoxSecura Quarantine” role without any permission, placed just below FoxSecura's role. Select: refused for @everyone, a managed role, a role FoxSecura cannot manage or a role with a dangerous permission. The role is denied View, Send, Threads, Reactions, Connect and Speak on categories and unsynced channels (one API call per channel, slower during a rate limit), and again on every new channel. Each quarantined member also gets a View/Connect deny of their own, restored exactly on release. Dangerous roles removed are not given back; a member who leaves and returns keeps their denies. Removing the role by hand restores their channels. Requires Manage Roles and Manage Channels; owner and administrators only.",
+        fr: "Créer : un rôle « FoxSecura Quarantine » sans aucune permission, placé juste sous le rôle de FoxSecura. Choisir : refusé pour @everyone, un rôle géré, un rôle que FoxSecura ne peut pas gérer ou un rôle portant une permission dangereuse. Le rôle se voit refuser Voir, Écrire, Fils, Réactions, Se connecter et Parler sur les catégories et les salons non synchronisés (un appel API par salon, plus lent pendant une limitation de débit), puis sur chaque nouveau salon. Chaque membre en quarantaine reçoit aussi un refus Voir/Se connecter à son nom, restauré exactement à la libération. Les rôles dangereux retirés ne sont pas rendus ; un membre qui part et revient garde ses refus. Retirer le rôle à la main restaure ses salons. Requiert Gérer les rôles et Gérer les salons ; réservé au propriétaire et aux administrateurs.",
+        de: "Erstellen: eine Rolle „FoxSecura Quarantine“ ohne Berechtigung, direkt unter der Rolle von FoxSecura. Auswählen: abgelehnt für @everyone, verwaltete Rollen, Rollen, die FoxSecura nicht verwalten kann, oder Rollen mit gefährlicher Berechtigung. Der Rolle werden Ansehen, Schreiben, Threads, Reaktionen, Verbinden und Sprechen in Kategorien und nicht synchronisierten Kanälen verweigert (ein API-Aufruf pro Kanal, langsamer bei Rate-Limits), danach in jedem neuen Kanal. Jedes Mitglied in Quarantäne erhält zusätzlich ein eigenes Verbot für Ansehen/Verbinden, das bei der Freigabe exakt wiederhergestellt wird. Entfernte gefährliche Rollen werden nicht zurückgegeben; wer geht und zurückkommt, behält die Verbote. Die Rolle von Hand zu entfernen stellt die Kanäle wieder her. Benötigt Rollen verwalten und Kanäle verwalten; nur Inhaber und Administratoren."
+    },
+    ConfigQuarantineCreateButton => {
+        en: "Create quarantine role",
+        fr: "Créer le rôle de quarantaine",
+        de: "Quarantäne-Rolle erstellen"
+    },
+    ConfigQuarantineRoleSelect => {
+        en: "Use an existing role as quarantine role",
+        fr: "Utiliser un rôle existant comme rôle de quarantaine",
+        de: "Bestehende Rolle als Quarantäne-Rolle verwenden"
+    },
+    ConfigQuarantineReleaseButton => {
+        en: "Release a member",
+        fr: "Libérer un membre",
+        de: "Mitglied freigeben"
+    },
+    ConfigQuarantineAccessDenied => {
+        en: "The quarantine role and member release are reserved for the server owner and administrators (Manage Server is not enough).",
+        fr: "Le rôle de quarantaine et la libération d'un membre sont réservés au propriétaire du serveur et aux administrateurs (Gérer le serveur ne suffit pas).",
+        de: "Quarantäne-Rolle und Freigabe von Mitgliedern sind dem Serverinhaber und Administratoren vorbehalten (Server verwalten reicht nicht)."
+    },
+    ConfigQuarantineSaved => {
+        en: "Quarantine role saved. The channel lock is being applied in the background (one API call per category, channel without category or unsynced channel).",
+        fr: "Rôle de quarantaine enregistré. Le verrou des salons est posé en arrière-plan (un appel API par catégorie, salon sans catégorie ou salon désynchronisé).",
+        de: "Quarantäne-Rolle gespeichert. Die Kanalsperre wird im Hintergrund gesetzt (ein API-Aufruf pro Kategorie, Kanal ohne Kategorie oder nicht synchronisiertem Kanal)."
+    },
+    ConfigQuarantineRoleEveryone => {
+        en: "@everyone cannot be the quarantine role: it would lock the whole server. Nothing was changed.",
+        fr: "@everyone ne peut pas être le rôle de quarantaine : il verrouillerait tout le serveur. Rien n'a été modifié.",
+        de: "@everyone kann nicht die Quarantäne-Rolle sein: Sie würde den ganzen Server sperren. Es wurde nichts geändert."
+    },
+    ConfigQuarantineRoleManaged => {
+        en: "This role is managed by an integration (bot, subscription, boost) and cannot be assigned. Nothing was changed.",
+        fr: "Ce rôle est géré par une intégration (bot, abonnement, boost) et ne peut pas être attribué. Rien n'a été modifié.",
+        de: "Diese Rolle wird von einer Integration verwaltet (Bot, Abonnement, Boost) und kann nicht vergeben werden. Es wurde nichts geändert."
+    },
+    ConfigQuarantineRoleNotManageable => {
+        en: "FoxSecura cannot manage this role: it needs Manage Roles and a role above it. Nothing was changed.",
+        fr: "FoxSecura ne peut pas gérer ce rôle : il lui faut Gérer les rôles et un rôle au-dessus. Rien n'a été modifié.",
+        de: "FoxSecura kann diese Rolle nicht verwalten: Es braucht Rollen verwalten und eine höhere Rolle. Es wurde nichts geändert."
+    },
+    ConfigQuarantineRoleDangerous => {
+        en: "This role has dangerous permissions and would give them to quarantined members. Nothing was changed. Permissions:",
+        fr: "Ce rôle porte des permissions dangereuses et les donnerait aux membres en quarantaine. Rien n'a été modifié. Permissions :",
+        de: "Diese Rolle hat gefährliche Berechtigungen und würde sie Mitgliedern in Quarantäne geben. Es wurde nichts geändert. Berechtigungen:"
+    },
+    ConfigQuarantineRoleUnknown => {
+        en: "This role or the server is not known to FoxSecura yet. Try again in a moment. Nothing was changed.",
+        fr: "Ce rôle ou le serveur n'est pas encore connu de FoxSecura. Réessayez dans un instant. Rien n'a été modifié.",
+        de: "Diese Rolle oder der Server ist FoxSecura noch nicht bekannt. Gleich erneut versuchen. Es wurde nichts geändert."
+    },
+    ConfigQuarantineMissingManageRoles => {
+        en: "FoxSecura does not have Manage Roles: it cannot create the quarantine role. Nothing was changed.",
+        fr: "FoxSecura n'a pas la permission Gérer les rôles : il ne peut pas créer le rôle de quarantaine. Rien n'a été modifié.",
+        de: "FoxSecura hat keine Berechtigung Rollen verwalten: Die Quarantäne-Rolle kann nicht erstellt werden. Es wurde nichts geändert."
+    },
+    ConfigQuarantineCreateFailed => {
+        en: "Discord refused to create the quarantine role. Check FoxSecura's permissions and try again.",
+        fr: "Discord a refusé la création du rôle de quarantaine. Vérifiez les permissions de FoxSecura et réessayez.",
+        de: "Discord hat das Erstellen der Quarantäne-Rolle abgelehnt. Die Berechtigungen von FoxSecura prüfen und erneut versuchen."
+    },
+    ConfigQuarantineReleaseDone => {
+        en: "Member released: quarantine role removed and channels restored to their original state. Dangerous roles removed during the quarantine are not given back.",
+        fr: "Membre libéré : rôle de quarantaine retiré et salons restaurés dans leur état d'origine. Les rôles dangereux retirés pendant la quarantaine ne sont pas rendus.",
+        de: "Mitglied freigegeben: Quarantäne-Rolle entfernt und Kanäle in den ursprünglichen Zustand versetzt. Während der Quarantäne entfernte gefährliche Rollen werden nicht zurückgegeben."
+    },
+    ConfigQuarantineReleasePending => {
+        en: "Release unfinished: something could not be restored. FoxSecura retries automatically every 5 minutes.",
+        fr: "Libération inachevée : une partie n'a pas pu être restaurée. FoxSecura réessaie automatiquement toutes les 5 minutes.",
+        de: "Freigabe unvollständig: Etwas konnte nicht wiederhergestellt werden. FoxSecura versucht es alle 5 Minuten automatisch erneut."
+    },
+    ConfigQuarantineReleaseNothing => {
+        en: "Nothing to release: this member has neither the quarantine role nor a channel locked by FoxSecura.",
+        fr: "Rien à libérer : ce membre n'a ni le rôle de quarantaine ni de salon verrouillé par FoxSecura.",
+        de: "Nichts freizugeben: Dieses Mitglied hat weder die Quarantäne-Rolle noch einen von FoxSecura gesperrten Kanal."
+    },
+    ConfigQuarantineReleaseCounts => {
+        en: "Channels restored: {restored}, already restored: {unchanged}, deleted: {missing}, failed: {failed}.",
+        fr: "Salons restaurés : {restored}, déjà restaurés : {unchanged}, supprimés : {missing}, en échec : {failed}.",
+        de: "Wiederhergestellte Kanäle: {restored}, bereits wiederhergestellt: {unchanged}, gelöscht: {missing}, fehlgeschlagen: {failed}."
     },
     ConfigNewAccountMinAge => {
         en: "Minimum account age (days)",

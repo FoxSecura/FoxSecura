@@ -21,6 +21,8 @@ pub struct GuildConfig {
     pub bad_words_language: BadWordsLanguage,
     /// Âge minimal d'un compte à l'arrivée, en jours (migration 6, 1 à 365).
     pub new_account_min_age_days: u16,
+    /// Rôle de quarantaine (migration 7) ; `None` : non configuré.
+    pub quarantine_role_id: Option<u64>,
     pub created_at: i64,
     pub updated_at: i64,
 }

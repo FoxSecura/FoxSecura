@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 6;
+pub const LATEST_SCHEMA_VERSION: i64 = 7;
 
 struct Migration {
     version: i64,
@@ -170,6 +170,48 @@ WHEN EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'user is on the blacklist');
 END;
+"#,
+    },
+    Migration {
+        version: 7,
+        name: "quarantine",
+        // Rôle de quarantaine de la guilde (`NULL` : non configuré ; jamais
+        // `@everyone`, qui porte l'identifiant de la guilde).
+        //
+        // `guild_quarantine_overwrites` : état d'origine, à trois états, des
+        // bits `VIEW_CHANNEL` et `CONNECT` de l'overwrite du membre, enregistré
+        // **avant** chaque modification pour survivre à un plantage. Une ligne
+        // n'est supprimée qu'une fois le salon restauré (ou disparu).
+        //
+        // `guild_quarantine_pending_releases` : libérations inachevées,
+        // reprises par la maintenance périodique. Une remise en quarantaine
+        // supprime la ligne : la libération en attente devient obsolète.
+        sql: r#"
+ALTER TABLE guild_configs ADD COLUMN quarantine_role_id TEXT
+    CHECK (quarantine_role_id IS NULL OR quarantine_role_id <> guild_id);
+
+CREATE TABLE guild_quarantine_overwrites (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    previous_view TEXT NOT NULL CHECK (previous_view IN ('allow', 'deny', 'unset')),
+    previous_connect TEXT NOT NULL CHECK (previous_connect IN ('allow', 'deny', 'unset')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TABLE guild_quarantine_pending_releases (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE INDEX guild_quarantine_pending_releases_by_age
+    ON guild_quarantine_pending_releases (updated_at);
 "#,
     },
 ];

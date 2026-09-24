@@ -14,6 +14,7 @@ mod exemptions;
 mod migrations;
 mod models;
 mod modules;
+mod quarantine;
 mod repository;
 
 pub use bad_words::BadWordsSettings;

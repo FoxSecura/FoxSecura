@@ -152,6 +152,11 @@ pub enum DatabaseError {
     UserBlacklisted(u64),
     /// Âge minimal des comptes hors des bornes (1 à 365 jours).
     InvalidNewAccountMinAge(u16),
+    /// `@everyone` ne peut pas être le rôle de quarantaine : il verrouillerait
+    /// tout le serveur.
+    EveryoneRoleNotQuarantinable,
+    /// État d'overwrite enregistré inconnu (base écrite hors de FoxSecura).
+    InvalidOverwriteState(String),
 }
 
 impl fmt::Display for DatabaseError {
@@ -193,6 +198,15 @@ impl fmt::Display for DatabaseError {
                 formatter,
                 "âge minimal des comptes invalide : {days} jours (attendu : 1 à 365)"
             ),
+            Self::EveryoneRoleNotQuarantinable => {
+                formatter.write_str("le rôle @everyone ne peut pas être le rôle de quarantaine")
+            }
+            Self::InvalidOverwriteState(value) => {
+                write!(
+                    formatter,
+                    "état d'overwrite invalide stocké en base : {value}"
+                )
+            }
             Self::UserBlacklisted(user_id) => write!(
                 formatter,
                 "l'utilisateur {user_id} est sur la liste noire : il ne peut pas être mis sur la liste blanche"
@@ -216,7 +230,9 @@ impl Error for DatabaseError {
             | Self::InvalidBadWordsLanguage(_)
             | Self::UserWhitelisted(_)
             | Self::UserBlacklisted(_)
-            | Self::InvalidNewAccountMinAge(_) => None,
+            | Self::InvalidNewAccountMinAge(_)
+            | Self::EveryoneRoleNotQuarantinable
+            | Self::InvalidOverwriteState(_) => None,
         }
     }
 }

@@ -16,19 +16,22 @@
 //!
 //! # Repli
 //!
-//! Dans la V1, un ban refusé déclenche une **quarantaine de repli**. Elle
-//! n'existe pas encore (tranche 6) : l'échec produit un incident `critical`
-//! dont les actions disent explicitement que le repli n'a pas été appliqué
-//! ([`quarantine_fallback_unavailable`]).
+//! Un ban non appliqué déclenche une **quarantaine de repli avec repli
+//! timeout** (V1, [`NEW_ACCOUNT_FALLBACK`]) : rôle de quarantaine et verrou
+//! des salons, ou timeout de 10 minutes si le rôle ne peut pas être posé.
+//! L'incident reprend l'action de ban en échec, puis les actions de la
+//! quarantaine ; il reste `critical` (le ban a échoué) et devient terminal si
+//! le membre est contenu.
 
 use std::time::Duration;
 
-use super::{MemberRef, ModuleResponse, ModuleResult, member_incident};
+use super::{MemberRef, ModuleResponse, ModuleResult, member_incident, removed_roles_evidence};
 use crate::i18n::{Language, TextKey, text};
-use crate::logs::{ActionCode, ActionStatus, LogSeverity, SecurityActionOutcome, SecurityEvidence};
+use crate::logs::{LogSeverity, SecurityActionOutcome, SecurityEvidence};
 use crate::protection::anti_raid::anti_new_account::{
     AntiNewAccountDetectionResult, AntiNewAccountInput, detect_new_account,
 };
+use crate::protection::quarantine::{QuarantineOutcome, QuarantineRequest};
 use crate::protection::shared::{
     ProtectionModule, SanctionKind, SanctionOutcome, audit_reason, exempt_member_action,
 };
@@ -40,6 +43,13 @@ pub const ANTI_NEW_ACCOUNT_AUDIT_LABEL: &str = "Anti-New-Account";
 /// Ban d'un compte trop récent, avec purge de 7 jours (V1).
 pub const NEW_ACCOUNT_BAN: SanctionKind = SanctionKind::Ban {
     purge: Duration::from_secs(7 * 24 * 60 * 60),
+};
+
+/// Quarantaine de repli d'un ban non appliqué : avec repli timeout, sans
+/// retrait des rôles dangereux (V1).
+pub const NEW_ACCOUNT_FALLBACK: QuarantineRequest = QuarantineRequest {
+    allow_timeout_fallback: true,
+    ..QuarantineRequest::ROLE_ONLY
 };
 
 /// Raison pour laquelle un compte trop récent n'est pas banni.
@@ -138,15 +148,19 @@ pub fn exempt_new_account_response(
     }
 }
 
-/// Compte trop récent : résultat du ban.
+/// Compte trop récent : résultat du ban, puis de la quarantaine de repli.
 ///
-/// Ban appliqué : incident `warning`, résultat terminal. Ban non appliqué :
-/// incident `critical`, avec l'action de repli marquée non appliquée.
+/// Ban appliqué : incident `warning`, résultat terminal, `fallback` ignoré.
+/// Ban non appliqué : incident `critical` ; les actions de la quarantaine de
+/// repli suivent celle du ban, et le résultat est terminal si le membre est
+/// contenu (rôle de quarantaine ou timeout). `fallback` à `None` : repli non
+/// exécuté (le runtime l'exécute toujours après un ban non appliqué).
 pub fn new_account_ban_response(
     language: Language,
     member: MemberRef,
     detection: &AntiNewAccountDetectionResult,
     outcome: &SanctionOutcome,
+    fallback: Option<&QuarantineOutcome>,
 ) -> ModuleResponse {
     let banned = outcome.is_applied();
     let mut incident = member_incident(
@@ -161,10 +175,20 @@ pub fn new_account_ban_response(
         outcome.action_outcome(NEW_ACCOUNT_BAN),
     );
     incident.evidence.push(age_evidence(detection));
+
+    let fallback = fallback.filter(|_| !banned);
+    let contained = fallback.is_some_and(QuarantineOutcome::contained);
+    if let Some(fallback) = fallback {
+        incident.actions.extend(fallback.action_outcomes());
+        incident
+            .evidence
+            .extend(removed_roles_evidence(language, fallback));
+    }
     let recommendation = if banned {
         TextKey::NewAccountRecommendationBanned
+    } else if contained {
+        TextKey::NewAccountRecommendationQuarantined
     } else {
-        incident.actions.push(quarantine_fallback_unavailable());
         TextKey::NewAccountRecommendationBanFailed
     };
     incident.recommendation = Some(text(language, recommendation).to_owned());
@@ -172,24 +196,10 @@ pub fn new_account_ban_response(
     ModuleResponse {
         result: ModuleResult {
             detected: true,
-            action_applied: banned,
-            terminal: banned,
+            action_applied: banned || contained,
+            terminal: banned || contained,
         },
         incident,
-    }
-}
-
-/// Quarantaine de repli d'un ban non appliqué, pas encore disponible.
-///
-/// Point d'extension de la tranche 6 : le runtime exécutera alors la
-/// quarantaine après un ban non appliqué, et son résultat remplacera cette
-/// action (et rendra le résultat terminal si elle réussit).
-pub fn quarantine_fallback_unavailable() -> SecurityActionOutcome {
-    SecurityActionOutcome {
-        action: ActionCode::QuarantineMember,
-        status: ActionStatus::Skipped,
-        details: Some("fallback_not_available".to_owned()),
-        failure_code: None,
     }
 }
 

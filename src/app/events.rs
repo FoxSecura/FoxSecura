@@ -34,6 +34,12 @@ pub async fn handle(
         } => {
             pipeline::member::handle_update(ctx, data, old_if_available.as_ref(), event).await;
         }
+        serenity::FullEvent::ChannelCreate { channel } => {
+            pipeline::quarantine::handle_channel_create(ctx, data, channel).await;
+        }
+        serenity::FullEvent::CategoryCreate { category } => {
+            pipeline::quarantine::handle_channel_create(ctx, data, category).await;
+        }
         serenity::FullEvent::InteractionCreate { interaction } => {
             if let Err(error) = crate::commands::handle_interaction(ctx, data, interaction).await {
                 eprintln!("[interaction] erreur lors du traitement d'un composant : {error}");

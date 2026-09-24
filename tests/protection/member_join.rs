@@ -22,16 +22,25 @@ use foxsecura::protection::member_join::hoisting::{
     FALLBACK_NICKNAME, MAX_NICKNAME_LENGTH, NicknameFix, anti_hoisting_audit_reason,
     hoisting_response, plan_nickname_fix,
 };
+use foxsecura::protection::member_join::impersonation::{
+    IMPERSONATION_QUARANTINE, ImpersonationExemption, KnownMember, impersonation_audit_reason,
+    impersonation_response, is_privileged, plan_impersonation, protected_names,
+};
 use foxsecura::protection::member_join::new_account::{
-    NEW_ACCOUNT_BAN, NewAccountExemption, NewAccountPlan, exempt_new_account_response,
-    new_account_audit_reason, new_account_ban_response, plan_new_account,
+    NEW_ACCOUNT_BAN, NEW_ACCOUNT_FALLBACK, NewAccountExemption, NewAccountPlan,
+    exempt_new_account_response, new_account_audit_reason, new_account_ban_response,
+    plan_new_account,
 };
 use foxsecura::protection::member_join::{
     JOIN_ORDER, JoinChain, JoinStep, MemberRef, ModuleResult, display_name_changed,
 };
+use foxsecura::protection::quarantine::{
+    ChannelLockSummary, DangerousRoleRemoval, QuarantineOutcome, QuarantineRequest, RoleStatus,
+};
 use foxsecura::protection::shared::{
     ModuleSet, ProtectionModule, SanctionOutcome, SanctionSkip, is_foxsecura_audit_reason,
 };
+use poise::serenity_prelude::Permissions;
 
 const MEMBER: MemberRef = MemberRef {
     guild_id: 1,
@@ -309,6 +318,7 @@ fn banned_recent_account_is_terminal() {
         MEMBER,
         &check.detection,
         &SanctionOutcome::Applied,
+        None,
     );
 
     assert!(response.result.terminal && response.result.action_applied);
@@ -330,35 +340,316 @@ fn banned_recent_account_is_terminal() {
     );
 }
 
+/// Quarantaine de repli simulée : rôle posé, un salon verrouillé.
+fn quarantined() -> QuarantineOutcome {
+    QuarantineOutcome {
+        role: Some(RoleStatus::Applied),
+        channel_lock: Some(ChannelLockSummary {
+            locked: 1,
+            ..ChannelLockSummary::default()
+        }),
+        ..QuarantineOutcome::default()
+    }
+}
+
 #[test]
-fn refused_ban_is_critical_and_says_the_quarantine_fallback_is_missing() {
+fn refused_ban_falls_back_to_a_quarantine_that_stops_the_chain() {
     let check = plan_new_account(account_aged(DAY, 7), false, None);
     let response = new_account_ban_response(
         Language::French,
         MEMBER,
         &check.detection,
         &failed(FailureCode::MissingPermission),
+        Some(&quarantined()),
     );
 
-    assert!(!response.result.terminal && !response.result.action_applied);
-    assert!(response.result.detected);
+    assert!(response.result.terminal && response.result.action_applied);
+    // Le ban a échoué : l'incident reste critique.
     assert_eq!(response.incident.severity, LogSeverity::Critical);
-    assert_eq!(response.incident.actions[0].action, ActionCode::BanMember);
-    assert_eq!(response.incident.actions[0].status, ActionStatus::Failed);
     assert_eq!(
-        response.incident.actions[1].action,
-        ActionCode::QuarantineMember
+        response
+            .incident
+            .actions
+            .iter()
+            .map(|action| (action.action, action.status))
+            .collect::<Vec<_>>(),
+        vec![
+            (ActionCode::BanMember, ActionStatus::Failed),
+            (ActionCode::QuarantineMember, ActionStatus::Success),
+            (ActionCode::LockMemberChannels, ActionStatus::Success),
+        ]
     );
-    assert_eq!(response.incident.actions[1].status, ActionStatus::Skipped);
     assert!(
         response
             .incident
             .recommendation
             .as_deref()
             .unwrap()
-            .contains("quarantaine de repli")
+            .contains("mis en quarantaine à la place")
     );
     assert!(response.incident.validate().is_ok());
+}
+
+#[test]
+fn refused_ban_falls_back_to_a_timeout_when_the_role_cannot_be_assigned() {
+    assert_eq!(
+        NEW_ACCOUNT_FALLBACK,
+        QuarantineRequest {
+            allow_timeout_fallback: true,
+            remove_dangerous_roles: false,
+            timeout: Duration::from_secs(600),
+        }
+    );
+
+    let check = plan_new_account(account_aged(DAY, 7), false, None);
+    let timed_out = QuarantineOutcome {
+        role: Some(RoleStatus::NotConfigured),
+        timeout: Some(SanctionOutcome::Applied),
+        ..QuarantineOutcome::default()
+    };
+    let response = new_account_ban_response(
+        Language::French,
+        MEMBER,
+        &check.detection,
+        &failed(FailureCode::MissingPermission),
+        Some(&timed_out),
+    );
+
+    assert!(response.result.terminal);
+    assert_eq!(
+        response
+            .incident
+            .actions
+            .iter()
+            .map(|action| (action.action, action.status))
+            .collect::<Vec<_>>(),
+        vec![
+            (ActionCode::BanMember, ActionStatus::Failed),
+            (ActionCode::QuarantineMember, ActionStatus::Skipped),
+            (ActionCode::TimeoutMember, ActionStatus::Success),
+        ]
+    );
+}
+
+#[test]
+fn refused_ban_and_failed_fallback_let_the_chain_continue() {
+    let check = plan_new_account(account_aged(DAY, 7), false, None);
+    let nothing = QuarantineOutcome {
+        role: Some(RoleStatus::NotConfigured),
+        timeout: Some(SanctionOutcome::Skipped(SanctionSkip::AdministratorTimeout)),
+        ..QuarantineOutcome::default()
+    };
+    let response = new_account_ban_response(
+        Language::French,
+        MEMBER,
+        &check.detection,
+        &failed(FailureCode::MissingPermission),
+        Some(&nothing),
+    );
+
+    assert!(!response.result.terminal && !response.result.action_applied);
+    assert_eq!(response.incident.severity, LogSeverity::Critical);
+    assert_eq!(response.incident.actions.len(), 3);
+    assert!(
+        response
+            .incident
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .contains("Ni le ban ni la quarantaine de repli")
+    );
+    assert!(response.incident.validate().is_ok());
+
+    // Ban appliqué : aucune quarantaine n'apparaît, même fournie.
+    let banned = new_account_ban_response(
+        Language::French,
+        MEMBER,
+        &check.detection,
+        &SanctionOutcome::Applied,
+        Some(&quarantined()),
+    );
+    assert_eq!(banned.incident.actions.len(), 1);
+}
+
+// --- Usurpation d'identité ---
+
+const OWNER: u64 = 10;
+
+fn known(user_id: u64, privileged: bool, names: [Option<&str>; 3]) -> KnownMember<'_> {
+    KnownMember {
+        user_id,
+        privileged,
+        names,
+    }
+}
+
+#[test]
+fn protected_names_are_the_owner_and_privileged_cached_members() {
+    let members = [
+        known(OWNER, false, [Some("fox_owner"), Some("Fox Owner"), None]),
+        known(11, true, [Some("admin_bob"), None, Some("Bob")]),
+        known(12, false, [Some("random"), None, Some("Alice")]),
+        // Le membre qui arrive n'est jamais protégé contre lui-même.
+        known(MEMBER.user_id, true, [Some("newcomer"), None, None]),
+    ];
+    assert_eq!(
+        protected_names(Some(OWNER), MEMBER.user_id, members),
+        vec!["Bob", "Fox Owner", "admin_bob", "fox_owner"]
+    );
+    // Serveur absent du cache : seuls les privilégiés connus.
+    assert_eq!(
+        protected_names(
+            None,
+            MEMBER.user_id,
+            [known(OWNER, false, [Some("x"), None, None])]
+        ),
+        Vec::<&str>::new()
+    );
+
+    assert!(is_privileged(Permissions::ADMINISTRATOR));
+    assert!(is_privileged(Permissions::MANAGE_GUILD));
+    assert!(!is_privileged(
+        Permissions::BAN_MEMBERS | Permissions::MANAGE_ROLES
+    ));
+}
+
+#[test]
+fn impersonation_matches_normalized_protected_names() {
+    let protected = ["Fox Owner", "admin_bob"];
+    let detection = plan_impersonation(&["f0x_0wner", "Totally Legit"], &protected, None).unwrap();
+    assert!(detection.triggered);
+    assert_eq!(detection.impersonated_name.as_deref(), Some("Fox Owner"));
+    assert_eq!(detection.matched_candidate.as_deref(), Some("f0x_0wner"));
+
+    assert_eq!(plan_impersonation(&["alice"], &protected, None), None);
+    // Nom trop court pour être comparé.
+    assert_eq!(plan_impersonation(&["ab"], &["a.b"], None), None);
+}
+
+#[test]
+fn owner_privileged_and_whitelisted_members_are_never_checked() {
+    let protected = ["Fox Owner"];
+    assert_eq!(
+        ImpersonationExemption::from_member(true, true, true),
+        Some(ImpersonationExemption::GuildOwner)
+    );
+    assert_eq!(
+        ImpersonationExemption::from_member(false, true, true),
+        Some(ImpersonationExemption::Privileged)
+    );
+    assert_eq!(
+        ImpersonationExemption::from_member(false, false, true),
+        Some(ImpersonationExemption::Whitelist)
+    );
+    assert_eq!(
+        ImpersonationExemption::from_member(false, false, false),
+        None
+    );
+
+    for exemption in [
+        ImpersonationExemption::GuildOwner,
+        ImpersonationExemption::Privileged,
+        ImpersonationExemption::Whitelist,
+    ] {
+        assert_eq!(
+            plan_impersonation(&["Fox Owner"], &protected, Some(exemption)),
+            None,
+            "{exemption:?}"
+        );
+    }
+}
+
+#[test]
+fn impersonation_quarantines_without_role_removal_nor_timeout() {
+    assert_eq!(
+        IMPERSONATION_QUARANTINE,
+        QuarantineRequest {
+            allow_timeout_fallback: false,
+            remove_dangerous_roles: false,
+            timeout: Duration::from_secs(600),
+        }
+    );
+    assert_eq!(
+        impersonation_audit_reason(),
+        "FoxSecura Anti-Impersonation: name matches a protected member"
+    );
+    assert!(is_foxsecura_audit_reason(&impersonation_audit_reason()));
+}
+
+#[test]
+fn quarantined_impersonator_is_critical_and_terminal() {
+    let detection = plan_impersonation(&["**Fox`Owner**"], &["Fox Owner"], None).unwrap();
+    let response = impersonation_response(Language::French, MEMBER, &detection, &quarantined());
+
+    assert!(response.result.detected && response.result.action_applied);
+    assert!(response.result.terminal);
+    assert_eq!(response.incident.module, "anti_impersonation");
+    assert_eq!(response.incident.severity, LogSeverity::Critical);
+    assert_eq!(
+        response.incident.actions[0].action,
+        ActionCode::QuarantineMember
+    );
+    assert!(response.incident.validate().is_ok());
+
+    // Noms rendus en code en ligne : ni mention, ni formatage.
+    let message =
+        foxsecura::logs::format_security_log_message(Language::French, &response.incident);
+    assert!(
+        message.contains("Nom du membre = `**FoxˋOwner**`"),
+        "{message}"
+    );
+    assert!(message.contains("Nom protégé = `Fox Owner`"), "{message}");
+}
+
+#[test]
+fn removed_dangerous_roles_are_listed_for_the_staff() {
+    let detection = plan_impersonation(&["Fox Owner"], &["Fox Owner"], None).unwrap();
+    let with_removal = QuarantineOutcome {
+        dangerous_roles: Some(DangerousRoleRemoval {
+            removed: vec![20, 21],
+            ..DangerousRoleRemoval::default()
+        }),
+        ..quarantined()
+    };
+    let response = impersonation_response(Language::French, MEMBER, &detection, &with_removal);
+    let message =
+        foxsecura::logs::format_security_log_message(Language::French, &response.incident);
+    assert!(
+        message.contains("Rôles dangereux retirés (non rendus à la libération) = `20, 21`"),
+        "{message}"
+    );
+    assert_eq!(
+        response.incident.actions[0].action,
+        ActionCode::RemoveDangerousRoles
+    );
+
+    // Aucun rôle retiré : aucune preuve.
+    let response = impersonation_response(Language::French, MEMBER, &detection, &quarantined());
+    assert_eq!(response.incident.evidence.len(), 2);
+}
+
+#[test]
+fn failed_impersonation_quarantine_is_not_terminal() {
+    let detection = plan_impersonation(&["Fox Owner"], &["Fox Owner"], None).unwrap();
+    let failed_role = QuarantineOutcome {
+        role: Some(RoleStatus::NotConfigured),
+        ..QuarantineOutcome::default()
+    };
+    let response = impersonation_response(Language::French, MEMBER, &detection, &failed_role);
+
+    assert!(response.result.detected);
+    assert!(!response.result.terminal && !response.result.action_applied);
+    assert_eq!(response.incident.severity, LogSeverity::Critical);
+    assert_eq!(response.incident.actions.len(), 1);
+    assert_eq!(response.incident.actions[0].status, ActionStatus::Skipped);
+    assert!(
+        response
+            .incident
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .contains("Configurez le rôle de quarantaine")
+    );
 }
 
 // --- Pseudos hoistés ---
@@ -510,6 +801,7 @@ fn all_join_modules() -> ModuleSet {
     [
         ProtectionModule::AntiBot,
         ProtectionModule::AntiNewAccount,
+        ProtectionModule::AntiImpersonation,
         ProtectionModule::AntiNicknameHoisting,
     ]
     .into_iter()
@@ -550,8 +842,13 @@ fn join_chain_follows_the_v1_order() {
             JoinStep::Blacklist,
             JoinStep::AntiBot,
             JoinStep::AntiNewAccount,
+            JoinStep::AntiImpersonation,
             JoinStep::AntiNicknameHoisting,
         ]
+    );
+    assert_eq!(
+        JoinStep::AntiImpersonation.module(),
+        Some(ProtectionModule::AntiImpersonation)
     );
 
     let chain = run(all_join_modules(), |_| ModuleResult::NOT_DETECTED);
@@ -590,6 +887,43 @@ fn terminal_result_stops_the_chain() {
     });
     // Un compte banni n'est pas renommé.
     assert!(!steps(&chain).contains(&JoinStep::AntiNicknameHoisting));
+}
+
+#[test]
+fn impersonation_runs_after_new_accounts_and_its_quarantine_stops_the_chain() {
+    let detection = plan_impersonation(&["Fox Owner"], &["Fox Owner"], None).unwrap();
+    let impersonator = impersonation_response(Language::French, MEMBER, &detection, &quarantined());
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiImpersonation => impersonator.result,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(
+        steps(&chain),
+        [
+            JoinStep::Blacklist,
+            JoinStep::AntiBot,
+            JoinStep::AntiNewAccount,
+            JoinStep::AntiImpersonation,
+        ]
+    );
+    assert_eq!(chain.stopped_by(), Some(JoinStep::AntiImpersonation));
+
+    // Nouveau compte contenu par la quarantaine de repli : l'usurpation ne
+    // s'exécute pas.
+    let check = plan_new_account(account_aged(DAY, 7), false, None);
+    let fallback = new_account_ban_response(
+        Language::French,
+        MEMBER,
+        &check.detection,
+        &failed(FailureCode::MissingPermission),
+        Some(&quarantined()),
+    );
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiNewAccount => fallback.result,
+        JoinStep::AntiImpersonation => panic!("le membre est déjà en quarantaine"),
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(chain.stopped_by(), Some(JoinStep::AntiNewAccount));
 }
 
 #[test]

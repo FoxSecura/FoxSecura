@@ -6,11 +6,15 @@
 //!
 //! Arrivée : une seule lecture de contexte (cache de la guilde), puis la
 //! chaîne de la V1 (`foxsecura::protection::member_join`) : liste noire →
-//! anti-bot → nouveaux comptes → pseudos hoistés. Un résultat terminal
-//! (membre banni ou expulsé, liste noire) arrête la chaîne.
+//! anti-bot → nouveaux comptes → usurpation d'identité → pseudos hoistés. Un
+//! résultat terminal (membre banni, expulsé ou mis en quarantaine, liste
+//! noire) arrête la chaîne. Un ban de nouveau compte non appliqué déclenche
+//! la quarantaine de repli.
 //!
 //! Mise à jour : seul l'anti-pseudo hoisté s'exécute, si le nom affiché a
-//! changé et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là.
+//! changé et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là. Un
+//! rôle de quarantaine retiré à la main déclenche la restauration des
+//! overwrites du membre (`quarantine::handle_member_update`).
 //!
 //! Les erreurs sont journalisées et jamais propagées ; l'arrivée du bot
 //! lui-même est ignorée.
@@ -32,9 +36,14 @@ use foxsecura::protection::member_join::blacklist::{
 use foxsecura::protection::member_join::hoisting::{
     anti_hoisting_audit_reason, hoisting_response, plan_nickname_fix,
 };
+use foxsecura::protection::member_join::impersonation::{
+    IMPERSONATION_QUARANTINE, ImpersonationExemption, KnownMember, impersonation_audit_reason,
+    impersonation_response, is_privileged, plan_impersonation, protected_names,
+};
 use foxsecura::protection::member_join::new_account::{
-    NEW_ACCOUNT_BAN, NewAccountExemption, NewAccountPlan, exempt_new_account_response,
-    new_account_audit_reason, new_account_ban_response, plan_new_account,
+    NEW_ACCOUNT_BAN, NEW_ACCOUNT_FALLBACK, NewAccountExemption, NewAccountPlan,
+    exempt_new_account_response, new_account_audit_reason, new_account_ban_response,
+    plan_new_account,
 };
 use foxsecura::protection::member_join::{
     JoinChain, JoinStep, MemberRef, ModuleResponse, ModuleResult, display_name_changed,
@@ -45,8 +54,9 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
+use super::quarantine::{self, QuarantineTarget};
 use super::sanction::{self, NicknameRequest, SanctionRequest};
-use super::{BOT_ASSIGNED_ROLES, incident_log, unix_duration};
+use super::{bot_assigned_roles, incident_log, unix_duration};
 use crate::app::{AppData, run_database};
 
 /// Membre analysé, converti depuis l'événement.
@@ -56,6 +66,8 @@ struct MemberFacts<'a> {
     is_guild_owner: bool,
     roles: Vec<u64>,
     display_name: &'a str,
+    /// Nom d'utilisateur, nom global et pseudo (usurpation d'identité).
+    names: Vec<&'a str>,
     joined_at: Duration,
 }
 
@@ -74,6 +86,14 @@ pub async fn handle_join(ctx: &serenity::Context, data: &AppData, member: &seren
         is_guild_owner: is_guild_owner(ctx, member.guild_id, member.user.id),
         roles: member.roles.iter().map(|role| role.get()).collect(),
         display_name: member.display_name(),
+        names: [
+            Some(member.user.name.as_str()),
+            member.user.global_name.as_deref(),
+            member.nick.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         joined_at: member.joined_at.and_then(unix_duration).unwrap_or_else(now),
     };
     let Some(context) = read_context(data, facts.target).await else {
@@ -86,6 +106,7 @@ pub async fn handle_join(ctx: &serenity::Context, data: &AppData, member: &seren
             JoinStep::Blacklist => blacklist(ctx, data, &context, &facts).await,
             JoinStep::AntiBot => anti_bot(ctx, data, &context, &facts).await,
             JoinStep::AntiNewAccount => new_account(ctx, data, &context, &facts).await,
+            JoinStep::AntiImpersonation => impersonation(ctx, data, &context, &facts).await,
             JoinStep::AntiNicknameHoisting => hoisting(ctx, data, &context, &facts).await,
         };
         chain.record(step, result);
@@ -111,6 +132,9 @@ pub async fn handle_update(
         return;
     }
 
+    // Rôle de quarantaine retiré à la main : restauration des overwrites.
+    quarantine::handle_member_update(ctx, data, old, event).await;
+
     let current = event
         .nick
         .as_deref()
@@ -133,6 +157,8 @@ pub async fn handle_update(
         is_guild_owner: is_guild_owner(ctx, event.guild_id, event.user.id),
         roles: event.roles.iter().map(|role| role.get()).collect(),
         display_name: current,
+        // Usurpation : analysée seulement à l'arrivée.
+        names: Vec::new(),
         joined_at: unix_duration(event.joined_at).unwrap_or_else(now),
     };
     let Some(context) = read_context(data, facts.target).await else {
@@ -193,14 +219,7 @@ async fn new_account(
     context: &MemberGuardContext,
     facts: &MemberFacts<'_>,
 ) -> ModuleResult {
-    let whitelist_exempt = is_author_exempt(
-        &AuthorWhitelist {
-            user_listed: context.user_whitelisted,
-            listed_roles: &context.whitelist_roles,
-        },
-        Some(&facts.roles),
-        BOT_ASSIGNED_ROLES,
-    );
+    let whitelist_exempt = whitelist_exempt(context, facts);
     let check = plan_new_account(
         AntiNewAccountInput {
             account_created_at: snowflake_timestamp(facts.target.user_id),
@@ -225,13 +244,159 @@ async fn new_account(
             exempt_new_account_response(language, facts.target, &check.detection, exemption)
         }
         NewAccountPlan::Ban => {
-            // Tranche 6 : un ban non appliqué déclenchera ici la quarantaine
-            // de repli (voir `quarantine_fallback_unavailable`).
             let outcome = sanction(ctx, facts, NEW_ACCOUNT_BAN, &new_account_audit_reason()).await;
-            new_account_ban_response(language, facts.target, &check.detection, &outcome)
+            // Ban non appliqué : quarantaine de repli, avec repli timeout.
+            let fallback = if outcome.is_applied() {
+                None
+            } else {
+                Some(
+                    quarantine::quarantine(
+                        ctx,
+                        data,
+                        &quarantine_target(facts, whitelist_exempt),
+                        NEW_ACCOUNT_FALLBACK,
+                        new_account_audit_reason(),
+                    )
+                    .await,
+                )
+            };
+            new_account_ban_response(
+                language,
+                facts.target,
+                &check.detection,
+                &outcome,
+                fallback.as_ref(),
+            )
         }
     };
     publish(ctx, data, context, facts, response).await
+}
+
+/// Usurpation d'identité : quarantaine d'un membre qui arrive avec le nom du
+/// propriétaire ou d'un membre privilégié.
+async fn impersonation(
+    ctx: &serenity::Context,
+    data: &AppData,
+    context: &MemberGuardContext,
+    facts: &MemberFacts<'_>,
+) -> ModuleResult {
+    let (protected, privileged) = protected_names_from_cache(ctx, facts).await;
+    let protected: Vec<&str> = protected.iter().map(String::as_str).collect();
+    let whitelist_exempt = whitelist_exempt(context, facts);
+    let exemption =
+        ImpersonationExemption::from_member(facts.is_guild_owner, privileged, whitelist_exempt);
+    let Some(detection) = plan_impersonation(&facts.names, &protected, exemption) else {
+        return ModuleResult::NOT_DETECTED;
+    };
+
+    let outcome = quarantine::quarantine(
+        ctx,
+        data,
+        &quarantine_target(facts, whitelist_exempt),
+        IMPERSONATION_QUARANTINE,
+        impersonation_audit_reason(),
+    )
+    .await;
+    publish(
+        ctx,
+        data,
+        context,
+        facts,
+        impersonation_response(language(context), facts.target, &detection, &outcome),
+    )
+    .await
+}
+
+/// Noms protégés (propriétaire et membres privilégiés en cache) et
+/// privilège du membre qui arrive, d'après ses rôles.
+///
+/// Le propriétaire absent du cache est lu par l'API : un appel de plus par
+/// arrivée sur un serveur où il n'est pas en cache.
+async fn protected_names_from_cache(
+    ctx: &serenity::Context,
+    facts: &MemberFacts<'_>,
+) -> (Vec<String>, bool) {
+    let guild_id = serenity::GuildId::new(facts.target.guild_id);
+    let (mut names, privileged, missing_owner) = {
+        let Some(guild) = ctx.cache.guild(guild_id) else {
+            return (Vec::new(), false);
+        };
+        // Rôles privilégiés, calculés une fois : chaque membre en cache est
+        // ensuite testé sur ses seuls rôles.
+        let everyone = serenity::RoleId::new(guild_id.get());
+        let privileged_roles: Vec<serenity::RoleId> = guild
+            .roles
+            .values()
+            .filter(|role| is_privileged(role.permissions))
+            .map(|role| role.id)
+            .collect();
+        let everyone_privileged = privileged_roles.contains(&everyone);
+        let is_member_privileged = |roles: &[serenity::RoleId]| {
+            everyone_privileged || roles.iter().any(|role| privileged_roles.contains(role))
+        };
+
+        let known = guild.members.values().map(|member| KnownMember {
+            user_id: member.user.id.get(),
+            privileged: is_member_privileged(&member.roles),
+            names: [
+                Some(member.user.name.as_str()),
+                member.user.global_name.as_deref(),
+                member.nick.as_deref(),
+            ],
+        });
+        let names: Vec<String> =
+            protected_names(Some(guild.owner_id.get()), facts.target.user_id, known)
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+        let joining_roles: Vec<serenity::RoleId> = facts
+            .roles
+            .iter()
+            .map(|role| serenity::RoleId::new(*role))
+            .collect();
+        let privileged = is_member_privileged(&joining_roles);
+        let missing_owner = (!guild.members.contains_key(&guild.owner_id)
+            && guild.owner_id.get() != facts.target.user_id)
+            .then_some(guild.owner_id);
+        (names, privileged, missing_owner)
+    };
+
+    if let Some(owner_id) = missing_owner {
+        match guild_id.member(ctx, owner_id).await {
+            Ok(owner) => names.extend(
+                [Some(owner.user.name), owner.user.global_name, owner.nick]
+                    .into_iter()
+                    .flatten(),
+            ),
+            Err(error) => eprintln!(
+                "[member] propriétaire de la guilde {} illisible : {error}",
+                facts.target.guild_id
+            ),
+        }
+    }
+    (names, privileged)
+}
+
+/// Le membre est-il exempté par la liste blanche ? Le rôle de quarantaine
+/// n'exempte jamais.
+fn whitelist_exempt(context: &MemberGuardContext, facts: &MemberFacts<'_>) -> bool {
+    is_author_exempt(
+        &AuthorWhitelist {
+            user_listed: context.user_whitelisted,
+            listed_roles: &context.whitelist_roles,
+        },
+        Some(&facts.roles),
+        bot_assigned_roles(context.guild_config.as_ref()),
+    )
+}
+
+fn quarantine_target<'a>(facts: &'a MemberFacts<'_>, whitelisted: bool) -> QuarantineTarget<'a> {
+    QuarantineTarget {
+        guild_id: facts.target.guild_id,
+        user_id: facts.target.user_id,
+        member_roles: &facts.roles,
+        whitelisted,
+    }
 }
 
 /// Pseudos hoistés : renommage, y compris pour la liste blanche.

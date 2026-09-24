@@ -4,7 +4,7 @@
 mod data;
 mod events;
 mod intents;
-mod pipeline;
+pub(crate) mod pipeline;
 
 use std::sync::Arc;
 
@@ -68,6 +68,11 @@ impl App {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                     println!("FoxSecura connecté en tant que {}", ready.user.name);
+                    pipeline::quarantine::spawn_maintenance(
+                        ctx.clone(),
+                        Arc::clone(&data.database),
+                        Arc::clone(data.protection.quarantine_locks()),
+                    );
                     Ok(data)
                 })
             })

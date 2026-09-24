@@ -8,6 +8,7 @@ use crate::logs::LogType;
 use crate::protection::anti_raid::anti_new_account::is_valid_min_account_age_days;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 use crate::protection::automod::bad_words::BadWordsLanguage;
+use crate::protection::shared::is_everyone_role;
 
 use super::models::{parse_language, parse_log_type, parse_snowflake};
 use super::{Database, DatabaseError, GuildConfig, GuildLogChannel};
@@ -111,6 +112,43 @@ ON CONFLICT(guild_id) DO UPDATE SET
         )?;
 
         read_guild_config(&connection, guild_id)
+    }
+
+    /// Enregistre le rôle de quarantaine ; `@everyone` est refusé.
+    ///
+    /// La validation d'un rôle existant (géré, non gérable, permission
+    /// dangereuse) se fait d'après le cache Discord, avant l'écriture.
+    pub fn set_quarantine_role(
+        &self,
+        guild_id: u64,
+        role_id: u64,
+    ) -> Result<GuildConfig, DatabaseError> {
+        if is_everyone_role(guild_id, role_id) {
+            return Err(DatabaseError::EveryoneRoleNotQuarantinable);
+        }
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, quarantine_role_id)
+VALUES (?1, ?2)
+ON CONFLICT(guild_id) DO UPDATE SET
+    quarantine_role_id = excluded.quarantine_role_id,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), role_id.to_string()],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
+    /// Rôle de quarantaine, servi par le cache de la guilde ; aucune écriture.
+    pub fn quarantine_role_id(&self, guild_id: u64) -> Result<Option<u64>, DatabaseError> {
+        Ok(self
+            .guild_snapshot(guild_id)?
+            .guild_config
+            .as_ref()
+            .and_then(|config| config.quarantine_role_id))
     }
 
     pub fn set_guild_language(
@@ -235,7 +273,7 @@ pub(super) fn read_guild_config(
         r#"
 SELECT guild_id, language, created_at, updated_at,
     anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
-    bad_words_language, new_account_min_age_days
+    bad_words_language, new_account_min_age_days, quarantine_role_id
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -251,6 +289,7 @@ WHERE guild_id = ?1
                 row.get::<_, u32>(6)?,
                 row.get::<_, String>(7)?,
                 row.get::<_, u16>(8)?,
+                row.get::<_, Option<String>>(9)?,
             ))
         },
     )?;
@@ -264,6 +303,7 @@ WHERE guild_id = ?1
         new_account_min_age_days: Some(row.8)
             .filter(|days| is_valid_min_account_age_days(*days))
             .ok_or(DatabaseError::InvalidNewAccountMinAge(row.8))?,
+        quarantine_role_id: row.9.as_deref().map(parse_snowflake).transpose()?,
         created_at: row.2,
         updated_at: row.3,
     })
