@@ -14,6 +14,8 @@ Chaque branchement doit conserver la séparation `snapshot → détection → d�
 
 **Fait (tranche 4)** : socle partagé des sanctions (timeout, ban) avec cœur pur testé (propriétaire et bot jamais sanctionnés, liste blanche → `ignore_exempt_member`, permission et hiérarchie vérifiées d'après le cache, échecs classés) ; `attachment_filter`, `anti_scam` gradué (revue, timeout 1 h, ban avec purge de 7 jours) et `bad_words` (liste intégrée par langue et mots personnalisés, migration 5) ; ordre complet de la V1 ; cache de configuration par guilde invalidé à chaque écriture ; correction des modifications partielles. **Reste** : anti-nuke capable d'ignorer les sanctions de FoxSecura (raison préfixée `FoxSecura` + exécuteur), sanction d'un membre déjà parti (ban par identifiant), réglage des seuils de l'anti-arnaque.
 
+**Fait (tranche 5)** : pipeline des membres (`GUILD_MEMBER_ADD`, `GUILD_MEMBER_UPDATE`) dans l'ordre de la V1, avec arrêt sur résultat terminal ; liste noire (migration 6, exclusive avec la liste blanche, ban à l'arrivée, terminal même en cas d'échec) ; anti-bot (expulsion, socle étendu à `Kick`) ; nouveaux comptes (âge minimal persisté, ban avec purge de 7 jours) ; pseudos hoistés (règle Unicode V1, renommage sans boucle). **Reste** : quarantaine de repli d'un ban refusé et usurpation d'identité (tranche 6) ; anti-raid (rafales d'arrivées), verrouillage, honeypot et doubles comptes (tranche 7).
+
 **Fait (tranche 2)** : liste blanche (utilisateurs, rôles) et salons ignorés, persistés (migration 3), appliqués par le pipeline de messages dans l'ordre de la V1 et gérés depuis `/config` → Contrôle d'accès. **Fait (tranche 4)** : cache par guilde. **Reste** : prise en compte des fils de salons ignorés, et rôles attribués par FoxSecura (vérification, quarantaine, rôle limité) à exclure de l'exemption quand ces modules seront portés.
 
 ## 2. Rendre `/config` réellement persistant
@@ -22,7 +24,7 @@ Le tableau de bord expose déjà les grandes catégories produit. Les prochaines
 
 L'interface ne doit afficher un état « actif » que si la valeur est réellement persistée et utilisée par le moteur concerné.
 
-**Fait** : autorisation propriétaire / `ADMINISTRATOR` / `MANAGE_GUILD`, catégorie Anti-Spam persistée (activation, seuil, fenêtre, six filtres de contenu dont l'anti-arnaque), catégorie AutoMod (liens adultes, invitations, mots interdits avec liste intégrée et mots personnalisés) et catégorie Contrôle d'accès (liste blanche réservée au propriétaire et à `ADMINISTRATOR`, salons ignorés). **Reste** : les autres catégories et la configuration des salons de logs depuis `/config`.
+**Fait** : autorisation propriétaire / `ADMINISTRATOR` / `MANAGE_GUILD`, catégorie Anti-Spam persistée (activation, seuil, fenêtre, six filtres de contenu dont l'anti-arnaque), catégorie AutoMod (liens adultes, invitations, mots interdits avec liste intégrée et mots personnalisés), catégorie Contrôle d'accès (listes blanche et noire réservées au propriétaire et à `ADMINISTRATOR`, salons ignorés) et catégorie Anti-Raid (anti-bot, nouveaux comptes avec âge minimal, pseudos hoistés). **Reste** : les autres catégories et la configuration des salons de logs depuis `/config`.
 
 ## 3. Finaliser la chaîne d'incidents
 
@@ -36,7 +38,7 @@ Priorités : corrélation avec les audit logs, identification fiable de l'exécu
 
 Priorités : états temporels efficaces, nettoyage des fenêtres, configuration par serveur, cohérence des exemptions et contrôle des faux positifs.
 
-L'anti-spam par rafales est branché au runtime. La liste blanche et les salons ignorés sont appliqués. Les neuf filtres de contenu sont branchés, dont l'anti-arnaque avec sanctions. Restent notamment : limitation du volume d'incidents pendant une rafale et, si le bot doit tourner sur plusieurs instances, un état partagé (anti-spam et invalidation du cache de configuration).
+L'anti-spam par rafales est branché au runtime. La liste blanche et les salons ignorés sont appliqués. Les neuf filtres de contenu sont branchés, dont l'anti-arnaque avec sanctions. Côté arrivées : liste noire, anti-bot, nouveaux comptes et pseudos hoistés sont branchés ; restent la quarantaine, l'usurpation d'identité, l'anti-raid par rafales, le verrouillage, le honeypot et les doubles comptes. Restent notamment : limitation du volume d'incidents pendant une rafale et, si le bot doit tourner sur plusieurs instances, un état partagé (anti-spam et invalidation du cache de configuration).
 
 ## 6. AutoMod natif
 
