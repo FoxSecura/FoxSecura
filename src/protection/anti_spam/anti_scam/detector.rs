@@ -18,6 +18,19 @@ pub enum ScamConfidence {
     Critical,
 }
 
+impl ScamConfidence {
+    /// Clé stable utilisée dans les incidents.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct AntiScamObservation<'a> {
     pub content: &'a str,
@@ -56,22 +69,58 @@ pub fn detect_scam_message(
         signals.push("dangerous_attachment");
     }
 
-    if contains_any(&content, &["verify your account", "login to claim", "scan qr", "confirm your account", "re-authenticate"]) {
+    if contains_any(
+        &content,
+        &[
+            "verify your account",
+            "login to claim",
+            "scan qr",
+            "confirm your account",
+            "re-authenticate",
+        ],
+    ) {
         score = score.saturating_add(3);
         signals.push("credential_request");
     }
 
-    if contains_any(&content, &["free nitro", "nitro gift", "steam gift", "crypto giveaway", "airdrop", "free gift"]) {
+    if contains_any(
+        &content,
+        &[
+            "free nitro",
+            "nitro gift",
+            "steam gift",
+            "crypto giveaway",
+            "airdrop",
+            "free gift",
+        ],
+    ) {
         score = score.saturating_add(2);
         signals.push("bait_offer");
     }
 
-    if contains_any(&content, &["act now", "limited time", "urgent", "expires soon", "immediately"]) {
+    if contains_any(
+        &content,
+        &[
+            "act now",
+            "limited time",
+            "urgent",
+            "expires soon",
+            "immediately",
+        ],
+    ) {
         score = score.saturating_add(1);
         signals.push("urgency");
     }
 
-    if contains_any(&content, &["seed phrase", "wallet connect", "recovery phrase", "private key"]) {
+    if contains_any(
+        &content,
+        &[
+            "seed phrase",
+            "wallet connect",
+            "recovery phrase",
+            "private key",
+        ],
+    ) {
         score = score.saturating_add(3);
         signals.push("wallet_credentials");
     }

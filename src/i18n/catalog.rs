@@ -637,6 +637,91 @@ catalog! {
         fr: "Mentions de masse détectées.",
         de: "Massenerwähnung erkannt."
     },
+    ContentFilterSummaryAttachment => {
+        en: "Dangerous attachment detected.",
+        fr: "Pièce jointe dangereuse détectée.",
+        de: "Gefährlicher Anhang erkannt."
+    },
+    ContentFilterSummaryScam => {
+        en: "Probable scam detected.",
+        fr: "Arnaque probable détectée.",
+        de: "Wahrscheinlicher Betrug erkannt."
+    },
+    ContentFilterSummaryBadWord => {
+        en: "Forbidden word detected.",
+        fr: "Mot interdit détecté.",
+        de: "Verbotenes Wort erkannt."
+    },
+    ContentFilterEvidenceFile => {
+        en: "File",
+        fr: "Fichier",
+        de: "Datei"
+    },
+    ContentFilterEvidenceExtension => {
+        en: "Extension",
+        fr: "Extension",
+        de: "Endung"
+    },
+    ContentFilterEvidenceWord => {
+        en: "Word",
+        fr: "Mot",
+        de: "Wort"
+    },
+    AntiScamEvidenceSignals => {
+        en: "Signals",
+        fr: "Signaux",
+        de: "Signale"
+    },
+    AntiScamEvidenceScore => {
+        en: "Score",
+        fr: "Score",
+        de: "Punktzahl"
+    },
+    AntiScamEvidenceConfidence => {
+        en: "Confidence",
+        fr: "Confiance",
+        de: "Konfidenz"
+    },
+    AntiScamRecommendationReview => {
+        en: "Review the member: medium-confidence scam, no sanction was applied.",
+        fr: "Examiner le membre : arnaque de confiance moyenne, aucune sanction appliquée.",
+        de: "Das Mitglied überprüfen: Betrug mittlerer Konfidenz, keine Sanktion verhängt."
+    },
+    AntiScamRecommendationCheckHierarchy => {
+        en: "Check the ban hierarchy: FoxSecura's role must be above the member, with Moderate Members and Ban Members.",
+        fr: "Vérifier la hiérarchie du ban : le rôle de FoxSecura doit être au-dessus du membre, avec Modérer les membres et Bannir des membres.",
+        de: "Die Bann-Hierarchie prüfen: Die Rolle von FoxSecura muss über dem Mitglied liegen, mit Mitglieder moderieren und Mitglieder bannen."
+    },
+    AntiScamRecommendationBanFalsePositive => {
+        en: "Member banned: check the evidence and revoke the ban if it is a false positive (compromised account).",
+        fr: "Membre banni : vérifier les preuves et révoquer le ban s'il s'agit d'un faux positif (compte compromis).",
+        de: "Mitglied gebannt: Beweise prüfen und den Bann bei einem Fehlalarm aufheben (kompromittiertes Konto)."
+    },
+    AntiScamRecommendationTimeoutFalsePositive => {
+        en: "Member timed out for one hour: check the evidence and lift the timeout if it is a false positive.",
+        fr: "Membre exclu une heure : vérifier les preuves et lever l'exclusion s'il s'agit d'un faux positif.",
+        de: "Mitglied für eine Stunde stummgeschaltet: Beweise prüfen und bei einem Fehlalarm aufheben."
+    },
+    RecommendationReviewWhitelist => {
+        en: "Review the whitelist: an exempt member posted content that would have been sanctioned (possibly a compromised account).",
+        fr: "Revoir la liste blanche : un membre exempté a publié un contenu qui aurait été sanctionné (compte peut-être compromis).",
+        de: "Die Whitelist überprüfen: Ein ausgenommenes Mitglied hat Inhalte gepostet, die sanktioniert worden wären (möglicherweise kompromittiertes Konto)."
+    },
+    ModuleAttachmentFilter => {
+        en: "Dangerous attachments",
+        fr: "Pièces jointes dangereuses",
+        de: "Gefährliche Anhänge"
+    },
+    ModuleAntiScam => {
+        en: "Anti-scam",
+        fr: "Anti-arnaque",
+        de: "Anti-Betrug"
+    },
+    ModuleBadWords => {
+        en: "Forbidden words",
+        fr: "Mots interdits",
+        de: "Verbotene Wörter"
+    },
     ContentFilterEvidenceObfuscation => {
         en: "Obfuscation",
         fr: "Obfuscation",
@@ -738,9 +823,9 @@ catalog! {
         de: "Inhaltsfilter"
     },
     ConfigContentFiltersNotice => {
-        en: "Enabled filters delete matching messages (new or edited) and log an incident, without any sanction. They also apply to whitelisted members, but never in ignored channels. The Message Content intent is required.",
-        fr: "Les filtres actifs suppriment les messages concernés (nouveaux ou modifiés) et journalisent un incident, sans aucune sanction. Ils s'appliquent aussi aux membres sur liste blanche, jamais dans les salons ignorés. L'intent Message Content est requis.",
-        de: "Aktive Filter löschen betroffene Nachrichten (neu oder bearbeitet) und protokollieren einen Vorfall, ohne Sanktion. Sie gelten auch für Mitglieder auf der Whitelist, aber nie in ignorierten Kanälen. Der Message-Content-Intent ist erforderlich."
+        en: "Enabled filters delete matching messages (new or edited) and log an incident. Only the anti-scam sanctions: medium confidence asks for a staff review, high confidence times out for 1 hour, critical confidence bans and purges 7 days of messages (Moderate Members, Ban Members and a role above members required). A false positive bans a legitimate member: review every incident. Filters also apply to whitelisted members (deletion only, never a sanction), never in ignored channels. The Message Content intent is required.",
+        fr: "Les filtres actifs suppriment les messages concernés (nouveaux ou modifiés) et journalisent un incident. Seul l'anti-arnaque sanctionne : confiance moyenne → revue par l'équipe, haute → exclusion d'une heure, critique → ban avec purge de 7 jours de messages (Modérer les membres, Bannir des membres et un rôle au-dessus des membres requis). Un faux positif bannit un membre légitime : examinez chaque incident. Les filtres s'appliquent aussi aux membres sur liste blanche (suppression seule, jamais de sanction), jamais dans les salons ignorés. L'intent Message Content est requis.",
+        de: "Aktive Filter löschen betroffene Nachrichten (neu oder bearbeitet) und protokollieren einen Vorfall. Nur der Anti-Betrug sanktioniert: mittlere Konfidenz → Prüfung durch das Team, hohe → 1 Stunde Timeout, kritische → Bann mit Löschung von 7 Tagen Nachrichten (Mitglieder moderieren, Mitglieder bannen und eine Rolle über den Mitgliedern erforderlich). Ein Fehlalarm bannt ein legitimes Mitglied: Jeden Vorfall prüfen. Filter gelten auch für Mitglieder auf der Whitelist (nur Löschung, nie eine Sanktion), aber nie in ignorierten Kanälen. Der Message-Content-Intent ist erforderlich."
     },
     ConfigModuleEnabled => {
         en: "enabled",
@@ -781,6 +866,61 @@ catalog! {
         en: "Mass mentions",
         fr: "Mentions de masse",
         de: "Massenerwähnungen"
+    },
+    ConfigBadWords => {
+        en: "Forbidden words",
+        fr: "Mots interdits",
+        de: "Verbotene Wörter"
+    },
+    ConfigBadWordsLanguage => {
+        en: "Built-in list",
+        fr: "Liste intégrée",
+        de: "Integrierte Liste"
+    },
+    ConfigBadWordsCustomCount => {
+        en: "Custom words",
+        fr: "Mots personnalisés",
+        de: "Eigene Wörter"
+    },
+    ConfigBadWordsNotice => {
+        en: "Case-insensitive, whole words only (a letter, digit or _ next to it prevents a match). Deletion only, never a sanction, including for whitelisted members.",
+        fr: "Insensible à la casse, mots entiers seulement (une lettre, un chiffre ou _ accolé empêche la correspondance). Suppression seule, jamais de sanction, y compris pour les membres sur liste blanche.",
+        de: "Groß-/Kleinschreibung egal, nur ganze Wörter (ein angrenzender Buchstabe, eine Ziffer oder _ verhindert einen Treffer). Nur Löschung, nie eine Sanktion, auch für Mitglieder auf der Whitelist."
+    },
+    ConfigBadWordsFrench => {
+        en: "French",
+        fr: "Français",
+        de: "Französisch"
+    },
+    ConfigBadWordsEnglish => {
+        en: "English",
+        fr: "Anglais",
+        de: "Englisch"
+    },
+    ConfigBadWordsAll => {
+        en: "All",
+        fr: "Toutes",
+        de: "Alle"
+    },
+    ConfigBadWordsEditButton => {
+        en: "Edit custom words",
+        fr: "Modifier les mots personnalisés",
+        de: "Eigene Wörter bearbeiten"
+    },
+    ConfigBadWordsModalTitle => {
+        en: "Custom forbidden words",
+        fr: "Mots interdits personnalisés",
+        de: "Eigene verbotene Wörter"
+    },
+    ConfigBadWordsInput => {
+        en: "One word or phrase per line",
+        fr: "Un mot ou une expression par ligne",
+        de: "Ein Wort oder Ausdruck pro Zeile"
+    },
+    ConfigBadWordsInvalid => {
+        en: "Invalid list: at most 200 words, 100 characters per word and 2,000 characters in total, without control characters. Nothing was changed.",
+        fr: "Liste invalide : 200 mots au maximum, 100 caractères par mot et 2 000 caractères au total, sans caractère de contrôle. Rien n'a été modifié.",
+        de: "Ungültige Liste: höchstens 200 Wörter, 100 Zeichen pro Wort und 2.000 Zeichen insgesamt, ohne Steuerzeichen. Es wurde nichts geändert."
     },
     ConfigAccessControlNotice => {
         en: "Whitelisted members are exempt from sanctions; the whitelist never grants access to /config. No protection runs in ignored channels. Pick an entry to add it, or pick it again to remove it.",

@@ -4,12 +4,14 @@
 use std::time::Duration;
 
 use foxsecura::i18n::DEFAULT_LANGUAGE;
+use foxsecura::protection::automod::bad_words::DEFAULT_BAD_WORDS_LANGUAGE;
 use foxsecura::protection::content_filter::{
-    AuthorContext, MessageContent, MessageEvent, MessageRoute, route_message,
+    AuthorContext, MessageContent, MessageEvent, MessageRoute, MessageUpdate, MissingFields,
+    route_message,
 };
 use foxsecura::protection::shared::{
-    AuthorWhitelist, MessageSnapshot, is_author_exempt, message_scope, screen_message,
-    snowflake_timestamp,
+    AuthorWhitelist, MessageSnapshot, ProtectionModule, is_author_exempt, message_scope,
+    screen_message, snowflake_timestamp,
 };
 use poise::serenity_prelude as serenity;
 
@@ -85,12 +87,18 @@ pub async fn handle_update(
             webhook_id: event.webhook_id.flatten().map(serenity::WebhookId::get),
             timestamp: snowflake_timestamp(event.id.get()),
         },
-        content: MessageContent {
+        // Discord peut omettre les mentions ou les pièces jointes : les champs
+        // absents ne sont pas comparés à la version relue avant suppression.
+        content: MessageContent::from_update(MessageUpdate {
             content: content.clone(),
-            mentions_everyone: event.mention_everyone.unwrap_or(false),
-            mention_count: event.mentions.as_ref().map_or(0, Vec::len)
-                + event.mention_roles.as_ref().map_or(0, Vec::len),
-        },
+            mentions_everyone: event.mention_everyone,
+            user_mentions: event.mentions.as_ref().map(Vec::len),
+            role_mentions: event.mention_roles.as_ref().map(Vec::len),
+            attachments: event
+                .attachments
+                .as_ref()
+                .map(|attachments| attachment_names(attachments)),
+        }),
         author: author_context(author.id, unix_duration(edited_at), member),
         member_roles: member_roles(member),
     };
@@ -101,8 +109,8 @@ pub async fn handle_update(
 /// Pipeline de protection des messages.
 ///
 /// Gardes (hors guilde, webhook, bot), puis une seule lecture en base
-/// (configuration, salon ignoré, liste blanche, modules activés), puis les
-/// filtres de contenu et enfin l'anti-spam. Chaque module est isolé : son
+/// (configuration, salon ignoré, liste blanche, modules activés, mots
+/// interdits), puis les filtres de contenu et enfin l'anti-spam. Chaque module est isolé : son
 /// erreur est journalisée sans interrompre le pipeline ni le client.
 async fn process(
     ctx: &serenity::Context,
@@ -144,12 +152,29 @@ async fn process(
     );
     let scope = message_scope(context.channel_ignored, author_exempt);
 
+    // Liste compilée une fois par liste (cache borné), jamais par message.
+    let bad_words = context
+        .enabled_modules
+        .contains(ProtectionModule::BadWords)
+        .then(|| {
+            let language = context
+                .guild_config
+                .as_ref()
+                .map_or(DEFAULT_BAD_WORDS_LANGUAGE, |guild_config| {
+                    guild_config.bad_words_language
+                });
+            data.protection
+                .bad_words()
+                .matcher(language, &context.custom_bad_words)
+        });
+
     match route_message(
         scope,
         event,
         context.enabled_modules,
         &inspected.content,
         inspected.author,
+        bad_words.as_deref(),
     ) {
         MessageRoute::Skip => {}
         MessageRoute::Filter(detection) => {
@@ -160,11 +185,15 @@ async fn process(
             content_filter::run(
                 ctx,
                 data,
-                &guild_message,
-                &detection,
-                event,
-                &inspected.content,
-                language,
+                content_filter::FilteredMessage {
+                    message: &guild_message,
+                    detection: &detection,
+                    event,
+                    content: &inspected.content,
+                    scope,
+                    member_roles: inspected.member_roles.as_deref(),
+                    language,
+                },
             )
             .await;
         }
@@ -188,7 +217,16 @@ pub fn message_content(message: &serenity::Message) -> MessageContent {
         content: message.content.clone(),
         mentions_everyone: message.mention_everyone,
         mention_count: message.mentions.len() + message.mention_roles.len(),
+        attachments: attachment_names(&message.attachments),
+        missing: MissingFields::default(),
     }
+}
+
+fn attachment_names(attachments: &[serenity::Attachment]) -> Vec<String> {
+    attachments
+        .iter()
+        .map(|attachment| attachment.filename.clone())
+        .collect()
 }
 
 fn author_context(

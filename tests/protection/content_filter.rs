@@ -12,10 +12,14 @@ use foxsecura::logs::{
     format_security_log_message,
 };
 use foxsecura::protection::anti_spam::message_flood::{MessageFloodConfig, MessageFloodTracker};
+use foxsecura::protection::automod::bad_words::{
+    BadWordsLanguage, BadWordsMatcher, built_in_bad_words,
+};
 use foxsecura::protection::content_filter::{
     AuthorContext, CONTENT_FILTERS, ContentDetection, ContentFinding, EXCERPT_MAX_CHARS,
-    MASS_MENTION_THRESHOLD, MessageContent, MessageEvent, MessageRoute, RevisionCheck,
-    build_incident, check_revision, detect_content, excerpt, revision_fetch_failure, route_message,
+    MASS_MENTION_THRESHOLD, MessageContent, MessageEvent, MessageRoute, MessageUpdate,
+    MissingFields, RevisionCheck, build_incident, check_revision, detect_content, excerpt,
+    revision_fetch_failure, route_message,
 };
 use foxsecura::protection::shared::{
     DeleteMessageOutcome, GuildMessage, MessageScope, ModuleSet, ProtectionModule,
@@ -48,7 +52,7 @@ fn established_author() -> AuthorContext {
 }
 
 fn detect(module: ProtectionModule, message: &MessageContent) -> Option<ContentFinding> {
-    detect_content(only(module), message, established_author()).map(|detection| {
+    detect_content(only(module), message, established_author(), None).map(|detection| {
         assert_eq!(detection.module, module);
         detection.finding
     })
@@ -89,8 +93,9 @@ fn module_keys_round_trip_and_are_unique() {
 fn unknown_module_keys_are_refused() {
     for key in [
         "",
-        "anti_scam",
+        "anti_nuke",
         "anti_spam",
+        "ANTI_SCAM",
         "MALICIOUS_LINK",
         "malicious_link ",
         "malicious-link",
@@ -120,12 +125,15 @@ fn every_content_filter_is_a_known_module_in_v1_order() {
     assert_eq!(
         CONTENT_FILTERS.map(ProtectionModule::key),
         [
+            "attachment_filter",
             "invisible_char_filter",
+            "anti_scam",
             "malicious_link",
             "adult_link",
             "anti_invite",
             "anti_everyone",
             "anti_mass_mention",
+            "bad_words",
         ]
     );
 }
@@ -136,9 +144,11 @@ fn disabled_modules_never_trigger() {
         content: "\u{200b} https://grabify.link/x https://pornhub.com discord.gg/abc".to_owned(),
         mentions_everyone: true,
         mention_count: 50,
+        attachments: Vec::new(),
+        missing: MissingFields::default(),
     };
     assert_eq!(
-        detect_content(ModuleSet::empty(), &message, established_author()),
+        detect_content(ModuleSet::empty(), &message, established_author(), None),
         None
     );
 }
@@ -250,6 +260,7 @@ fn risky_links_are_blocked_only_for_accounts_younger_than_seven_days() {
         only(ProtectionModule::MaliciousLink),
         &message,
         context(DAY * 7 - Duration::from_secs(1)),
+        None,
     );
     assert!(matches!(
         fresh.map(|detection| detection.finding),
@@ -261,7 +272,8 @@ fn risky_links_are_blocked_only_for_accounts_younger_than_seven_days() {
         detect_content(
             only(ProtectionModule::MaliciousLink),
             &message,
-            context(DAY * 7)
+            context(DAY * 7),
+            None,
         ),
         None
     );
@@ -341,6 +353,8 @@ fn broadcast_mentions_are_blocked_when_discord_flags_them() {
         content: "@everyone venez vite".to_owned(),
         mentions_everyone: true,
         mention_count: 0,
+        attachments: Vec::new(),
+        missing: MissingFields::default(),
     };
     assert_eq!(
         detect(ProtectionModule::AntiEveryone, &message),
@@ -369,6 +383,8 @@ fn mass_mention_threshold_is_inclusive() {
         content: "salut".to_owned(),
         mentions_everyone: false,
         mention_count: count,
+        attachments: Vec::new(),
+        missing: MissingFields::default(),
     };
 
     assert_eq!(MASS_MENTION_THRESHOLD, 5);
@@ -395,21 +411,26 @@ fn mass_mention_threshold_is_inclusive() {
 #[test]
 fn modules_are_evaluated_in_v1_order_and_the_first_one_wins() {
     let message = MessageContent {
-        content: "\u{200b} https://grabify.link/x https://pornhub.com discord.gg/abc".to_owned(),
+        content: "\u{200b} https://grabify.link/x https://pornhub.com discord.gg/abc merde"
+            .to_owned(),
         mentions_everyone: true,
         mention_count: MASS_MENTION_THRESHOLD,
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        missing: MissingFields::default(),
     };
+    let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
 
     // Chaque module déclenche sur ce message : en retirant tour à tour le
     // premier, on retrouve exactement l'ordre de la spécification.
     let mut enabled = all_modules();
     for expected in CONTENT_FILTERS {
-        let detection = detect_content(enabled, &message, established_author()).unwrap();
+        let detection =
+            detect_content(enabled, &message, established_author(), Some(&matcher)).unwrap();
         assert_eq!(detection.module, expected);
         enabled.set(expected, false);
     }
     assert_eq!(
-        detect_content(enabled, &message, established_author()),
+        detect_content(enabled, &message, established_author(), Some(&matcher)),
         None
     );
 }
@@ -423,6 +444,7 @@ fn a_filtered_message_is_never_sent_to_anti_spam() {
         all_modules(),
         &message,
         established_author(),
+        None,
     );
 
     // Un seul module retenu, donc une seule suppression et un seul incident.
@@ -452,6 +474,7 @@ fn filtered_messages_are_not_counted_by_anti_spam() {
                     only(ProtectionModule::AntiInvite),
                     &text_message(content),
                     established_author(),
+                    None,
                 );
                 (route == MessageRoute::AntiSpam).then(|| {
                     tracker.observe(&flood, &guild_message(index as u64 + 1, index as u64 * 100))
@@ -480,6 +503,7 @@ fn ignored_channel_skips_every_protection() {
                     all_modules(),
                     &text_message(content),
                     established_author(),
+                    None,
                 ),
                 MessageRoute::Skip
             );
@@ -495,11 +519,14 @@ fn exempt_author_gets_content_corrections_but_no_anti_spam() {
         all_modules(),
         &text_message("https://grabify.link/x"),
         established_author(),
+        None,
     );
+    // Avec tous les modules, l'anti-arnaque (avant les liens malveillants)
+    // retient le lien : c'est lui qui gradue la réponse.
     assert!(matches!(
         filtered,
         MessageRoute::Filter(ContentDetection {
-            module: ProtectionModule::MaliciousLink,
+            module: ProtectionModule::AntiScam,
             ..
         })
     ));
@@ -511,6 +538,7 @@ fn exempt_author_gets_content_corrections_but_no_anti_spam() {
             all_modules(),
             &text_message("message propre"),
             established_author(),
+            None,
         ),
         MessageRoute::Skip
     );
@@ -525,6 +553,7 @@ fn enforced_author_gets_filters_then_anti_spam() {
             all_modules(),
             &text_message("https://grabify.link/x"),
             established_author(),
+            None,
         ),
         MessageRoute::Filter(_)
     ));
@@ -535,6 +564,7 @@ fn enforced_author_gets_filters_then_anti_spam() {
             all_modules(),
             &text_message("message propre"),
             established_author(),
+            None,
         ),
         MessageRoute::AntiSpam
     );
@@ -546,6 +576,7 @@ fn enforced_author_gets_filters_then_anti_spam() {
             ModuleSet::empty(),
             &text_message("https://grabify.link/x"),
             established_author(),
+            None,
         ),
         MessageRoute::AntiSpam
     );
@@ -565,7 +596,8 @@ fn an_edit_that_makes_a_message_malicious_is_filtered() {
             MessageEvent::Created,
             modules,
             &original,
-            established_author()
+            established_author(),
+            None,
         ),
         MessageRoute::AntiSpam
     );
@@ -575,7 +607,8 @@ fn an_edit_that_makes_a_message_malicious_is_filtered() {
             MessageEvent::Edited,
             modules,
             &edited,
-            established_author()
+            established_author(),
+            None,
         ),
         MessageRoute::Filter(ContentDetection {
             module: ProtectionModule::MaliciousLink,
@@ -594,6 +627,7 @@ fn edits_are_never_counted_by_anti_spam() {
                 all_modules(),
                 &text_message("correction d'une faute"),
                 established_author(),
+                None,
             ),
             MessageRoute::Skip
         );
@@ -872,5 +906,274 @@ fn hostile_content_cannot_ping_or_inject_formatting_in_the_log_channel() {
     let outside_code: String = rendered.split('`').step_by(2).collect::<Vec<_>>().join("");
     for forbidden in ["@everyone", "<@123>", "<@&456>", "**", "||", "https://evil"] {
         assert!(!outside_code.contains(forbidden), "{forbidden}");
+    }
+}
+
+// --- Chaîne complète V1 : pièces jointes et anti-arnaque ---
+
+#[test]
+fn anti_scam_runs_before_malicious_links_and_grades_the_response() {
+    let modules: ModuleSet = [ProtectionModule::AntiScam, ProtectionModule::MaliciousLink]
+        .into_iter()
+        .collect();
+    let route = route_message(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        modules,
+        &text_message("https://grabify.link/x"),
+        established_author(),
+        None,
+    );
+    // Un seul module retenu : l'anti-arnaque, jamais les deux.
+    assert!(matches!(
+        route,
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::AntiScam,
+            ..
+        })
+    ));
+
+    // Sans l'anti-arnaque, le filtre de liens prend le relais.
+    assert!(matches!(
+        route_message(
+            MessageScope::Enforce,
+            MessageEvent::Created,
+            only(ProtectionModule::MaliciousLink),
+            &text_message("https://grabify.link/x"),
+            established_author(),
+            None,
+        ),
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::MaliciousLink,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn low_confidence_scam_falls_through_to_the_next_filters() {
+    // « urgent » seul : confiance basse, l'anti-arnaque laisse passer et le
+    // mot interdit qui suit est retenu.
+    let matcher = BadWordsMatcher::new(["zut"]);
+    let route = route_message(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        [ProtectionModule::AntiScam, ProtectionModule::BadWords]
+            .into_iter()
+            .collect(),
+        &text_message("urgent, zut"),
+        established_author(),
+        Some(&matcher),
+    );
+    assert!(matches!(
+        route,
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::BadWords,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn dangerous_attachment_comes_first_and_short_circuits_the_chain() {
+    let matcher = BadWordsMatcher::new(["zut"]);
+    let message = MessageContent {
+        content: "\u{200b} urgent verify your account https://grabify.link/x zut".to_owned(),
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        ..MessageContent::default()
+    };
+    let route = route_message(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        all_modules(),
+        &message,
+        established_author(),
+        Some(&matcher),
+    );
+    assert!(matches!(
+        route,
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::AttachmentFilter,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn attachments_and_anti_scam_also_apply_to_edits() {
+    let attachment = MessageContent {
+        content: "voici la facture".to_owned(),
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        ..MessageContent::default()
+    };
+    let scam = text_message("urgent, verify your account https://grabify.link/x");
+
+    for (module, message) in [
+        (ProtectionModule::AttachmentFilter, &attachment),
+        (ProtectionModule::AntiScam, &scam),
+    ] {
+        for scope in [MessageScope::Enforce, MessageScope::ExemptAuthor] {
+            let route = route_message(
+                scope,
+                MessageEvent::Edited,
+                only(module),
+                message,
+                established_author(),
+                None,
+            );
+            assert!(
+                matches!(route, MessageRoute::Filter(ContentDetection { module: found, .. }) if found == module),
+                "{module} {scope:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn attachment_changes_make_a_new_revision() {
+    let analyzed = MessageContent {
+        content: "facture".to_owned(),
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        ..MessageContent::default()
+    };
+    let mut removed = analyzed.clone();
+    removed.attachments.clear();
+
+    assert_eq!(
+        check_revision(&analyzed, Some(&analyzed.clone())),
+        RevisionCheck::Current
+    );
+    assert_eq!(
+        check_revision(&analyzed, Some(&removed)),
+        RevisionCheck::Superseded
+    );
+}
+
+// --- Modification partielle (régression) ---
+
+/// Événement `MESSAGE_UPDATE` sans les champs de mention ni de pièces jointes.
+fn partial_update(content: &str) -> MessageContent {
+    MessageContent::from_update(MessageUpdate {
+        content: content.to_owned(),
+        ..MessageUpdate::default()
+    })
+}
+
+#[test]
+fn partial_edit_adding_a_malicious_link_is_still_deleted() {
+    // Avant le correctif, les champs absents valaient 0 : la version relue
+    // (2 mentions, une image) différait, la révision était jugée
+    // `Superseded` et le lien ajouté par modification restait en ligne.
+    let link = "salut https://grabify.link/abc";
+    let analyzed = partial_update(link);
+    let current = MessageContent {
+        content: link.to_owned(),
+        mentions_everyone: false,
+        mention_count: 2,
+        attachments: vec!["image.png".to_owned()],
+        missing: MissingFields::default(),
+    };
+
+    assert!(matches!(
+        route_message(
+            MessageScope::Enforce,
+            MessageEvent::Edited,
+            only(ProtectionModule::MaliciousLink),
+            &analyzed,
+            established_author(),
+            None,
+        ),
+        MessageRoute::Filter(_)
+    ));
+    assert_eq!(
+        check_revision(&analyzed, Some(&current)),
+        RevisionCheck::Current
+    );
+
+    // Le texte reste comparé : une correction entre-temps est respectée.
+    let corrected = MessageContent {
+        content: "salut".to_owned(),
+        ..current
+    };
+    assert_eq!(
+        check_revision(&analyzed, Some(&corrected)),
+        RevisionCheck::Superseded
+    );
+}
+
+#[test]
+fn partial_update_records_which_fields_are_missing() {
+    let partial = partial_update("x");
+    assert_eq!(
+        partial.missing,
+        MissingFields {
+            mentions_everyone: true,
+            mentions: true,
+            attachments: true,
+        }
+    );
+    assert_eq!(partial.mention_count, 0);
+    assert!(partial.attachments.is_empty());
+
+    // Une seule des deux listes de mentions : le décompte est inconnu.
+    let half = MessageContent::from_update(MessageUpdate {
+        content: "x".to_owned(),
+        user_mentions: Some(3),
+        ..MessageUpdate::default()
+    });
+    assert!(half.missing.mentions);
+    assert_eq!(half.mention_count, 0);
+
+    let complete = MessageContent::from_update(MessageUpdate {
+        content: "x".to_owned(),
+        mentions_everyone: Some(true),
+        user_mentions: Some(3),
+        role_mentions: Some(1),
+        attachments: Some(vec!["a.png".to_owned()]),
+    });
+    assert_eq!(complete.missing, MissingFields::default());
+    assert_eq!(complete.mention_count, 4);
+    assert!(complete.mentions_everyone);
+    assert_eq!(complete.attachments, vec!["a.png".to_owned()]);
+}
+
+#[test]
+fn fields_present_in_the_edit_are_still_compared() {
+    let analyzed = MessageContent::from_update(MessageUpdate {
+        content: "x".to_owned(),
+        mentions_everyone: Some(false),
+        user_mentions: Some(1),
+        role_mentions: Some(0),
+        attachments: Some(Vec::new()),
+    });
+    let same = MessageContent {
+        content: "x".to_owned(),
+        mention_count: 1,
+        ..MessageContent::default()
+    };
+    assert_eq!(
+        check_revision(&analyzed, Some(&same)),
+        RevisionCheck::Current
+    );
+
+    for changed in [
+        MessageContent {
+            mention_count: 2,
+            ..same.clone()
+        },
+        MessageContent {
+            mentions_everyone: true,
+            ..same.clone()
+        },
+        MessageContent {
+            attachments: vec!["a.exe".to_owned()],
+            ..same.clone()
+        },
+    ] {
+        assert_eq!(
+            check_revision(&analyzed, Some(&changed)),
+            RevisionCheck::Superseded,
+            "{changed:?}"
+        );
     }
 }

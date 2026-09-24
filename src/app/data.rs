@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
+use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
 
 use super::Error;
 
@@ -31,6 +32,7 @@ impl AppData {
 #[derive(Default)]
 pub struct ProtectionState {
     message_flood: Mutex<MessageFloodTracker>,
+    bad_words: Mutex<BadWordsMatcherCache>,
 }
 
 impl ProtectionState {
@@ -40,6 +42,16 @@ impl ProtectionState {
     /// ne contient que des horodatages, toujours cohérents entre deux appels.
     pub fn message_flood(&self) -> MutexGuard<'_, MessageFloodTracker> {
         self.message_flood
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Matchers de mots interdits compilés, un par liste (cache borné).
+    ///
+    /// Un verrou empoisonné est récupéré : le cache ne contient que des
+    /// matchers immuables, toujours valides.
+    pub fn bad_words(&self) -> MutexGuard<'_, BadWordsMatcherCache> {
+        self.bad_words
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

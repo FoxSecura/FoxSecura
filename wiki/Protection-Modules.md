@@ -15,6 +15,9 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Invitations Discord (`anti_invite`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → AutoMod, désactivé par défaut |
 | `@everyone` / `@here` (`anti_everyone`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
 | Mentions de masse (`anti_mass_mention`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Pièces jointes dangereuses (`attachment_filter`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Anti-arnaque gradué (`anti_scam`), **avec sanctions** | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Mots interdits (`bad_words`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → AutoMod, désactivé par défaut |
 | Liste blanche et salons ignorés (`shared::exemption`) | **oui**, gardes du pipeline de messages | `/config` → Contrôle d'accès, vides par défaut |
 | Tous les autres modules | non (moteurs testés isolément) | — |
 
@@ -122,18 +125,57 @@ Les gardes webhook et bot sont évaluées avant la lecture du salon en base : le
 
 ### Filtres de contenu (branchés au runtime)
 
-Six modules suppriment un message selon son contenu, sans aucune sanction du membre. Détecteurs dans leurs familles (`anti_spam::*`, `automod::*`) ; chaîne pure dans `protection::content_filter` ; effets Discord dans `src/app/pipeline/content_filter.rs`.
+Neuf modules suppriment un message selon son contenu. **Seul l'anti-arnaque sanctionne** (timeout ou ban, voir plus bas) ; les autres suppriment sans jamais sanctionner. Détecteurs dans leurs familles (`anti_spam::*`, `automod::*`) ; chaîne pure dans `protection::content_filter` ; effets Discord dans `src/app/pipeline/content_filter.rs` et `src/app/pipeline/sanction.rs`.
 
 | Ordre | Module (clé) | Déclenche si… | Preuve dans l'incident |
 | --- | --- | --- | --- |
-| 1 | `invisible_char_filter` | caractère invisible (U+200B, U+FEFF, balises U+E0000…), contrôle bidirectionnel (U+202A–U+202E), isolat non fermé, ALM hors contexte arabe/hébreu, ou au moins 5 marques combinantes empilées (zalgo) | type et point de code |
-| 2 | `malicious_link` | IP logger, raccourcisseur, faux domaine Steam/Discord, motif « free nitro », punycode trompeur ; ou lien risqué (IP, identifiants, TLD suspect, sous-domaines profonds) posté par un compte de moins de 7 jours ou un membre arrivé depuis moins de 10 minutes | motif ou hôte + raison |
-| 3 | `adult_link` | domaine, libellé d'hôte, TLD (`.xxx`, `.porn`…) ou segment de chemin adulte | hôte |
-| 4 | `anti_invite` | invitation `discord.gg`, `discord.com/invite`, `discordapp.com/invite`, `discord.me`, `dsc.gg` avec un code | invitation |
-| 5 | `anti_everyone` | Discord signale une vraie mention `@everyone`/`@here` (auteur autorisé) ; un simple texte « @everyone » qui n'a notifié personne est ignoré | mention |
-| 6 | `anti_mass_mention` | au moins 5 utilisateurs et rôles mentionnés (seuil de la V1, non réglable) | `observé/seuil mentions` |
+| 1 | `attachment_filter` | l'extension **finale** d'une pièce jointe est dangereuse (`exe`, `scr`, `bat`, `cmd`, `js`, `jar`, `msi`, `ps1`, `lnk`, `apk`, `dll`…, liste de la V1) ; les doubles extensions comme `facture.pdf.exe` sont prises, `setup.exe.txt` ne l'est pas | nom du fichier et extension |
+| 2 | `invisible_char_filter` | caractère invisible (U+200B, U+FEFF, balises U+E0000…), contrôle bidirectionnel (U+202A–U+202E), isolat non fermé, ALM hors contexte arabe/hébreu, ou au moins 5 marques combinantes empilées (zalgo) | type et point de code |
+| 3 | `anti_scam` | score d'arnaque de confiance au moins **moyenne** (lien malveillant +4, pièce jointe dangereuse +4, demande d'identifiants +3, phrase de récupération de portefeuille +3, appât « free nitro » +2, urgence +1) ; confiance basse : le message continue dans la chaîne | hôte (défangué), score, signaux (6 au plus), confiance — **jamais** d'URL complète, de requête, d'identifiants ni d'extrait |
+| 4 | `malicious_link` | IP logger, raccourcisseur, faux domaine Steam/Discord, motif « free nitro », punycode trompeur ; ou lien risqué (IP, identifiants, TLD suspect, sous-domaines profonds) posté par un compte de moins de 7 jours ou un membre arrivé depuis moins de 10 minutes | motif ou hôte + raison |
+| 5 | `adult_link` | domaine, libellé d'hôte, TLD (`.xxx`, `.porn`…) ou segment de chemin adulte | hôte |
+| 6 | `anti_invite` | invitation `discord.gg`, `discord.com/invite`, `discordapp.com/invite`, `discord.me`, `dsc.gg` avec un code | invitation |
+| 7 | `anti_everyone` | Discord signale une vraie mention `@everyone`/`@here` (auteur autorisé) ; un simple texte « @everyone » qui n'a notifié personne est ignoré | mention |
+| 8 | `anti_mass_mention` | au moins 5 utilisateurs et rôles mentionnés (seuil de la V1, non réglable) | `observé/seuil mentions` |
+| 9 | `bad_words` | mot ou expression de la liste intégrée (`french`, `english` ou `all`) ou des mots personnalisés de la guilde, sans tenir compte de la casse, **mots entiers** (lettre, chiffre ou `_` accolé, y compris hors ASCII = pas de correspondance) | mot retenu |
 
-Les hôtes sont comparés sans tenir compte de la casse (`HTTPS://DISCORD.GG/x` est une invitation). Chaque incident contient aussi un extrait du message (120 caractères au plus) et, pour une modification, la mention « message modifié ».
+**Anti-arnaque avant les liens malveillants** : un lien malveillant est l'un des signaux de l'anti-arnaque (score 4, confiance moyenne). Quand les deux modules sont actifs, c'est donc l'anti-arnaque qui retient le message et gradue la réponse ; le filtre de liens seul ne fait que supprimer.
+
+Les hôtes sont comparés sans tenir compte de la casse (`HTTPS://DISCORD.GG/x` est une invitation). Chaque incident contient aussi un extrait du message (120 caractères au plus, **sauf pour l'anti-arnaque** : l'extrait contiendrait l'URL) et, pour une modification, la mention « message modifié ».
+
+#### Anti-arnaque : réponse graduée
+
+| Confiance (score) | Action après la suppression | Sévérité |
+| --- | --- | --- |
+| Basse (1–2) | aucune : le message continue dans la chaîne | — |
+| Moyenne (3–4) | `request_staff_review` (l'équipe tranche) | `Warning` si supprimé, `Critical` sinon |
+| Haute (5–7) | **timeout d'une heure** (`timeout_member`) | `Critical` |
+| Critique (8 et plus) | **ban avec purge de 7 jours de messages** (`ban_member`) | `Critical` |
+
+La sanction ne dépend pas du succès de la suppression, et un échec de sanction n'annule jamais la suppression. Si la sanction n'est pas appliquée, la recommandation est « vérifier la hiérarchie du ban » ; si elle l'est, « vérifier les preuves et lever la sanction en cas de faux positif ».
+
+> ⚠️ **Faux positif = ban d'un membre légitime.** Un compte compromis, un message qui cite une arnaque pour prévenir les autres ou une coïncidence de mots-clés peut atteindre la confiance critique. Le ban purge 7 jours de messages et n'est pas levé automatiquement. Examinez chaque incident `anti_scam` et révoquez le ban (Paramètres du serveur → Bannissements) si nécessaire. Ne l'activez que si l'équipe lit le salon de logs `message`.
+
+#### Socle des sanctions (`protection::shared::sanction`)
+
+Cœur pur, testé sans Discord, partagé par tout module qui sanctionnera un membre :
+
+- **jamais** le propriétaire du serveur ni le bot lui-même ;
+- **jamais** un auteur de la liste blanche : son message est supprimé, l'incident porte l'action `ignore_exempt_member` = `Skipped` et la recommandation « revoir la liste blanche » (un compte de confiance qui publie une arnaque est peut-être compromis) ;
+- vérifications d'après le cache **avant** l'appel, pour éviter des `403` en rafale : permission du bot (`MODERATE_MEMBERS` pour un timeout, `BAN_MEMBERS` pour un ban, ou `ADMINISTRATOR`) → `MissingPermission` ; membre au-dessus ou au niveau du rôle le plus haut du bot → `RoleHierarchy` ; membre `ADMINISTRATOR` (Discord refuse de le timeout) → `RoleHierarchy`, détail `administrator_cannot_be_timed_out`. Ces cas sont `Skipped` : rien n'est appelé ;
+- auteur : le membre joint à l'événement, sinon lecture du membre (cache puis API) ; membre introuvable → `Skipped` + `ResourceMissing` ; autre échec de lecture → `Skipped` + `DiscordUnavailable`, sans bloquer la suppression ;
+- réponse de l'API : `403` → `MissingPermission`, `404` → `Skipped` + `ResourceMissing`, `429`/`5xx` ou pas de réponse → `DiscordUnavailable` ; l'action est alors `Failed` ;
+- état du cache inconnu (serveur ou bot absent du cache) : l'appel est tenté et Discord tranche (il refuse de toute façon de sanctionner le propriétaire).
+
+**Raison d'audit log** : toutes les sanctions de FoxSecura portent une raison qui commence par `FoxSecura` (`FoxSecura Anti-Scam: critical confidence scam (score 9)`). Un futur anti-nuke pourra ainsi reconnaître les sanctions du bot (`is_foxsecura_audit_reason`), **en combinaison avec l'exécuteur** de l'entrée d'audit log : n'importe quel modérateur peut écrire la même raison. La raison ne contient que des valeurs produites par FoxSecura, jamais le contenu du message.
+
+#### Mots interdits
+
+- Liste intégrée de la V1 par langue (`french`, `english`, `all` par défaut) + mots personnalisés de la guilde, réglés dans `/config` → AutoMod ([Configuration](Configuration-and-Commands)).
+- Mots personnalisés : 200 au maximum, 100 caractères par mot, 2 000 caractères de saisie au total ; stockés en minuscules et dédoublonnés.
+- Correspondance : insensible à la casse (Unicode), mots entiers (`merde` ne prend pas `emmerdement`, `fdp` ne prend pas `fdpé`), expressions de plusieurs mots acceptées.
+- Le matcher est compilé **une fois par liste** (langue + mots personnalisés) et conservé dans un cache borné (256 listes, la moins récemment utilisée est oubliée), comme la V1 : jamais une compilation par message.
+- Suppression seule, jamais de sanction, y compris pour les membres sur liste blanche (correction de contenu de la V1).
 
 **Ordre et court-circuit** (spécification V1) : les modules activés sont évalués dans l'ordre du tableau ; **le premier qui déclenche arrête la chaîne**. Un message ne produit jamais deux suppressions ni deux incidents. Les filtres passent **avant** l'anti-spam.
 
@@ -144,10 +186,10 @@ Les hôtes sont comparés sans tenir compte de la casse (`HTTPS://DISCORD.GG/x` 
 | Portée | Filtres de contenu | Anti-spam |
 | --- | --- | --- |
 | Salon ignoré | non | non |
-| Auteur sur liste blanche | **oui** (suppression, jamais de sanction) | non |
+| Auteur sur liste blanche | **oui** (suppression, mots interdits compris ; jamais de sanction, `ignore_exempt_member` si l'anti-arnaque en prévoyait une) | non |
 | Autres membres | oui | oui, si aucun filtre n'a déclenché et s'il s'agit d'une création |
 
-**Modifications de messages** : `MESSAGE_UPDATE` passe par les mêmes filtres (un message propre modifié en message malveillant est supprimé). Seules les vraies modifications de texte sont analysées (`edited_timestamp` et contenu présents) : les mises à jour d'aperçus de liens ou d'épinglage sont ignorées. Une modification n'est jamais comptée par l'anti-spam. Avant de supprimer, le message est **relu par l'API** et comparé à la version analysée (texte, indicateur `@everyone`, nombre de mentions) :
+**Modifications de messages** : `MESSAGE_UPDATE` passe par les mêmes filtres (un message propre modifié en message malveillant est supprimé). Seules les vraies modifications de texte sont analysées (`edited_timestamp` et contenu présents) : les mises à jour d'aperçus de liens ou d'épinglage sont ignorées. Une modification n'est jamais comptée par l'anti-spam. Les pièces jointes et l'anti-arnaque s'appliquent aussi aux modifications (sanction comprise). Avant de supprimer, le message est **relu par l'API** et comparé à la version analysée (texte, indicateur `@everyone`, nombre de mentions, pièces jointes) — **seulement sur les champs présents dans l'événement** : Discord peut envoyer un `MESSAGE_UPDATE` sans les mentions ni les pièces jointes. Un champ absent vaut sa valeur par défaut pour les filtres (aucune mention, aucune pièce jointe) et n'est pas comparé ; auparavant il valait 0, la version relue différait toujours et un lien malveillant ajouté par modification n'était jamais supprimé :
 
 - version identique → suppression ;
 - version différente (le membre a déjà corrigé ou remodifié) → rien, la nouvelle version est analysée par son propre événement ;
@@ -158,9 +200,9 @@ Les hôtes sont comparés sans tenir compte de la casse (`HTTPS://DISCORD.GG/x` 
 
 **Rendu dans le salon de logs** : toute valeur issue d'un message (extrait, hôte, invitation, motif) est rendue par `logs::inline_literal` en code en ligne : accents graves remplacés, retours à la ligne aplatis, caractères invisibles et bidirectionnels remplacés par `�`, zalgo réduit, longueur bornée ; les domaines sont en plus neutralisés (`https[:]//exemple[.]com`). Un contenu hostile ne peut donc ni notifier (les mentions sont de toute façon désactivées), ni injecter de formatage, ni simuler une autre ligne du log, ni produire un lien cliquable.
 
-**Intents et permissions requis** : `GUILD_MESSAGES` et **`MESSAGE_CONTENT` (privilégié)** ; sans ce dernier, Discord livre des messages vides et aucun filtre ne peut déclencher. Permissions : `MANAGE_MESSAGES` dans les salons protégés, `READ_MESSAGE_HISTORY` pour relire un message modifié, `VIEW_CHANNEL` et `SEND_MESSAGES` dans le salon de logs.
+**Intents et permissions requis** : `GUILD_MESSAGES` et **`MESSAGE_CONTENT` (privilégié)** ; sans ce dernier, Discord livre des messages vides et aucun filtre ne peut déclencher. Permissions : `MANAGE_MESSAGES` dans les salons protégés, `READ_MESSAGE_HISTORY` pour relire un message modifié, `VIEW_CHANNEL` et `SEND_MESSAGES` dans le salon de logs. Pour l'anti-arnaque : **`MODERATE_MEMBERS`** (timeout), **`BAN_MEMBERS`** (ban) et un **rôle de FoxSecura placé au-dessus** des rôles des membres à sanctionner.
 
-**Hors périmètre de cette tranche** : `anti_scam` (sanctions graduées), `attachment_filter` et `bad_words` (listes configurables).
+**Cache de configuration** : le pipeline lit la configuration, les salons ignorés, la liste blanche, les modules et les mots personnalisés depuis un cache mémoire par guilde (1 024 guildes au plus), chargé au premier message puis après chaque écriture depuis `/config`. Voir [Sécurité](Security#cache-de-configuration).
 
 ### Liens suspects
 

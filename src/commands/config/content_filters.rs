@@ -4,8 +4,9 @@
 //! Interrupteurs des filtres de contenu, dans les catégories Anti-Spam et
 //! AutoMod du tableau de bord.
 //!
-//! L'état affiché est celui lu en base (`guild_protection_modules`), que le
-//! moteur relit à chaque message : « actif » signifie réellement appliqué.
+//! L'état affiché est celui lu en base (`guild_protection_modules`). Chaque
+//! écriture invalide le cache de configuration de la guilde : le moteur
+//! l'applique dès le message suivant, « actif » signifie réellement appliqué.
 
 use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule, UnknownModuleKey};
@@ -17,15 +18,23 @@ const DISABLE_SUFFIX: &str = ":off";
 
 /// Filtres affichés dans la catégorie Anti-Spam (famille `anti_spam` de la V1).
 pub const ANTI_SPAM_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AttachmentFilter,
     ProtectionModule::InvisibleCharFilter,
+    ProtectionModule::AntiScam,
     ProtectionModule::MaliciousLink,
     ProtectionModule::AntiEveryone,
     ProtectionModule::AntiMassMention,
 ];
 
 /// Filtres affichés dans la catégorie AutoMod.
-pub const AUTOMOD_MODULES: &[ProtectionModule] =
-    &[ProtectionModule::AdultLink, ProtectionModule::AntiInvite];
+pub const AUTOMOD_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AdultLink,
+    ProtectionModule::AntiInvite,
+    ProtectionModule::BadWords,
+];
+
+/// Boutons par rangée : limite Discord.
+const BUTTONS_PER_ROW: usize = 5;
 
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
 
@@ -106,13 +115,24 @@ pub fn state_fields(
     )]
 }
 
-/// Un bouton par module (au plus cinq par rangée, limite Discord).
+/// Un bouton par module, en rangées de cinq au plus (limite Discord).
 pub fn buttons(
     language: Language,
     modules: &[ProtectionModule],
     enabled: ModuleSet,
-) -> serenity::CreateActionRow {
-    let buttons = modules
+) -> Vec<serenity::CreateActionRow> {
+    modules
+        .chunks(BUTTONS_PER_ROW)
+        .map(|row| serenity::CreateActionRow::Buttons(row_buttons(language, row, enabled)))
+        .collect()
+}
+
+fn row_buttons(
+    language: Language,
+    modules: &[ProtectionModule],
+    enabled: ModuleSet,
+) -> Vec<serenity::CreateButton> {
+    modules
         .iter()
         .map(|&module| {
             let active = enabled.contains(module);
@@ -132,9 +152,7 @@ pub fn buttons(
                     serenity::ButtonStyle::Secondary
                 })
         })
-        .collect();
-
-    serenity::CreateActionRow::Buttons(buttons)
+        .collect()
 }
 
 const fn state_key(enabled: bool) -> TextKey {
@@ -153,6 +171,9 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiInvite => TextKey::ModuleAntiInvite,
         ProtectionModule::AntiEveryone => TextKey::ModuleAntiEveryone,
         ProtectionModule::AntiMassMention => TextKey::ModuleAntiMassMention,
+        ProtectionModule::AttachmentFilter => TextKey::ModuleAttachmentFilter,
+        ProtectionModule::AntiScam => TextKey::ModuleAntiScam,
+        ProtectionModule::BadWords => TextKey::ModuleBadWords,
     }
 }
 
@@ -170,7 +191,10 @@ mod tests {
                 .count();
             assert_eq!(count, 1, "{module}");
         }
-        assert!(ANTI_SPAM_MODULES.len() <= 5 && AUTOMOD_MODULES.len() <= 5);
+        // Anti-Spam : menu, interrupteur anti-spam et deux rangées de filtres,
+        // sous la limite Discord de cinq rangées.
+        assert!(ANTI_SPAM_MODULES.len() <= 2 * BUTTONS_PER_ROW);
+        assert!(AUTOMOD_MODULES.len() <= BUTTONS_PER_ROW);
     }
 
     #[test]
@@ -188,8 +212,8 @@ mod tests {
     #[test]
     fn unknown_or_malformed_toggles_are_refused() {
         assert_eq!(
-            parse_toggle("foxsecura:config:module:anti_scam:on"),
-            Some(Err(UnknownModuleKey("anti_scam".to_owned())))
+            parse_toggle("foxsecura:config:module:anti_nuke:on"),
+            Some(Err(UnknownModuleKey("anti_nuke".to_owned())))
         );
         assert!(matches!(
             parse_toggle("foxsecura:config:module:Malicious_Link:on"),
