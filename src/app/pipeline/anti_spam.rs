@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use foxsecura::database::GuildConfig;
 use foxsecura::i18n::DEFAULT_LANGUAGE;
 use foxsecura::protection::anti_spam::message_flood::{
     DeleteMessageOutcome, DeleteMessagePlan, build_incident, plan_response,
@@ -9,22 +10,21 @@ use foxsecura::protection::shared::GuildMessage;
 use poise::serenity_prelude as serenity;
 
 use super::incident_log;
-use crate::app::{AppData, Error, run_database};
+use crate::app::{AppData, Error};
 
 /// Anti-spam : rafale de messages d'un membre → suppression du message
 /// déclencheur → incident.
+///
+/// `guild_config` est lu par le pipeline avec le reste du contexte du message ;
+/// `None` pour une guilde jamais configurée (anti-spam désactivé par défaut).
 pub async fn run(
     ctx: &serenity::Context,
     data: &AppData,
     message: &GuildMessage,
+    guild_config: Option<&GuildConfig>,
 ) -> Result<(), Error> {
     let guild_id = message.guild_id;
-    let guild_config = run_database(&data.database, move |database| {
-        database.find_guild_config(guild_id)
-    })
-    .await?;
     let config = guild_config
-        .as_ref()
         .map(|guild_config| guild_config.anti_spam)
         .unwrap_or_default();
 

@@ -19,7 +19,7 @@ La connexion est protégée par un `Mutex`, ce qui donne une surface de synchron
 
 ## Migrations
 
-Le schéma est versionné dans `schema_migrations`. La version actuelle est `2` : la migration `1` crée les tables ci-dessous, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, sans perte des données existantes.
+Le schéma est versionné dans `schema_migrations`. La version actuelle est `3` : la migration `1` crée `guild_configs` et `guild_log_channels`, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, et la migration `3` (`whitelist_and_ignored_channels`) crée les tables de liste blanche et de salons ignorés. Chaque migration s'applique sans perte des données existantes.
 
 ### `guild_configs`
 
@@ -35,6 +35,12 @@ Le schéma est versionné dans `schema_migrations`. La version actuelle est `2` 
 Associe une guild à un salon pour un type de log. Les types autorisés sont : `message`, `server`, `member`, `channel`, `role`, `moderation`.
 
 La clé primaire `(guild_id, log_type)` garantit un salon par type et par guild dans le schéma actuel. Une suppression de `guild_configs` cascade vers ses destinations de logs.
+
+### `guild_whitelist_users`, `guild_whitelist_roles`, `guild_ignored_channels` (migration 3)
+
+Chaque table associe une guild à un identifiant Discord (`user_id`, `role_id` ou `channel_id`, stockés en texte) avec `created_at`. La clé primaire composite `(guild_id, identifiant)` rend les ajouts idempotents, et une suppression de `guild_configs` cascade vers ces tables. `guild_whitelist_roles` refuse `role_id = guild_id` (`@everyone`) par une contrainte `CHECK`.
+
+Les listes sont relues triées numériquement. `Database::message_guard_context` lit en une fois, pour le pipeline de messages, la configuration de la guilde, le statut du salon et le statut de liste blanche de l'auteur.
 
 ## Validation de domaine
 

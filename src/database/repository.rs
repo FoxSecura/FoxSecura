@@ -188,7 +188,7 @@ ORDER BY log_type
     }
 }
 
-fn ensure_guild_config(
+pub(super) fn ensure_guild_config(
     connection: &rusqlite::Connection,
     guild_id: u64,
 ) -> Result<(), DatabaseError> {
@@ -199,7 +199,7 @@ fn ensure_guild_config(
     Ok(())
 }
 
-fn read_guild_config(
+pub(super) fn read_guild_config(
     connection: &rusqlite::Connection,
     guild_id: u64,
 ) -> Result<GuildConfig, DatabaseError> {

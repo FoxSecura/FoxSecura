@@ -34,7 +34,14 @@ Le composant utilise l'identifiant interne `foxsecura:config:category`. Lorsqu'u
 
 ### Autorisation
 
-La commande `/config` et tous ses composants (menu, boutons, modal) sont réservés au **propriétaire du serveur** et aux membres disposant de `ADMINISTRATOR` ou `MANAGE_GUILD`. Les permissions sont vérifiées côté bot à chaque interaction, pas seulement à l'ouverture du tableau de bord ; les autres membres reçoivent un refus éphémère.
+La commande `/config` et tous ses composants (menu, boutons, sélecteurs, modal) sont réservés au **propriétaire du serveur** et aux membres disposant de `ADMINISTRATOR` ou `MANAGE_GUILD`. Les permissions sont vérifiées côté bot à chaque interaction, pas seulement à l'ouverture du tableau de bord ; les autres membres reçoivent un refus éphémère.
+
+La **liste blanche** exige un droit plus fort : propriétaire du serveur ou `ADMINISTRATOR` uniquement ; `MANAGE_GUILD` ne suffit pas. Figurer sur la liste blanche ne donne jamais accès à `/config`.
+
+| Action | Propriétaire | `ADMINISTRATOR` | `MANAGE_GUILD` seul | Autre membre |
+| --- | --- | --- | --- | --- |
+| Ouvrir `/config`, Anti-Spam, salons ignorés | oui | oui | oui | non |
+| Modifier la liste blanche | oui | oui | non | non |
 
 ### Catégorie Anti-Spam
 
@@ -53,9 +60,26 @@ La catégorie Anti-Spam est la première catégorie réellement persistée et lu
 
 Identifiants internes : `foxsecura:config:anti_spam:enable`, `foxsecura:config:anti_spam:disable`, `foxsecura:config:anti_spam:limits` et le modal `foxsecura:config:anti_spam:limits_modal`.
 
+### Catégorie Contrôle d'accès
+
+Liste blanche (utilisateurs, rôles) et salons ignorés, persistés par la migration 3 et lus par le pipeline de messages (voir [Modules de protection](Protection-Modules#liste-blanche-et-salons-ignorés)).
+
+| Liste | Table SQLite | Droit requis |
+| --- | --- | --- |
+| Utilisateurs exemptés | `guild_whitelist_users` | propriétaire ou `ADMINISTRATOR` |
+| Rôles exemptés | `guild_whitelist_roles` | propriétaire ou `ADMINISTRATOR` |
+| Salons ignorés | `guild_ignored_channels` | accès normal à `/config` |
+
+- Chaque liste se modifie avec un sélecteur natif Discord (utilisateurs, rôles, salons), jusqu'à 25 entrées par soumission. Le sélecteur fonctionne **en bascule** : une entrée absente est ajoutée, une entrée présente est retirée.
+- Les sélecteurs de la liste blanche ne sont affichés qu'aux membres autorisés ; le droit est de toute façon revérifié à chaque soumission.
+- `@everyone` est refusé comme rôle exempté ; la sélection entière est alors rejetée sans écriture.
+- L'état affiché (mentions, tronquées si la liste dépasse la taille d'un champ d'embed) est relu depuis la base après chaque écriture.
+
+Identifiants internes : `foxsecura:config:access_control:whitelist_users`, `foxsecura:config:access_control:whitelist_roles` et `foxsecura:config:access_control:ignored_channels`.
+
 ## Important : interface et configuration persistée
 
-Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 2 stocke la langue d'une guild, les salons associés aux types de logs et les réglages Anti-Spam. Les autres catégories affichent encore un état de substitution.
+Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 3 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche et les salons ignorés. Les autres catégories affichent encore un état de substitution.
 
 Cela signifie qu'une catégorie visible dans `/config` peut représenter une **surface d'interface prévue** avant que son stockage et son exécution soient entièrement branchés. Les futures PR doivent éviter de présenter un réglage comme actif tant que les trois couches suivantes ne sont pas reliées :
 

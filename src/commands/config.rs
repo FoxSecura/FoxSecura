@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 mod access;
+mod access_control;
 mod anti_spam;
 
 use poise::serenity_prelude as serenity;
 
 use super::Context;
 use crate::app::{AppData, Error, run_database};
+use access::{Access, Right};
+use access_control::ListTarget;
+use foxsecura::database::GuildExemptions;
 use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
 
@@ -78,21 +82,30 @@ const CATEGORIES: &[Category] = &[
     },
 ];
 
+/// Données affichées pour la catégorie sélectionnée.
+enum CategoryView {
+    AntiSpam(MessageFloodConfig),
+    AccessControl {
+        exemptions: GuildExemptions,
+        access: Access,
+    },
+}
+
 /// Ouvre le tableau de bord de configuration FoxSecura.
 #[poise::command(slash_command, guild_only, ephemeral)]
 pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
     let language = Language::resolve(ctx.locale());
-    let authorized = match ctx {
-        poise::Context::Application(app) => access::interaction_is_authorized(
+    let access = match ctx {
+        poise::Context::Application(app) => access::interaction_access(
             ctx.serenity_context(),
             app.interaction.guild_id,
             app.interaction.member.as_deref(),
             app.interaction.user.id,
         ),
-        poise::Context::Prefix(_) => false,
+        poise::Context::Prefix(_) => Access::default(),
     };
 
-    let reply = if authorized {
+    let reply = if access.config {
         poise::CreateReply::default()
             .embed(build_embed(language, None, None))
             .components(build_components(language, None, None))
@@ -107,38 +120,99 @@ pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Traite les composants du tableau de bord. Retourne `false` si le composant
 /// ne lui appartient pas.
+///
+/// Le droit exigé par le composant est revérifié à chaque interaction : la
+/// liste blanche exige le propriétaire ou `ADMINISTRATOR`, le reste l'accès
+/// normal à `/config`.
 pub async fn handle_component(
     ctx: &serenity::Context,
     data: &AppData,
     component: &serenity::ComponentInteraction,
 ) -> Result<bool, Error> {
     let custom_id = component.data.custom_id.as_str();
-    if ![
-        CATEGORY_SELECT_ID,
-        anti_spam::ENABLE_ID,
-        anti_spam::DISABLE_ID,
-        anti_spam::LIMITS_ID,
-    ]
-    .contains(&custom_id)
-    {
-        return Ok(false);
-    }
+    let list_target = ListTarget::from_custom_id(custom_id);
+    let required = match list_target {
+        Some(target) => target.required_right(),
+        None if [
+            CATEGORY_SELECT_ID,
+            anti_spam::ENABLE_ID,
+            anti_spam::DISABLE_ID,
+            anti_spam::LIMITS_ID,
+        ]
+        .contains(&custom_id) =>
+        {
+            Right::Config
+        }
+        None => return Ok(false),
+    };
 
     let language = Language::resolve(Some(component.locale.as_str()));
-    let (Some(guild_id), true) = (
+    let access = access::interaction_access(
+        ctx,
         component.guild_id,
-        access::interaction_is_authorized(
-            ctx,
-            component.guild_id,
-            component.member.as_ref(),
-            component.user.id,
-        ),
-    ) else {
-        respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigAccessDenied))
-            .await?;
+        component.member.as_ref(),
+        component.user.id,
+    );
+    let Some(guild_id) = component.guild_id.filter(|_| access.allows(required)) else {
+        let denied = if required == Right::Whitelist && access.config {
+            TextKey::ConfigWhitelistAccessDenied
+        } else {
+            TextKey::ConfigAccessDenied
+        };
+        respond_ephemeral_component(ctx, component, text(language, denied)).await?;
         return Ok(true);
     };
     let guild_id = guild_id.get();
+
+    if let Some(target) = list_target {
+        let ids = access_control::selected_ids(&component.data.kind);
+        if ids.is_empty() {
+            component
+                .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+                .await?;
+            return Ok(true);
+        }
+        if access_control::contains_everyone(guild_id, target, &ids) {
+            respond_ephemeral_component(
+                ctx,
+                component,
+                text(language, TextKey::ConfigWhitelistEveryoneRefused),
+            )
+            .await?;
+            return Ok(true);
+        }
+
+        let saved = run_database(&data.database, move |database| {
+            access_control::toggle(database, guild_id, target, &ids)
+        })
+        .await;
+
+        match saved {
+            Ok(exemptions) => {
+                let view = CategoryView::AccessControl { exemptions, access };
+                update_dashboard(
+                    ctx,
+                    component,
+                    language,
+                    access_control::CATEGORY_ID,
+                    Some(&view),
+                )
+                .await?;
+            }
+            Err(error) => {
+                eprintln!(
+                    "[config] enregistrement des exemptions impossible ({guild_id}) : {error}"
+                );
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+        }
+        return Ok(true);
+    }
 
     if custom_id == CATEGORY_SELECT_ID {
         let selected = match &component.data.kind {
@@ -155,25 +229,23 @@ pub async fn handle_component(
             return Ok(true);
         };
 
-        let anti_spam = if category_id == anti_spam::CATEGORY_ID {
-            match load_anti_spam(data, guild_id).await {
-                Ok(config) => Some(config),
-                Err(error) => {
-                    eprintln!("[config] lecture anti-spam impossible ({guild_id}) : {error}");
-                    respond_ephemeral_component(
-                        ctx,
-                        component,
-                        text(language, TextKey::ConfigSaveFailed),
-                    )
-                    .await?;
-                    return Ok(true);
-                }
+        let view = match load_view(data, guild_id, &category_id, access).await {
+            Ok(view) => view,
+            Err(error) => {
+                eprintln!(
+                    "[config] lecture de « {category_id} » impossible ({guild_id}) : {error}"
+                );
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+                return Ok(true);
             }
-        } else {
-            None
         };
 
-        update_dashboard(ctx, component, language, &category_id, anti_spam.as_ref()).await?;
+        update_dashboard(ctx, component, language, &category_id, view.as_ref()).await?;
         return Ok(true);
     }
 
@@ -215,7 +287,7 @@ pub async fn handle_component(
                 component,
                 language,
                 anti_spam::CATEGORY_ID,
-                Some(&guild_config.anti_spam),
+                Some(&CategoryView::AntiSpam(guild_config.anti_spam)),
             )
             .await?;
         }
@@ -240,15 +312,9 @@ pub async fn handle_modal(
     }
 
     let language = Language::resolve(Some(modal.locale.as_str()));
-    let (Some(guild_id), true) = (
-        modal.guild_id,
-        access::interaction_is_authorized(
-            ctx,
-            modal.guild_id,
-            modal.member.as_ref(),
-            modal.user.id,
-        ),
-    ) else {
+    let access =
+        access::interaction_access(ctx, modal.guild_id, modal.member.as_ref(), modal.user.id);
+    let Some(guild_id) = modal.guild_id.filter(|_| access.allows(Right::Config)) else {
         respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigAccessDenied)).await?;
         return Ok(true);
     };
@@ -272,16 +338,17 @@ pub async fn handle_modal(
 
     match saved {
         Ok(guild_config) => {
+            let view = CategoryView::AntiSpam(guild_config.anti_spam);
             let response = serenity::CreateInteractionResponseMessage::new()
                 .embed(build_embed(
                     language,
                     Some(anti_spam::CATEGORY_ID),
-                    Some(&guild_config.anti_spam),
+                    Some(&view),
                 ))
                 .components(build_components(
                     language,
                     Some(anti_spam::CATEGORY_ID),
-                    Some(&guild_config.anti_spam),
+                    Some(&view),
                 ));
             modal
                 .create_response(
@@ -297,6 +364,29 @@ pub async fn handle_modal(
     }
 
     Ok(true)
+}
+
+/// Lit l'état à afficher pour une catégorie ; `None` si elle n'a pas encore
+/// de réglages.
+async fn load_view(
+    data: &AppData,
+    guild_id: u64,
+    category_id: &str,
+    access: Access,
+) -> Result<Option<CategoryView>, Error> {
+    Ok(match category_id {
+        anti_spam::CATEGORY_ID => Some(CategoryView::AntiSpam(
+            load_anti_spam(data, guild_id).await?,
+        )),
+        access_control::CATEGORY_ID => {
+            let exemptions = run_database(&data.database, move |database| {
+                database.guild_exemptions(guild_id)
+            })
+            .await?;
+            Some(CategoryView::AccessControl { exemptions, access })
+        }
+        _ => None,
+    })
 }
 
 async fn load_anti_spam(data: &AppData, guild_id: u64) -> Result<MessageFloodConfig, Error> {
@@ -315,11 +405,11 @@ async fn update_dashboard(
     component: &serenity::ComponentInteraction,
     language: Language,
     category_id: &str,
-    anti_spam: Option<&MessageFloodConfig>,
+    view: Option<&CategoryView>,
 ) -> Result<(), Error> {
     let response = serenity::CreateInteractionResponseMessage::new()
-        .embed(build_embed(language, Some(category_id), anti_spam))
-        .components(build_components(language, Some(category_id), anti_spam));
+        .embed(build_embed(language, Some(category_id), view))
+        .components(build_components(language, Some(category_id), view));
 
     component
         .create_response(
@@ -364,7 +454,7 @@ fn ephemeral_message(content: &str) -> serenity::CreateInteractionResponse {
 fn build_embed(
     language: Language,
     selected: Option<&str>,
-    anti_spam: Option<&MessageFloodConfig>,
+    view: Option<&CategoryView>,
 ) -> serenity::CreateEmbed {
     let mut embed = serenity::CreateEmbed::new()
         .title(text(language, TextKey::ConfigTitle))
@@ -387,10 +477,14 @@ fn build_embed(
                     false,
                 );
 
-            embed = match (category.id, anti_spam) {
-                (anti_spam::CATEGORY_ID, Some(config)) => {
+            embed = match (category.id, view) {
+                (anti_spam::CATEGORY_ID, Some(CategoryView::AntiSpam(config))) => {
                     embed.fields(anti_spam::state_fields(language, config))
                 }
+                (
+                    access_control::CATEGORY_ID,
+                    Some(CategoryView::AccessControl { exemptions, access }),
+                ) => embed.fields(access_control::state_fields(language, exemptions, *access)),
                 _ => embed.field(
                     text(language, TextKey::ConfigFieldState),
                     text(language, TextKey::ConfigStatePlaceholder),
@@ -412,14 +506,20 @@ fn build_embed(
 fn build_components(
     language: Language,
     selected: Option<&str>,
-    anti_spam: Option<&MessageFloodConfig>,
+    view: Option<&CategoryView>,
 ) -> Vec<serenity::CreateActionRow> {
     let mut rows = vec![serenity::CreateActionRow::SelectMenu(build_menu(
         language, selected,
     ))];
 
-    if let (Some(anti_spam::CATEGORY_ID), Some(config)) = (selected, anti_spam) {
-        rows.push(anti_spam::buttons(language, config));
+    match (selected, view) {
+        (Some(anti_spam::CATEGORY_ID), Some(CategoryView::AntiSpam(config))) => {
+            rows.push(anti_spam::buttons(language, config));
+        }
+        (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
+            rows.extend(access_control::selects(language, *access));
+        }
+        _ => {}
     }
 
     rows
