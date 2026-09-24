@@ -3,11 +3,29 @@
 
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BadWordsLanguage {
     French,
     English,
     All,
+}
+
+impl BadWordsLanguage {
+    pub const ALL: [Self; 3] = [Self::French, Self::English, Self::All];
+
+    /// Clé stable, persistée en base (`guild_configs.bad_words_language`).
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::French => "french",
+            Self::English => "english",
+            Self::All => "all",
+        }
+    }
+
+    /// Retrouve une langue à partir de sa clé exacte.
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|language| language.key() == key)
+    }
 }
 
 pub const DEFAULT_BAD_WORDS_LANGUAGE: BadWordsLanguage = BadWordsLanguage::All;
@@ -142,7 +160,11 @@ where
     for word in built_in_bad_words(language)
         .into_iter()
         .map(str::to_owned)
-        .chain(custom_words.into_iter().map(|word| word.as_ref().trim().to_owned()))
+        .chain(
+            custom_words
+                .into_iter()
+                .map(|word| word.as_ref().trim().to_owned()),
+        )
     {
         if word.is_empty() {
             continue;

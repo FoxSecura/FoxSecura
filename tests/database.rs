@@ -6,12 +6,16 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::{
-    Database, DatabaseError, GuildExemptions, LATEST_SCHEMA_VERSION, MessageGuardContext,
+    BadWordsSettings, Database, DatabaseError, GuildExemptions, LATEST_SCHEMA_VERSION,
+    MessageGuardContext,
 };
 use foxsecura::i18n::Language;
 use foxsecura::logs::LogType;
 use foxsecura::protection::anti_spam::message_flood::{
     MessageFloodConfig, MessageFloodConfigError,
+};
+use foxsecura::protection::automod::bad_words::{
+    BadWordsLanguage, CustomWordsError, MAX_CUSTOM_WORDS,
 };
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule};
 
@@ -269,8 +273,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_four() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 4);
+fn latest_schema_version_is_five() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 5);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -414,6 +418,7 @@ fn message_guard_context_of_unconfigured_guild_is_empty_and_read_only() {
             author_listed: false,
             whitelist_roles: Vec::new(),
             enabled_modules: ModuleSet::empty(),
+            custom_bad_words: Vec::new(),
         }
     );
     assert_eq!(database.find_guild_config(1).unwrap(), None);
@@ -616,7 +621,7 @@ fn unknown_module_keys_in_storage_are_ignored_on_read() {
     let connection = rusqlite::Connection::open(&path).unwrap();
     connection
         .execute(
-            "INSERT INTO guild_protection_modules (guild_id, module_key, enabled) VALUES ('1', 'anti_scam', 1)",
+            "INSERT INTO guild_protection_modules (guild_id, module_key, enabled) VALUES ('1', 'anti_nuke', 1)",
             [],
         )
         .unwrap();
@@ -771,7 +776,7 @@ INSERT INTO guild_ignored_channels (guild_id, channel_id) VALUES ('123', '8');
     }
 
     let database = Database::open(&path).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 4);
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
 
     let config = database.find_guild_config(123).unwrap().unwrap();
     assert_eq!(config.language, Language::German);
@@ -801,12 +806,327 @@ INSERT INTO guild_ignored_channels (guild_id, channel_id) VALUES ('123', '8');
         .unwrap();
     drop(database);
     let reopened = Database::open(&path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 4);
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
     assert!(
         reopened
             .enabled_modules(123)
             .unwrap()
             .contains(ProtectionModule::AntiMassMention)
+    );
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+// --- Mots interdits (migration 5) ---
+
+#[test]
+fn bad_words_default_to_all_languages_and_no_custom_word() {
+    let database = Database::open_in_memory().unwrap();
+    let expected = BadWordsSettings {
+        language: BadWordsLanguage::All,
+        custom_words: Vec::new(),
+    };
+
+    // Lecture sans écriture pour une guilde inconnue.
+    assert_eq!(database.bad_words_settings(1).unwrap(), expected);
+    assert_eq!(database.find_guild_config(1).unwrap(), None);
+
+    assert_eq!(
+        database.guild_config(1).unwrap().bad_words_language,
+        BadWordsLanguage::All
+    );
+    assert_eq!(database.bad_words_settings(1).unwrap(), expected);
+}
+
+#[test]
+fn bad_words_language_and_custom_words_are_persisted_per_guild() {
+    let database = Database::open_in_memory().unwrap();
+
+    let saved = database
+        .set_bad_words_language(1, BadWordsLanguage::English)
+        .unwrap();
+    assert_eq!(saved.language, BadWordsLanguage::English);
+
+    let saved = database
+        .set_custom_bad_words(1, ["Spoiler", "gros mot", "SPOILER", "  "])
+        .unwrap();
+    assert_eq!(
+        saved,
+        BadWordsSettings {
+            language: BadWordsLanguage::English,
+            custom_words: vec!["gros mot".to_owned(), "spoiler".to_owned()],
+        }
+    );
+
+    // Remplacement complet, pas d'ajout.
+    let saved = database.set_custom_bad_words(1, ["autre"]).unwrap();
+    assert_eq!(saved.custom_words, vec!["autre".to_owned()]);
+
+    // Liste vide : tout est retiré.
+    let saved = database
+        .set_custom_bad_words(1, Vec::<String>::new())
+        .unwrap();
+    assert!(saved.custom_words.is_empty());
+
+    assert_eq!(
+        database.bad_words_settings(2).unwrap().language,
+        BadWordsLanguage::All
+    );
+}
+
+#[test]
+fn custom_bad_words_out_of_bounds_are_refused_without_writing() {
+    let database = Database::open_in_memory().unwrap();
+    database.set_custom_bad_words(1, ["garde"]).unwrap();
+
+    let too_many = (0..=MAX_CUSTOM_WORDS).map(|index| format!("m{index}"));
+    assert!(matches!(
+        database.set_custom_bad_words(1, too_many),
+        Err(DatabaseError::InvalidCustomWords(
+            CustomWordsError::TooManyWords
+        ))
+    ));
+    assert!(matches!(
+        database.set_custom_bad_words(1, ["x".repeat(101)]),
+        Err(DatabaseError::InvalidCustomWords(
+            CustomWordsError::WordTooLong
+        ))
+    ));
+
+    assert_eq!(
+        database.bad_words_settings(1).unwrap().custom_words,
+        vec!["garde".to_owned()]
+    );
+}
+
+#[test]
+fn schema_rejects_invalid_bad_words_rows() {
+    let directory = temporary_directory("bad-words-check");
+    let path = directory.join("foxsecura.sqlite3");
+    Database::open(&path).unwrap().guild_config(1).unwrap();
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .unwrap();
+    for sql in [
+        "UPDATE guild_configs SET bad_words_language = 'fr' WHERE guild_id = '1'",
+        "INSERT INTO guild_bad_words (guild_id, word) VALUES ('1', '')",
+        "INSERT INTO guild_bad_words (guild_id, word) VALUES ('404', 'mot')",
+    ] {
+        assert!(connection.execute(sql, []).is_err(), "{sql}");
+    }
+    let too_long = format!(
+        "INSERT INTO guild_bad_words (guild_id, word) VALUES ('1', '{}')",
+        "é".repeat(101)
+    );
+    assert!(connection.execute(&too_long, []).is_err());
+    let longest = format!(
+        "INSERT INTO guild_bad_words (guild_id, word) VALUES ('1', '{}')",
+        "é".repeat(100)
+    );
+    assert!(connection.execute(&longest, []).is_ok());
+    drop(connection);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn custom_bad_words_cascade_when_guild_config_is_deleted() {
+    let directory = temporary_directory("bad-words-cascade");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        let database = Database::open(&path).unwrap();
+        database.set_custom_bad_words(1, ["un"]).unwrap();
+        database.set_custom_bad_words(2, ["deux"]).unwrap();
+    }
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .unwrap();
+    connection
+        .execute("DELETE FROM guild_configs WHERE guild_id = '1'", [])
+        .unwrap();
+    drop(connection);
+
+    let database = Database::open(&path).unwrap();
+    assert!(
+        database
+            .bad_words_settings(1)
+            .unwrap()
+            .custom_words
+            .is_empty()
+    );
+    assert_eq!(
+        database.bad_words_settings(2).unwrap().custom_words,
+        vec!["deux".to_owned()]
+    );
+    drop(database);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn message_guard_context_reads_custom_words_only_when_bad_words_is_enabled() {
+    let database = Database::open_in_memory().unwrap();
+    database.set_custom_bad_words(1, ["spoiler"]).unwrap();
+    database
+        .set_bad_words_language(1, BadWordsLanguage::French)
+        .unwrap();
+
+    let disabled = database.message_guard_context(1, 2, 3).unwrap();
+    assert!(disabled.custom_bad_words.is_empty());
+
+    database
+        .set_protection_module(1, ProtectionModule::BadWords, true)
+        .unwrap();
+    let enabled = database.message_guard_context(1, 2, 3).unwrap();
+    assert_eq!(enabled.custom_bad_words, vec!["spoiler".to_owned()]);
+    assert_eq!(
+        enabled.guild_config.unwrap().bad_words_language,
+        BadWordsLanguage::French
+    );
+}
+
+#[test]
+fn migrates_version_four_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v4");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        // Schéma v4 figé, tel que publié avant les mots interdits.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_configs (
+    guild_id TEXT PRIMARY KEY NOT NULL,
+    language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'de')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_log_channels (
+    guild_id TEXT NOT NULL,
+    log_type TEXT NOT NULL CHECK (
+        log_type IN ('message', 'server', 'member', 'channel', 'role', 'moderation')
+    ),
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, log_type),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_enabled INTEGER NOT NULL DEFAULT 0
+    CHECK (anti_spam_enabled IN (0, 1));
+ALTER TABLE guild_configs ADD COLUMN anti_spam_message_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_message_threshold BETWEEN 2 AND 50);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_window_seconds INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_window_seconds BETWEEN 1 AND 60);
+CREATE TABLE guild_whitelist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_whitelist_roles (
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL CHECK (role_id <> guild_id),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, role_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_ignored_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_protection_modules (
+    guild_id TEXT NOT NULL,
+    module_key TEXT NOT NULL CHECK (length(module_key) BETWEEN 1 AND 64),
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, module_key),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+INSERT INTO schema_migrations (version, name) VALUES (1, 'initial');
+INSERT INTO schema_migrations (version, name) VALUES (2, 'anti_spam_settings');
+INSERT INTO schema_migrations (version, name) VALUES (3, 'whitelist_and_ignored_channels');
+INSERT INTO schema_migrations (version, name) VALUES (4, 'protection_modules');
+INSERT INTO guild_configs (
+    guild_id, language, created_at, updated_at,
+    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds
+)
+VALUES ('123', 'de', 1000, 2000, 1, 9, 20);
+INSERT INTO guild_log_channels (guild_id, log_type, channel_id)
+VALUES ('123', 'message', '456');
+INSERT INTO guild_whitelist_users (guild_id, user_id) VALUES ('123', '7');
+INSERT INTO guild_whitelist_roles (guild_id, role_id) VALUES ('123', '70');
+INSERT INTO guild_ignored_channels (guild_id, channel_id) VALUES ('123', '8');
+INSERT INTO guild_protection_modules (guild_id, module_key, enabled)
+VALUES ('123', 'anti_invite', 1);
+"#,
+            )
+            .unwrap();
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 5);
+
+    let config = database.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(config.language, Language::German);
+    assert_eq!((config.created_at, config.updated_at), (1000, 2000));
+    assert_eq!(config.anti_spam, MessageFloodConfig::new(true, 9, 20));
+    // Liste intégrée par défaut, aucun mot personnalisé.
+    assert_eq!(config.bad_words_language, BadWordsLanguage::All);
+    assert_eq!(
+        database.bad_words_settings(123).unwrap().custom_words,
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        database
+            .log_channel(123, LogType::Message)
+            .unwrap()
+            .map(|channel| channel.channel_id),
+        Some(456)
+    );
+    assert_eq!(
+        database.guild_exemptions(123).unwrap(),
+        GuildExemptions {
+            whitelist_users: vec![7],
+            whitelist_roles: vec![70],
+            ignored_channels: vec![8],
+        }
+    );
+    assert_eq!(
+        database.enabled_modules(123).unwrap(),
+        [ProtectionModule::AntiInvite]
+            .into_iter()
+            .collect::<ModuleSet>()
+    );
+
+    // Les nouvelles données sont utilisables et survivent à une réouverture.
+    database
+        .set_bad_words_language(123, BadWordsLanguage::French)
+        .unwrap();
+    database.set_custom_bad_words(123, ["spoiler"]).unwrap();
+    drop(database);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), 5);
+    assert_eq!(
+        reopened.bad_words_settings(123).unwrap(),
+        BadWordsSettings {
+            language: BadWordsLanguage::French,
+            custom_words: vec!["spoiler".to_owned()],
+        }
     );
     drop(reopened);
     fs::remove_dir_all(directory).unwrap();

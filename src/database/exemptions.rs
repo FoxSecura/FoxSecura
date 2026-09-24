@@ -8,8 +8,9 @@
 
 use rusqlite::{Connection, params};
 
-use crate::protection::shared::{ModuleSet, is_everyone_role};
+use crate::protection::shared::{ModuleSet, ProtectionModule, is_everyone_role};
 
+use super::bad_words::read_custom_words;
 use super::models::parse_snowflake;
 use super::modules::enabled_modules;
 use super::repository::{ensure_guild_config, read_guild_config};
@@ -128,8 +129,8 @@ impl Database {
     }
 
     /// Tout ce que le pipeline de messages lit en base, sous un seul verrou et
-    /// en un seul aller-retour : configuration, salon ignoré, liste blanche et
-    /// modules activés.
+    /// en un seul aller-retour : configuration, salon ignoré, liste blanche,
+    /// modules activés et mots interdits personnalisés.
     ///
     /// Chemin chaud (un appel par message) : aucune écriture. Une guilde sans
     /// configuration n'a, par clé étrangère, ni liste blanche, ni salon ignoré,
@@ -148,6 +149,7 @@ impl Database {
             author_listed: false,
             whitelist_roles: Vec::new(),
             enabled_modules: ModuleSet::empty(),
+            custom_bad_words: Vec::new(),
         };
 
         match read_guild_config(&connection, guild_id) {
@@ -170,6 +172,9 @@ impl Database {
             context.whitelist_roles = list_ids(&connection, IdList::WhitelistRoles, guild_id)?;
         }
         context.enabled_modules = enabled_modules(&connection, guild_id)?;
+        if context.enabled_modules.contains(ProtectionModule::BadWords) {
+            context.custom_bad_words = read_custom_words(&connection, guild_id)?;
+        }
 
         Ok(context)
     }

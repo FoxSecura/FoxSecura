@@ -4,12 +4,13 @@
 use std::time::Duration;
 
 use foxsecura::i18n::DEFAULT_LANGUAGE;
+use foxsecura::protection::automod::bad_words::DEFAULT_BAD_WORDS_LANGUAGE;
 use foxsecura::protection::content_filter::{
     AuthorContext, MessageContent, MessageEvent, MessageRoute, route_message,
 };
 use foxsecura::protection::shared::{
-    AuthorWhitelist, MessageSnapshot, is_author_exempt, message_scope, screen_message,
-    snowflake_timestamp,
+    AuthorWhitelist, MessageSnapshot, ProtectionModule, is_author_exempt, message_scope,
+    screen_message, snowflake_timestamp,
 };
 use poise::serenity_prelude as serenity;
 
@@ -90,6 +91,11 @@ pub async fn handle_update(
             mentions_everyone: event.mention_everyone.unwrap_or(false),
             mention_count: event.mentions.as_ref().map_or(0, Vec::len)
                 + event.mention_roles.as_ref().map_or(0, Vec::len),
+            attachments: event
+                .attachments
+                .as_ref()
+                .map(|attachments| attachment_names(attachments))
+                .unwrap_or_default(),
         },
         author: author_context(author.id, unix_duration(edited_at), member),
         member_roles: member_roles(member),
@@ -101,8 +107,8 @@ pub async fn handle_update(
 /// Pipeline de protection des messages.
 ///
 /// Gardes (hors guilde, webhook, bot), puis une seule lecture en base
-/// (configuration, salon ignoré, liste blanche, modules activés), puis les
-/// filtres de contenu et enfin l'anti-spam. Chaque module est isolé : son
+/// (configuration, salon ignoré, liste blanche, modules activés, mots
+/// interdits), puis les filtres de contenu et enfin l'anti-spam. Chaque module est isolé : son
 /// erreur est journalisée sans interrompre le pipeline ni le client.
 async fn process(
     ctx: &serenity::Context,
@@ -144,12 +150,29 @@ async fn process(
     );
     let scope = message_scope(context.channel_ignored, author_exempt);
 
+    // Liste compilée une fois par liste (cache borné), jamais par message.
+    let bad_words = context
+        .enabled_modules
+        .contains(ProtectionModule::BadWords)
+        .then(|| {
+            let language = context
+                .guild_config
+                .as_ref()
+                .map_or(DEFAULT_BAD_WORDS_LANGUAGE, |guild_config| {
+                    guild_config.bad_words_language
+                });
+            data.protection
+                .bad_words()
+                .matcher(language, &context.custom_bad_words)
+        });
+
     match route_message(
         scope,
         event,
         context.enabled_modules,
         &inspected.content,
         inspected.author,
+        bad_words.as_deref(),
     ) {
         MessageRoute::Skip => {}
         MessageRoute::Filter(detection) => {
@@ -160,11 +183,15 @@ async fn process(
             content_filter::run(
                 ctx,
                 data,
-                &guild_message,
-                &detection,
-                event,
-                &inspected.content,
-                language,
+                content_filter::FilteredMessage {
+                    message: &guild_message,
+                    detection: &detection,
+                    event,
+                    content: &inspected.content,
+                    scope,
+                    member_roles: inspected.member_roles.as_deref(),
+                    language,
+                },
             )
             .await;
         }
@@ -188,7 +215,15 @@ pub fn message_content(message: &serenity::Message) -> MessageContent {
         content: message.content.clone(),
         mentions_everyone: message.mention_everyone,
         mention_count: message.mentions.len() + message.mention_roles.len(),
+        attachments: attachment_names(&message.attachments),
     }
+}
+
+fn attachment_names(attachments: &[serenity::Attachment]) -> Vec<String> {
+    attachments
+        .iter()
+        .map(|attachment| attachment.filename.clone())
+        .collect()
 }
 
 fn author_context(

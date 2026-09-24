@@ -6,6 +6,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::i18n::Language;
 use crate::logs::LogType;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
+use crate::protection::automod::bad_words::BadWordsLanguage;
 
 use super::models::{parse_language, parse_log_type, parse_snowflake};
 use super::{Database, DatabaseError, GuildConfig, GuildLogChannel};
@@ -206,7 +207,8 @@ pub(super) fn read_guild_config(
     let row = connection.query_row(
         r#"
 SELECT guild_id, language, created_at, updated_at,
-    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds
+    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
+    bad_words_language
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -220,6 +222,7 @@ WHERE guild_id = ?1
                 row.get::<_, bool>(4)?,
                 row.get::<_, u32>(5)?,
                 row.get::<_, u32>(6)?,
+                row.get::<_, String>(7)?,
             ))
         },
     )?;
@@ -228,6 +231,8 @@ WHERE guild_id = ?1
         guild_id: parse_snowflake(&row.0)?,
         language: parse_language(&row.1)?,
         anti_spam: MessageFloodConfig::validated(row.4, row.5, row.6)?,
+        bad_words_language: BadWordsLanguage::from_key(&row.7)
+            .ok_or_else(|| DatabaseError::InvalidBadWordsLanguage(row.7.clone()))?,
         created_at: row.2,
         updated_at: row.3,
     })

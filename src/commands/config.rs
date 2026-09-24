@@ -607,14 +607,14 @@ fn build_components(
     match (selected, view) {
         (Some(anti_spam::CATEGORY_ID), Some(CategoryView::AntiSpam { config, modules })) => {
             rows.push(anti_spam::buttons(language, config));
-            rows.push(content_filters::buttons(
+            rows.extend(content_filters::buttons(
                 language,
                 content_filters::ANTI_SPAM_MODULES,
                 *modules,
             ));
         }
         (Some(content_filters::AUTOMOD_CATEGORY_ID), Some(CategoryView::Automod(modules))) => {
-            rows.push(content_filters::buttons(
+            rows.extend(content_filters::buttons(
                 language,
                 content_filters::AUTOMOD_MODULES,
                 *modules,

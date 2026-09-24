@@ -1,17 +1,19 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Filtres de contenu des messages : suppression et incident, sans sanction.
+//! Filtres de contenu des messages : suppression, incident et, pour
+//! l'anti-arnaque seulement, une sanction graduée.
 //!
 //! Chaîne pure utilisée par le runtime : [`route_message`] (portée, ordre et
-//! court-circuit) → suppression par le binaire → [`build_incident`].
+//! court-circuit) → suppression par le binaire → [`plan_follow_up`]
+//! (sanction ou revue) → [`build_incident`] et [`record_follow_up`].
 //!
-//! Ordre de la spécification V1 : caractères invisibles → liens malveillants
-//! → liens adultes → invitations → `@everyone`/`@here` → mentions de masse.
-//! Le premier module activé qui déclenche arrête la chaîne : un message ne
-//! produit jamais deux suppressions ni deux incidents. Les filtres passent
-//! avant l'anti-spam ; un message qu'ils retiennent n'est pas compté dans la
-//! fenêtre anti-spam.
+//! Ordre : caractères invisibles → liens malveillants → liens adultes →
+//! invitations → `@everyone`/`@here` → mentions de masse → pièces jointes →
+//! anti-arnaque → mots interdits. Le premier module activé qui déclenche
+//! arrête la chaîne : un message ne produit jamais deux suppressions ni deux
+//! incidents. Les filtres passent avant l'anti-spam ; un message qu'ils
+//! retiennent n'est pas compté dans la fenêtre anti-spam.
 
 mod response;
 
@@ -21,25 +23,36 @@ use crate::protection::anti_spam::anti_everyone::detect_everyone_mention;
 use crate::protection::anti_spam::anti_mass_mention::{
     DEFAULT_MASS_MENTION_THRESHOLD, detect_mass_mention,
 };
+use crate::protection::anti_spam::anti_scam::{
+    AntiScamContext, AntiScamObservation, ScamConfidence, detect_scam_message,
+};
+use crate::protection::anti_spam::attachment_filter::detect_dangerous_attachment;
 use crate::protection::anti_spam::invisible_char_filter::detect_obfuscated_text;
 use crate::protection::anti_spam::malicious_link::{MaliciousLinkContext, detect_malicious_link};
 use crate::protection::automod::adult_link::detect_adult_link;
 use crate::protection::automod::anti_invite::detect_invite_link;
-use crate::protection::shared::{MessageScope, ModuleSet, ProtectionDecision, ProtectionModule};
+use crate::protection::automod::bad_words::BadWordsMatcher;
+use crate::protection::shared::{
+    MessageScope, ModuleSet, ProtectionDecision, ProtectionModule, extract_url_signals,
+};
 
 pub use response::{
-    EXCERPT_MAX_CHARS, RevisionCheck, build_incident, check_revision, excerpt,
-    revision_fetch_failure,
+    ANTI_SCAM_AUDIT_LABEL, ANTI_SCAM_BAN_PURGE, ANTI_SCAM_TIMEOUT, EXCERPT_MAX_CHARS, FollowUp,
+    FollowUpOutcome, MAX_SCAM_SIGNALS, RevisionCheck, anti_scam_audit_reason, build_incident,
+    check_revision, excerpt, plan_follow_up, record_follow_up, revision_fetch_failure,
 };
 
 /// Filtres de contenu, dans l'ordre d'évaluation.
-pub const CONTENT_FILTERS: [ProtectionModule; 6] = [
+pub const CONTENT_FILTERS: [ProtectionModule; 9] = [
     ProtectionModule::InvisibleCharFilter,
     ProtectionModule::MaliciousLink,
     ProtectionModule::AdultLink,
     ProtectionModule::AntiInvite,
     ProtectionModule::AntiEveryone,
     ProtectionModule::AntiMassMention,
+    ProtectionModule::AttachmentFilter,
+    ProtectionModule::AntiScam,
+    ProtectionModule::BadWords,
 ];
 
 /// Seuil de l'anti-mentions de masse (utilisateurs et rôles mentionnés),
@@ -59,6 +72,8 @@ pub struct MessageContent {
     pub mentions_everyone: bool,
     /// Utilisateurs et rôles mentionnés (dédoublonnés par Discord).
     pub mention_count: usize,
+    /// Noms des pièces jointes, tels que fournis par Discord.
+    pub attachments: Vec<String>,
 }
 
 /// Contexte temporel de l'auteur, pour les liens risqués des comptes récents.
@@ -99,6 +114,21 @@ pub enum ContentFinding {
         count: usize,
         threshold: usize,
     },
+    DangerousAttachment {
+        file_name: String,
+        extension: String,
+    },
+    /// Arnaque probable. Jamais d'URL complète : seulement l'hôte, sans
+    /// chemin, requête ni identifiants.
+    Scam {
+        host: Option<String>,
+        score: u8,
+        signals: Vec<&'static str>,
+        confidence: ScamConfidence,
+    },
+    BadWord {
+        word: String,
+    },
 }
 
 /// Premier filtre qui a déclenché.
@@ -125,7 +155,8 @@ pub enum MessageRoute {
 ///
 /// - Salon ignoré : rien.
 /// - Auteur exempté : filtres de contenu seulement (suppression, jamais de
-///   sanction, comme les corrections de contenu de la V1), pas d'anti-spam.
+///   sanction, comme les corrections de contenu de la V1, mots interdits
+///   compris), pas d'anti-spam.
 /// - Sinon : filtres de contenu, puis anti-spam pour les créations seulement :
 ///   une modification n'est pas un nouveau message.
 pub fn route_message(
@@ -134,12 +165,13 @@ pub fn route_message(
     enabled: ModuleSet,
     message: &MessageContent,
     author: AuthorContext,
+    bad_words: Option<&BadWordsMatcher>,
 ) -> MessageRoute {
     if scope == MessageScope::IgnoredChannel {
         return MessageRoute::Skip;
     }
 
-    if let Some(detection) = detect_content(enabled, message, author) {
+    if let Some(detection) = detect_content(enabled, message, author, bad_words) {
         return MessageRoute::Filter(detection);
     }
 
@@ -151,16 +183,21 @@ pub fn route_message(
 
 /// Évalue les filtres activés dans l'ordre et s'arrête au premier qui
 /// déclenche.
+///
+/// `bad_words` : liste compilée de la guilde (intégrée et personnalisée) ;
+/// `None` si elle n'est pas chargée, les mots interdits ne déclenchent alors
+/// jamais.
 pub fn detect_content(
     enabled: ModuleSet,
     message: &MessageContent,
     author: AuthorContext,
+    bad_words: Option<&BadWordsMatcher>,
 ) -> Option<ContentDetection> {
     CONTENT_FILTERS
         .into_iter()
         .filter(|module| enabled.contains(*module))
         .find_map(|module| {
-            detect_module(module, message, author)
+            detect_module(module, message, author, bad_words)
                 .map(|finding| ContentDetection { module, finding })
         })
 }
@@ -169,10 +206,45 @@ fn detect_module(
     module: ProtectionModule,
     message: &MessageContent,
     author: AuthorContext,
+    bad_words: Option<&BadWordsMatcher>,
 ) -> Option<ContentFinding> {
     let content = message.content.as_str();
 
     match module {
+        ProtectionModule::AttachmentFilter => {
+            let names = attachment_names(message);
+            let result = detect_dangerous_attachment(&names);
+            result
+                .matched_file
+                .zip(result.matched_extension)
+                .filter(|_| result.triggered)
+                .map(
+                    |(file_name, extension)| ContentFinding::DangerousAttachment {
+                        file_name,
+                        extension,
+                    },
+                )
+        }
+        ProtectionModule::AntiScam => {
+            let names = attachment_names(message);
+            let link_context = link_context(author);
+            let result = detect_scam_message(
+                AntiScamObservation {
+                    content,
+                    attachment_names: &names,
+                },
+                AntiScamContext { link_context },
+            );
+            (result.decision == ProtectionDecision::Block).then(|| ContentFinding::Scam {
+                host: scam_host(content, link_context),
+                score: result.score,
+                signals: result.signals.into_iter().take(MAX_SCAM_SIGNALS).collect(),
+                confidence: result.confidence,
+            })
+        }
+        ProtectionModule::BadWords => bad_words
+            .and_then(|matcher| matcher.detect(content).matched_word)
+            .map(|word| ContentFinding::BadWord { word }),
         ProtectionModule::InvisibleCharFilter => {
             let result = detect_obfuscated_text(content);
             result.triggered.then_some(ContentFinding::Obfuscation {
@@ -180,13 +252,7 @@ fn detect_module(
             })
         }
         ProtectionModule::MaliciousLink => {
-            let context = MaliciousLinkContext {
-                now: author.now,
-                account_created_at: author.account_created_at,
-                member_joined_at: author.member_joined_at,
-                ..MaliciousLinkContext::default()
-            };
-            let result = detect_malicious_link(content, context);
+            let result = detect_malicious_link(content, link_context(author));
             result
                 .matched_pattern
                 .filter(|_| result.triggered)
@@ -220,4 +286,31 @@ fn detect_module(
             })
         }
     }
+}
+
+fn attachment_names(message: &MessageContent) -> Vec<&str> {
+    message.attachments.iter().map(String::as_str).collect()
+}
+
+/// Contexte « compte récent » : âge du compte et date d'arrivée.
+fn link_context(author: AuthorContext) -> MaliciousLinkContext {
+    MaliciousLinkContext {
+        now: author.now,
+        account_created_at: author.account_created_at,
+        member_joined_at: author.member_joined_at,
+        ..MaliciousLinkContext::default()
+    }
+}
+
+/// Hôte à citer comme preuve : celui du lien malveillant s'il y en a un,
+/// sinon le premier lien du message. Seul le nom d'hôte est conservé (ni
+/// chemin, ni requête, ni identifiants).
+fn scam_host(content: &str, context: MaliciousLinkContext) -> Option<String> {
+    let signals = extract_url_signals(content);
+    let pattern = detect_malicious_link(content, context).matched_pattern;
+
+    pattern
+        .and_then(|pattern| signals.iter().find(|signal| signal.searchable() == pattern))
+        .or_else(|| signals.first())
+        .map(|signal| signal.hostname.clone())
 }

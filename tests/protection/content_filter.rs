@@ -12,6 +12,9 @@ use foxsecura::logs::{
     format_security_log_message,
 };
 use foxsecura::protection::anti_spam::message_flood::{MessageFloodConfig, MessageFloodTracker};
+use foxsecura::protection::automod::bad_words::{
+    BadWordsLanguage, BadWordsMatcher, built_in_bad_words,
+};
 use foxsecura::protection::content_filter::{
     AuthorContext, CONTENT_FILTERS, ContentDetection, ContentFinding, EXCERPT_MAX_CHARS,
     MASS_MENTION_THRESHOLD, MessageContent, MessageEvent, MessageRoute, RevisionCheck,
@@ -48,7 +51,7 @@ fn established_author() -> AuthorContext {
 }
 
 fn detect(module: ProtectionModule, message: &MessageContent) -> Option<ContentFinding> {
-    detect_content(only(module), message, established_author()).map(|detection| {
+    detect_content(only(module), message, established_author(), None).map(|detection| {
         assert_eq!(detection.module, module);
         detection.finding
     })
@@ -89,8 +92,9 @@ fn module_keys_round_trip_and_are_unique() {
 fn unknown_module_keys_are_refused() {
     for key in [
         "",
-        "anti_scam",
+        "anti_nuke",
         "anti_spam",
+        "ANTI_SCAM",
         "MALICIOUS_LINK",
         "malicious_link ",
         "malicious-link",
@@ -126,6 +130,9 @@ fn every_content_filter_is_a_known_module_in_v1_order() {
             "anti_invite",
             "anti_everyone",
             "anti_mass_mention",
+            "attachment_filter",
+            "anti_scam",
+            "bad_words",
         ]
     );
 }
@@ -136,9 +143,10 @@ fn disabled_modules_never_trigger() {
         content: "\u{200b} https://grabify.link/x https://pornhub.com discord.gg/abc".to_owned(),
         mentions_everyone: true,
         mention_count: 50,
+        attachments: Vec::new(),
     };
     assert_eq!(
-        detect_content(ModuleSet::empty(), &message, established_author()),
+        detect_content(ModuleSet::empty(), &message, established_author(), None),
         None
     );
 }
@@ -250,6 +258,7 @@ fn risky_links_are_blocked_only_for_accounts_younger_than_seven_days() {
         only(ProtectionModule::MaliciousLink),
         &message,
         context(DAY * 7 - Duration::from_secs(1)),
+        None,
     );
     assert!(matches!(
         fresh.map(|detection| detection.finding),
@@ -261,7 +270,8 @@ fn risky_links_are_blocked_only_for_accounts_younger_than_seven_days() {
         detect_content(
             only(ProtectionModule::MaliciousLink),
             &message,
-            context(DAY * 7)
+            context(DAY * 7),
+            None,
         ),
         None
     );
@@ -341,6 +351,7 @@ fn broadcast_mentions_are_blocked_when_discord_flags_them() {
         content: "@everyone venez vite".to_owned(),
         mentions_everyone: true,
         mention_count: 0,
+        attachments: Vec::new(),
     };
     assert_eq!(
         detect(ProtectionModule::AntiEveryone, &message),
@@ -369,6 +380,7 @@ fn mass_mention_threshold_is_inclusive() {
         content: "salut".to_owned(),
         mentions_everyone: false,
         mention_count: count,
+        attachments: Vec::new(),
     };
 
     assert_eq!(MASS_MENTION_THRESHOLD, 5);
@@ -395,21 +407,25 @@ fn mass_mention_threshold_is_inclusive() {
 #[test]
 fn modules_are_evaluated_in_v1_order_and_the_first_one_wins() {
     let message = MessageContent {
-        content: "\u{200b} https://grabify.link/x https://pornhub.com discord.gg/abc".to_owned(),
+        content: "\u{200b} https://grabify.link/x https://pornhub.com discord.gg/abc merde"
+            .to_owned(),
         mentions_everyone: true,
         mention_count: MASS_MENTION_THRESHOLD,
+        attachments: vec!["facture.pdf.exe".to_owned()],
     };
+    let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
 
     // Chaque module déclenche sur ce message : en retirant tour à tour le
     // premier, on retrouve exactement l'ordre de la spécification.
     let mut enabled = all_modules();
     for expected in CONTENT_FILTERS {
-        let detection = detect_content(enabled, &message, established_author()).unwrap();
+        let detection =
+            detect_content(enabled, &message, established_author(), Some(&matcher)).unwrap();
         assert_eq!(detection.module, expected);
         enabled.set(expected, false);
     }
     assert_eq!(
-        detect_content(enabled, &message, established_author()),
+        detect_content(enabled, &message, established_author(), Some(&matcher)),
         None
     );
 }
@@ -423,6 +439,7 @@ fn a_filtered_message_is_never_sent_to_anti_spam() {
         all_modules(),
         &message,
         established_author(),
+        None,
     );
 
     // Un seul module retenu, donc une seule suppression et un seul incident.
@@ -452,6 +469,7 @@ fn filtered_messages_are_not_counted_by_anti_spam() {
                     only(ProtectionModule::AntiInvite),
                     &text_message(content),
                     established_author(),
+                    None,
                 );
                 (route == MessageRoute::AntiSpam).then(|| {
                     tracker.observe(&flood, &guild_message(index as u64 + 1, index as u64 * 100))
@@ -480,6 +498,7 @@ fn ignored_channel_skips_every_protection() {
                     all_modules(),
                     &text_message(content),
                     established_author(),
+                    None,
                 ),
                 MessageRoute::Skip
             );
@@ -495,6 +514,7 @@ fn exempt_author_gets_content_corrections_but_no_anti_spam() {
         all_modules(),
         &text_message("https://grabify.link/x"),
         established_author(),
+        None,
     );
     assert!(matches!(
         filtered,
@@ -511,6 +531,7 @@ fn exempt_author_gets_content_corrections_but_no_anti_spam() {
             all_modules(),
             &text_message("message propre"),
             established_author(),
+            None,
         ),
         MessageRoute::Skip
     );
@@ -525,6 +546,7 @@ fn enforced_author_gets_filters_then_anti_spam() {
             all_modules(),
             &text_message("https://grabify.link/x"),
             established_author(),
+            None,
         ),
         MessageRoute::Filter(_)
     ));
@@ -535,6 +557,7 @@ fn enforced_author_gets_filters_then_anti_spam() {
             all_modules(),
             &text_message("message propre"),
             established_author(),
+            None,
         ),
         MessageRoute::AntiSpam
     );
@@ -546,6 +569,7 @@ fn enforced_author_gets_filters_then_anti_spam() {
             ModuleSet::empty(),
             &text_message("https://grabify.link/x"),
             established_author(),
+            None,
         ),
         MessageRoute::AntiSpam
     );
@@ -565,7 +589,8 @@ fn an_edit_that_makes_a_message_malicious_is_filtered() {
             MessageEvent::Created,
             modules,
             &original,
-            established_author()
+            established_author(),
+            None,
         ),
         MessageRoute::AntiSpam
     );
@@ -575,7 +600,8 @@ fn an_edit_that_makes_a_message_malicious_is_filtered() {
             MessageEvent::Edited,
             modules,
             &edited,
-            established_author()
+            established_author(),
+            None,
         ),
         MessageRoute::Filter(ContentDetection {
             module: ProtectionModule::MaliciousLink,
@@ -594,6 +620,7 @@ fn edits_are_never_counted_by_anti_spam() {
                 all_modules(),
                 &text_message("correction d'une faute"),
                 established_author(),
+                None,
             ),
             MessageRoute::Skip
         );

@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 4;
+pub const LATEST_SCHEMA_VERSION: i64 = 5;
 
 struct Migration {
     version: i64,
@@ -101,6 +101,29 @@ CREATE TABLE guild_protection_modules (
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (guild_id, module_key),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+"#,
+    },
+    Migration {
+        version: 5,
+        name: "bad_words",
+        // Langue de la liste intégrée (`all` par défaut, comme la V1) et mots
+        // personnalisés, stockés en minuscules : la correspondance ignore la
+        // casse, la clé composite dédoublonne donc « Mot » et « mot ».
+        //
+        // Les bornes de la V1 (200 mots, 100 caractères par mot, 2 000
+        // caractères de saisie) sont validées côté Rust avant l'écriture ; la
+        // contrainte `CHECK` protège seulement la longueur d'un mot.
+        sql: r#"
+ALTER TABLE guild_configs ADD COLUMN bad_words_language TEXT NOT NULL DEFAULT 'all'
+    CHECK (bad_words_language IN ('french', 'english', 'all'));
+
+CREATE TABLE guild_bad_words (
+    guild_id TEXT NOT NULL,
+    word TEXT NOT NULL CHECK (length(word) BETWEEN 1 AND 100),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, word),
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
 );
 "#,

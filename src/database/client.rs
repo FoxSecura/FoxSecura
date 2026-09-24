@@ -11,6 +11,7 @@ use std::time::Duration;
 use rusqlite::Connection;
 
 use crate::protection::anti_spam::message_flood::MessageFloodConfigError;
+use crate::protection::automod::bad_words::CustomWordsError;
 
 use super::migrations::run_migrations;
 
@@ -49,6 +50,17 @@ impl Database {
         })
     }
 
+    /// Écriture de configuration d'une guilde, sous le verrou de la
+    /// connexion.
+    pub(crate) fn write<T>(
+        &self,
+        _guild_id: u64,
+        operation: impl FnOnce(&Connection) -> Result<T, DatabaseError>,
+    ) -> Result<T, DatabaseError> {
+        let connection = self.connection()?;
+        operation(&connection)
+    }
+
     pub(crate) fn connection(&self) -> Result<MutexGuard<'_, Connection>, DatabaseError> {
         self.connection
             .lock()
@@ -76,6 +88,8 @@ pub enum DatabaseError {
     InvalidAntiSpamConfig(MessageFloodConfigError),
     /// `@everyone` ne peut pas être exempté : il exempterait tout le serveur.
     EveryoneRoleNotExemptable,
+    InvalidBadWordsLanguage(String),
+    InvalidCustomWords(CustomWordsError),
 }
 
 impl fmt::Display for DatabaseError {
@@ -102,6 +116,13 @@ impl fmt::Display for DatabaseError {
             Self::EveryoneRoleNotExemptable => {
                 formatter.write_str("le rôle @everyone ne peut pas être exempté")
             }
+            Self::InvalidBadWordsLanguage(value) => {
+                write!(
+                    formatter,
+                    "langue de mots interdits invalide stockée en base : {value}"
+                )
+            }
+            Self::InvalidCustomWords(error) => error.fmt(formatter),
         }
     }
 }
@@ -112,11 +133,13 @@ impl Error for DatabaseError {
             Self::Sqlite(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::InvalidAntiSpamConfig(error) => Some(error),
+            Self::InvalidCustomWords(error) => Some(error),
             Self::LockPoisoned
             | Self::InvalidLanguage(_)
             | Self::InvalidLogType(_)
             | Self::InvalidSnowflake(_)
-            | Self::EveryoneRoleNotExemptable => None,
+            | Self::EveryoneRoleNotExemptable
+            | Self::InvalidBadWordsLanguage(_) => None,
         }
     }
 }
@@ -130,6 +153,12 @@ impl From<rusqlite::Error> for DatabaseError {
 impl From<MessageFloodConfigError> for DatabaseError {
     fn from(error: MessageFloodConfigError) -> Self {
         Self::InvalidAntiSpamConfig(error)
+    }
+}
+
+impl From<CustomWordsError> for DatabaseError {
+    fn from(error: CustomWordsError) -> Self {
+        Self::InvalidCustomWords(error)
     }
 }
 
