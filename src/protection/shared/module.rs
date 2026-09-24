@@ -28,11 +28,12 @@ pub enum ProtectionModule {
     AntiScam,
     BadWords,
     AntiBot,
+    AntiNewAccount,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -43,6 +44,7 @@ impl ProtectionModule {
         Self::AntiScam,
         Self::BadWords,
         Self::AntiBot,
+        Self::AntiNewAccount,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -58,6 +60,7 @@ impl ProtectionModule {
             Self::AntiScam => "anti_scam",
             Self::BadWords => "bad_words",
             Self::AntiBot => "anti_bot",
+            Self::AntiNewAccount => "anti_new_account",
         }
     }
 

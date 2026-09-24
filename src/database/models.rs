@@ -19,6 +19,8 @@ pub struct GuildConfig {
     pub anti_spam: MessageFloodConfig,
     /// Liste intégrée des mots interdits (migration 5).
     pub bad_words_language: BadWordsLanguage,
+    /// Âge minimal d'un compte à l'arrivée, en jours (migration 6, 1 à 365).
+    pub new_account_min_age_days: u16,
     pub created_at: i64,
     pub updated_at: i64,
 }

@@ -345,7 +345,7 @@ fn detect_module(
         }
         // Modules des arrivées de membres (`member_join`) : absents de
         // `CONTENT_FILTERS`, ils n'analysent jamais un message.
-        ProtectionModule::AntiBot => None,
+        ProtectionModule::AntiBot | ProtectionModule::AntiNewAccount => None,
     }
 }
 

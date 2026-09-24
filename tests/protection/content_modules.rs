@@ -535,7 +535,7 @@ fn trigger(module: ProtectionModule) -> MessageContent {
             ..MessageContent::default()
         },
         ProtectionModule::BadWords => text_message("quelle merde"),
-        ProtectionModule::AntiBot => {
+        ProtectionModule::AntiBot | ProtectionModule::AntiNewAccount => {
             unreachable!("module des arrivées, absent de CONTENT_FILTERS")
         }
     }

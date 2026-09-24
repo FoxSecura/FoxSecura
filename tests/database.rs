@@ -1740,3 +1740,65 @@ INSERT INTO guild_bad_words (guild_id, word) VALUES ('123', 'spoiler');
     drop(reopened);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn new_account_min_age_defaults_to_seven_days_and_is_bounded() {
+    let database = Database::open_in_memory().unwrap();
+    assert_eq!(
+        database.guild_config(1).unwrap().new_account_min_age_days,
+        7
+    );
+
+    for days in [1, 30, 365] {
+        assert_eq!(
+            database
+                .set_new_account_min_age(1, days)
+                .unwrap()
+                .new_account_min_age_days,
+            days
+        );
+    }
+    for days in [0, 366, u16::MAX] {
+        assert!(matches!(
+            database.set_new_account_min_age(1, days),
+            Err(DatabaseError::InvalidNewAccountMinAge(value)) if value == days
+        ));
+    }
+    // Une valeur refusée ne modifie rien ; une autre guilde garde le défaut.
+    assert_eq!(
+        database
+            .find_guild_config(1)
+            .unwrap()
+            .unwrap()
+            .new_account_min_age_days,
+        365
+    );
+    assert_eq!(
+        database
+            .set_new_account_min_age(2, 3)
+            .unwrap()
+            .new_account_min_age_days,
+        3
+    );
+}
+
+#[test]
+fn schema_rejects_out_of_range_new_account_min_age() {
+    let directory = temporary_directory("min-age-check");
+    let path = directory.join("foxsecura.sqlite3");
+    Database::open(&path).unwrap().guild_config(1).unwrap();
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    for days in [0, 366] {
+        assert!(
+            connection
+                .execute(
+                    "UPDATE guild_configs SET new_account_min_age_days = ?1 WHERE guild_id = '1'",
+                    [days],
+                )
+                .is_err()
+        );
+    }
+    drop(connection);
+    fs::remove_dir_all(directory).unwrap();
+}

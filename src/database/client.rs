@@ -150,6 +150,8 @@ pub enum DatabaseError {
     /// Un utilisateur de la liste noire ne peut pas être mis sur la liste
     /// blanche : les deux listes s'excluent.
     UserBlacklisted(u64),
+    /// Âge minimal des comptes hors des bornes (1 à 365 jours).
+    InvalidNewAccountMinAge(u16),
 }
 
 impl fmt::Display for DatabaseError {
@@ -187,6 +189,10 @@ impl fmt::Display for DatabaseError {
                 formatter,
                 "l'utilisateur {user_id} est sur la liste blanche : il ne peut pas être mis sur la liste noire"
             ),
+            Self::InvalidNewAccountMinAge(days) => write!(
+                formatter,
+                "âge minimal des comptes invalide : {days} jours (attendu : 1 à 365)"
+            ),
             Self::UserBlacklisted(user_id) => write!(
                 formatter,
                 "l'utilisateur {user_id} est sur la liste noire : il ne peut pas être mis sur la liste blanche"
@@ -209,7 +215,8 @@ impl Error for DatabaseError {
             | Self::EveryoneRoleNotExemptable
             | Self::InvalidBadWordsLanguage(_)
             | Self::UserWhitelisted(_)
-            | Self::UserBlacklisted(_) => None,
+            | Self::UserBlacklisted(_)
+            | Self::InvalidNewAccountMinAge(_) => None,
         }
     }
 }

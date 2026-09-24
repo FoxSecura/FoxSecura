@@ -11,6 +11,7 @@
 
 pub mod anti_bot;
 pub mod blacklist;
+pub mod new_account;
 
 use std::time::UNIX_EPOCH;
 

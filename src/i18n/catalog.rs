@@ -1026,5 +1026,45 @@ catalog! {
         en: "Check the kick: FoxSecura needs Kick Members and a role above the bot's role. Kick it manually if it is still on the server.",
         fr: "Vérifier l'expulsion : FoxSecura doit avoir Expulser des membres et un rôle au-dessus de celui du bot. Expulsez-le manuellement s'il est encore sur le serveur.",
         de: "Den Kick prüfen: FoxSecura braucht Mitglieder kicken und eine Rolle über der des Bots. Manuell kicken, falls er noch auf dem Server ist."
+    },
+    ModuleAntiNewAccount => {
+        en: "New accounts",
+        fr: "Nouveaux comptes",
+        de: "Neue Konten"
+    },
+    NewAccountSummary => {
+        en: "An account younger than the minimum age joined the server.",
+        fr: "Un compte plus récent que l'âge minimal a rejoint le serveur.",
+        de: "Ein Konto unter dem Mindestalter ist dem Server beigetreten."
+    },
+    NewAccountRecommendationExempt => {
+        en: "Recent account exempted (whitelist or server owner): no action. Make sure it is a trusted member.",
+        fr: "Compte récent exempté (liste blanche ou propriétaire) : aucune action. Vérifiez qu'il s'agit bien d'un membre de confiance.",
+        de: "Neues Konto ausgenommen (Whitelist oder Serverinhaber): keine Aktion. Sicherstellen, dass es ein vertrauenswürdiges Mitglied ist."
+    },
+    NewAccountRecommendationBanned => {
+        en: "Recent account banned: check the member and revoke the ban if it is a legitimate newcomer (false positive).",
+        fr: "Compte récent banni : vérifiez le membre et révoquez le ban s'il s'agit d'un nouveau venu légitime (faux positif).",
+        de: "Neues Konto gebannt: Das Mitglied prüfen und den Bann aufheben, falls es ein legitimer Neuling ist (Fehlalarm)."
+    },
+    NewAccountRecommendationBanFailed => {
+        en: "The ban was not applied and the fallback quarantine is not available yet: the recent account is still on the server. Check the ban hierarchy (Ban Members, FoxSecura's role above the member) and review the member.",
+        fr: "Le ban n'a pas été appliqué et la quarantaine de repli n'est pas encore disponible : le compte récent est resté sur le serveur. Vérifiez la hiérarchie du ban (Bannir des membres, rôle de FoxSecura au-dessus du membre) et examinez le membre.",
+        de: "Der Bann wurde nicht angewendet und die Ersatz-Quarantäne ist noch nicht verfügbar: Das neue Konto ist noch auf dem Server. Die Bann-Hierarchie prüfen (Mitglieder bannen, Rolle von FoxSecura über dem Mitglied) und das Mitglied überprüfen."
+    },
+    LogsEvidenceAccountAge => {
+        en: "Account age",
+        fr: "Âge du compte",
+        de: "Kontoalter"
+    },
+    LogsEvidenceMinimum => {
+        en: "minimum",
+        fr: "minimum",
+        de: "Minimum"
+    },
+    LogsUnitDays => {
+        en: "days",
+        fr: "jours",
+        de: "Tage"
     }
 }

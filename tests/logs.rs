@@ -214,3 +214,29 @@ fn inline_literal_collapses_zalgo_and_truncates() {
     assert_eq!(inline_literal("abcdef", 3), "`abc…`");
     assert_eq!(inline_literal("abc", 3), "`abc`");
 }
+
+#[test]
+fn account_age_evidence_is_rendered_in_whole_days_with_the_minimum() {
+    let mut incident = SecurityIncident::new(
+        "anti_new_account",
+        LogType::Member,
+        LogSeverity::Warning,
+        "Nouveau compte",
+        vec![successful_action(ActionCode::BanMember)],
+    );
+    incident.evidence.push(SecurityEvidence::AccountAge {
+        age_seconds: 2 * 24 * 60 * 60 + 3600,
+        minimum_age_seconds: 7 * 24 * 60 * 60,
+    });
+
+    let message = format_security_log_message(Language::French, &incident);
+    assert!(
+        message.contains("Âge du compte = 2 jours (minimum 7 jours)"),
+        "{message}"
+    );
+    let message = format_security_log_message(Language::English, &incident);
+    assert!(
+        message.contains("Account age = 2 days (minimum 7 days)"),
+        "{message}"
+    );
+}

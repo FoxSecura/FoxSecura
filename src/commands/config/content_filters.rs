@@ -37,7 +37,8 @@ pub const AUTOMOD_MODULES: &[ProtectionModule] = &[
 const BUTTONS_PER_ROW: usize = 5;
 
 /// Modules des arrivées de membres, affichés dans la catégorie Anti-Raid.
-pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[ProtectionModule::AntiBot];
+pub const ANTI_RAID_MODULES: &[ProtectionModule] =
+    &[ProtectionModule::AntiBot, ProtectionModule::AntiNewAccount];
 
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
 pub const ANTI_RAID_CATEGORY_ID: &str = "anti_raid";
@@ -181,6 +182,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiScam => TextKey::ModuleAntiScam,
         ProtectionModule::BadWords => TextKey::ModuleBadWords,
         ProtectionModule::AntiBot => TextKey::ModuleAntiBot,
+        ProtectionModule::AntiNewAccount => TextKey::ModuleAntiNewAccount,
     }
 }
 
