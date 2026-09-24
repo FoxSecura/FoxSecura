@@ -3,10 +3,15 @@
 
 mod action_burst;
 mod decision;
+mod message;
 mod url_signal;
 
 pub use action_burst::{
     ActionBurstDetector, ActionBurstDetectorConfig, ActionBurstInput, ActionBurstResult,
 };
 pub use decision::ProtectionDecision;
+pub use message::{
+    DISCORD_EPOCH_MILLIS, GuildMessage, MessageIgnoreReason, MessageSnapshot, screen_message,
+    snowflake_timestamp,
+};
 pub use url_signal::{UrlSignal, extract_url_signals, host_matches};

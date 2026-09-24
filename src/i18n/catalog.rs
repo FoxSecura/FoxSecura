@@ -541,5 +541,135 @@ catalog! {
         en: "Notify member",
         fr: "Notifier le membre",
         de: "Mitglied benachrichtigen"
+    },
+    LogsFieldActor => {
+        en: "Member",
+        fr: "Membre",
+        de: "Mitglied"
+    },
+    LogsFieldLocation => {
+        en: "Channel",
+        fr: "Salon",
+        de: "Kanal"
+    },
+    LogsFieldEvidence => {
+        en: "Evidence",
+        fr: "Preuve",
+        de: "Beweis"
+    },
+    LogsFieldRecommendation => {
+        en: "Recommendation",
+        fr: "Recommandation",
+        de: "Empfehlung"
+    },
+    LogsUnitMessages => {
+        en: "messages",
+        fr: "messages",
+        de: "Nachrichten"
+    },
+    LogsUnitMentions => {
+        en: "mentions",
+        fr: "mentions",
+        de: "Erwähnungen"
+    },
+    LogsUnitJoins => {
+        en: "joins",
+        fr: "arrivées",
+        de: "Beitritte"
+    },
+    LogsUnitActions => {
+        en: "actions",
+        fr: "actions",
+        de: "Aktionen"
+    },
+    LogsUnitSignals => {
+        en: "signals",
+        fr: "signaux",
+        de: "Signale"
+    },
+    LogsEvidenceWindow => {
+        en: "in",
+        fr: "en",
+        de: "in"
+    },
+    AntiSpamIncidentSummary => {
+        en: "Message flood detected.",
+        fr: "Rafale de messages détectée.",
+        de: "Nachrichtenflut erkannt."
+    },
+    AntiSpamRecommendationReviewMember => {
+        en: "Review the suspicious member.",
+        fr: "Examiner le membre suspect.",
+        de: "Das verdächtige Mitglied überprüfen."
+    },
+    AntiSpamRecommendationCheckPermissions => {
+        en: "Check that FoxSecura can delete messages (Manage Messages).",
+        fr: "Vérifier les permissions de suppression de FoxSecura (Gérer les messages).",
+        de: "Prüfen, ob FoxSecura Nachrichten löschen darf (Nachrichten verwalten)."
+    },
+    ConfigAccessDenied => {
+        en: "You need to be the server owner or have the Administrator or Manage Server permission.",
+        fr: "Vous devez être propriétaire du serveur ou disposer de la permission Administrateur ou Gérer le serveur.",
+        de: "Du musst Serverinhaber sein oder die Berechtigung Administrator oder Server verwalten haben."
+    },
+    ConfigSaveFailed => {
+        en: "The configuration could not be loaded or saved. Please try again.",
+        fr: "La configuration n'a pas pu être lue ou enregistrée. Réessayez.",
+        de: "Die Konfiguration konnte nicht geladen oder gespeichert werden. Bitte erneut versuchen."
+    },
+    ConfigAntiSpamEnabled => {
+        en: "Enabled: messages that reach the threshold are deleted.",
+        fr: "Actif : les messages qui atteignent le seuil sont supprimés.",
+        de: "Aktiv: Nachrichten, die den Schwellenwert erreichen, werden gelöscht."
+    },
+    ConfigAntiSpamDisabled => {
+        en: "Disabled.",
+        fr: "Désactivé.",
+        de: "Deaktiviert."
+    },
+    ConfigAntiSpamThreshold => {
+        en: "Message threshold",
+        fr: "Seuil de messages",
+        de: "Nachrichtenschwelle"
+    },
+    ConfigAntiSpamWindow => {
+        en: "Window (seconds)",
+        fr: "Fenêtre (secondes)",
+        de: "Zeitfenster (Sekunden)"
+    },
+    ConfigAntiSpamEnableButton => {
+        en: "Enable",
+        fr: "Activer",
+        de: "Aktivieren"
+    },
+    ConfigAntiSpamDisableButton => {
+        en: "Disable",
+        fr: "Désactiver",
+        de: "Deaktivieren"
+    },
+    ConfigAntiSpamEditLimitsButton => {
+        en: "Edit thresholds",
+        fr: "Modifier les seuils",
+        de: "Schwellenwerte ändern"
+    },
+    ConfigAntiSpamLimitsModalTitle => {
+        en: "Anti-Spam thresholds",
+        fr: "Seuils Anti-Spam",
+        de: "Anti-Spam-Schwellenwerte"
+    },
+    ConfigAntiSpamThresholdInput => {
+        en: "Messages (2 to 50)",
+        fr: "Messages (2 à 50)",
+        de: "Nachrichten (2 bis 50)"
+    },
+    ConfigAntiSpamWindowInput => {
+        en: "Window in seconds (1 to 60)",
+        fr: "Fenêtre en secondes (1 à 60)",
+        de: "Zeitfenster in Sekunden (1 bis 60)"
+    },
+    ConfigAntiSpamInvalidLimits => {
+        en: "Invalid values: the threshold must be between 2 and 50 messages and the window between 1 and 60 seconds.",
+        fr: "Valeurs invalides : le seuil doit être compris entre 2 et 50 messages et la fenêtre entre 1 et 60 secondes.",
+        de: "Ungültige Werte: Die Schwelle muss zwischen 2 und 50 Nachrichten und das Zeitfenster zwischen 1 und 60 Sekunden liegen."
     }
 }

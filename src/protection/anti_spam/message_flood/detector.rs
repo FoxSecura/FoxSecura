@@ -21,10 +21,14 @@ impl MessageWindow {
     }
 }
 
+/// Évalue une fenêtre déjà agrégée.
+///
+/// Même sémantique que le runtime ([`super::MessageFloodTracker`]) : la
+/// protection bloque dès que le nombre de messages atteint le seuil.
 pub fn evaluate(config: MessageFloodConfig, window: MessageWindow) -> ProtectionDecision {
     if !config.enabled
-        || window.elapsed > config.window
-        || window.message_count <= config.message_limit
+        || window.elapsed > config.window()
+        || window.message_count < config.message_threshold as usize
     {
         return ProtectionDecision::Allow;
     }

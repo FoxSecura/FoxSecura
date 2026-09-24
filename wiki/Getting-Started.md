@@ -6,7 +6,7 @@ Cette page décrit l'environnement minimal pour développer ou lancer FoxSecura 
 
 Vous devez disposer de Git, de Cargo et de **Rust 1.98.1**. Le dépôt contient également `rust-toolchain.toml` et `Cargo.toml` fixe `rust-version = "1.98.1"`.
 
-Côté Discord, créez une application et un bot depuis le Discord Developer Portal. Le runtime actuel demande les intents `GUILDS`, `GUILD_MODERATION` et `GUILD_MEMBERS`; le **Server Members Intent** doit donc être activé pour le bot.
+Côté Discord, créez une application et un bot depuis le Discord Developer Portal. Le runtime actuel demande les intents `GUILDS`, `GUILD_MODERATION`, `GUILD_MEMBERS` et `GUILD_MESSAGES` ; le **Server Members Intent** doit donc être activé pour le bot. Le **Message Content Intent** n'est pas nécessaire.
 
 ## Cloner et vérifier le projet
 
@@ -21,7 +21,7 @@ La CI officielle utilise les mêmes familles de vérification avec Rust 1.98.1.
 
 ## Token Discord
 
-Le runtime lit exclusivement `DISCORD_TOKEN` depuis l'environnement.
+Le runtime lit le secret `DISCORD_TOKEN` depuis l'environnement, ainsi que `DATABASE_PATH` (optionnelle, chemin du fichier SQLite).
 
 Linux/macOS :
 
@@ -55,7 +55,7 @@ data/foxsecura.sqlite3
 
 Lorsqu'une `Database` est ouverte, le parent du fichier est créé si nécessaire, SQLite active les clés étrangères, utilise `synchronous = NORMAL`, tente le mode WAL et applique les migrations versionnées.
 
-Le `AppData` du runtime actuel reste minimal. Il ne faut donc pas supposer que chaque service de bibliothèque est déjà instancié automatiquement au démarrage du bot.
+Au démarrage, `App::from_env()` ouvre la base indiquée par `DATABASE_PATH` (ou le chemin par défaut) et la place dans `AppData`, avec l'état en mémoire des protections. Seuls les services réellement branchés sont instanciés : aujourd'hui la base et l'anti-spam.
 
 ## Modération IA
 

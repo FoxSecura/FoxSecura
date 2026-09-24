@@ -5,13 +5,13 @@ mod formatter;
 mod model;
 mod structure;
 
-pub use formatter::format_security_log;
+pub use formatter::{format_security_log, format_security_log_message};
 pub use model::{
-    create_incident_id, ActionCode, ActionStatus, AffectedResource, AffectedResourceType,
-    FailureCode, LogSeverity, LogType, SecurityActionOutcome, SecurityActor, SecurityEvidence,
-    SecurityIncident, SecurityIncidentError, SecurityLocation, ThresholdUnit,
+    ActionCode, ActionStatus, AffectedResource, AffectedResourceType, FailureCode, LogSeverity,
+    LogType, SecurityActionOutcome, SecurityActor, SecurityEvidence, SecurityIncident,
+    SecurityIncidentError, SecurityLocation, ThresholdUnit, create_incident_id,
 };
 pub use structure::{
-    LogChannelDefinition, LOG_CHANNEL_DEFINITIONS, LOG_STRUCTURE_CATEGORY_ALIASES,
-    LOG_STRUCTURE_CATEGORY_NAME,
+    LOG_CHANNEL_DEFINITIONS, LOG_STRUCTURE_CATEGORY_ALIASES, LOG_STRUCTURE_CATEGORY_NAME,
+    LogChannelDefinition,
 };

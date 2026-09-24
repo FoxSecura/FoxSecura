@@ -3,6 +3,7 @@
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 
 use super::DatabaseError;
 
@@ -10,6 +11,8 @@ use super::DatabaseError;
 pub struct GuildConfig {
     pub guild_id: u64,
     pub language: Language,
+    /// Réglages anti-spam persistés (migration 2), relus par le runtime.
+    pub anti_spam: MessageFloodConfig,
     pub created_at: i64,
     pub updated_at: i64,
 }

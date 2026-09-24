@@ -3,16 +3,30 @@
 
 use poise::serenity_prelude as serenity;
 
-use super::{AppData, Error};
+use super::{AppData, Error, pipeline};
 
+/// Répartit les événements Gateway vers les modules concernés.
+///
+/// Les erreurs sont journalisées ici et jamais propagées : une protection ou
+/// un composant défaillant ne doit ni arrêter le client, ni empêcher le
+/// traitement des événements suivants.
 pub async fn handle(
     framework: poise::FrameworkContext<'_, AppData, Error>,
     event: &serenity::FullEvent,
 ) -> Result<(), Error> {
-    if let serenity::FullEvent::InteractionCreate { interaction } = event {
-        if let serenity::Interaction::Component(component) = interaction {
-            crate::commands::handle_component(framework.serenity_context, component).await?;
+    let ctx = framework.serenity_context;
+    let data = framework.user_data;
+
+    match event {
+        serenity::FullEvent::Message { new_message } => {
+            pipeline::message::handle(ctx, data, new_message).await;
         }
+        serenity::FullEvent::InteractionCreate { interaction } => {
+            if let Err(error) = crate::commands::handle_interaction(ctx, data, interaction).await {
+                eprintln!("[interaction] erreur lors du traitement d'un composant : {error}");
+            }
+        }
+        _ => {}
     }
 
     Ok(())

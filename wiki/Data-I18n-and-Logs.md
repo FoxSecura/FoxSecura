@@ -19,12 +19,15 @@ La connexion est protégée par un `Mutex`, ce qui donne une surface de synchron
 
 ## Migrations
 
-Le schéma est versionné dans `schema_migrations`. La version actuelle (`1`) crée :
+Le schéma est versionné dans `schema_migrations`. La version actuelle est `2` : la migration `1` crée les tables ci-dessous, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, sans perte des données existantes.
 
 ### `guild_configs`
 
 - `guild_id` : identifiant Discord stocké en texte ;
 - `language` : `en`, `fr` ou `de`, français par défaut ;
+- `anti_spam_enabled` : `0` ou `1`, désactivé par défaut (migration 2) ;
+- `anti_spam_message_threshold` : 2 à 50, 5 par défaut (migration 2) ;
+- `anti_spam_window_seconds` : 1 à 60, 5 par défaut (migration 2) ;
 - `created_at` et `updated_at` : timestamps Unix.
 
 ### `guild_log_channels`
