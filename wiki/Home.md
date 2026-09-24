@@ -4,7 +4,7 @@ FoxSecura V2 est une réécriture en **Rust** d'un bot Discord centré sur la s�
 
 ## État du projet
 
-FoxSecura est en développement actif. Le dépôt contient déjà une base importante de modules de protection, de tests, de persistance, d'internationalisation et de journalisation. La couche Discord exécutable reste volontairement plus petite : le runtime Poise/Serenity enregistre aujourd'hui les commandes et relaie les interactions de composants, tandis que le branchement complet de tous les moteurs de sécurité aux événements Discord continue progressivement.
+FoxSecura est en développement actif. Le dépôt contient déjà une base importante de modules de protection, de tests, de persistance, d'internationalisation et de journalisation. La couche Discord exécutable reste volontairement plus petite : le runtime Poise/Serenity enregistre les commandes, relaie les interactions de composants et exécute un premier module de protection de bout en bout (anti-spam par rafales de messages, activable depuis `/config`), tandis que le branchement des autres moteurs de sécurité aux événements Discord continue progressivement.
 
 Cette distinction est importante : **présent dans le code** ne signifie pas nécessairement **activé en production par le runtime actuel**.
 

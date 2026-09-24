@@ -8,11 +8,15 @@ Le principal chantier est de relier progressivement les moteurs déjà testables
 
 Chaque branchement doit conserver la séparation `snapshot → détection → décision → action → log` et éviter de déplacer la logique métier dans le handler global.
 
+**Fait (tranche 1)** : `AppData` porte la base SQLite et l'état des protections, l'intent `GUILD_MESSAGES` est demandé et l'événement `Message` alimente un pipeline de protection isolé des erreurs. L'anti-spam (rafales de messages) y est branché de bout en bout. Les tranches suivantes réutiliseront ce pipeline pour les autres modules.
+
 ## 2. Rendre `/config` réellement persistant
 
 Le tableau de bord expose déjà les grandes catégories produit. Les prochaines étapes sont de définir les modèles de configuration par guild, leurs migrations, la validation des permissions et le chargement efficace des paramètres.
 
 L'interface ne doit afficher un état « actif » que si la valeur est réellement persistée et utilisée par le moteur concerné.
+
+**Fait** : autorisation propriétaire / `ADMINISTRATOR` / `MANAGE_GUILD` et catégorie Anti-Spam persistée (activation, seuil, fenêtre). **Reste** : les autres catégories et la configuration des salons de logs depuis `/config`.
 
 ## 3. Finaliser la chaîne d'incidents
 
@@ -25,6 +29,8 @@ Priorités : corrélation avec les audit logs, identification fiable de l'exécu
 ## 5. Anti-Raid et Anti-Spam
 
 Priorités : états temporels efficaces, nettoyage des fenêtres, configuration par serveur, cohérence des exemptions et contrôle des faux positifs.
+
+L'anti-spam par rafales est branché au runtime. Restent notamment : liste blanche et exemptions, modules de contenu (qui nécessiteront `MESSAGE_CONTENT`), limitation du volume d'incidents pendant une rafale et, si le bot doit tourner sur plusieurs instances, un état partagé.
 
 ## 6. AutoMod natif
 

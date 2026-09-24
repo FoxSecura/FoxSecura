@@ -4,6 +4,35 @@ Toutes les modifications importantes de FoxSecura sont documentées dans ce fich
 
 Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la première base Rust complète du projet, construite le 7 septembre 2026.
 
+## [Non publié]
+
+### Runtime Discord
+
+- `AppData` porte désormais la base SQLite (`Arc<Database>`) et l'état en mémoire des protections.
+- Ouverture de la base au démarrage via `DATABASE_PATH` (défaut : `data/foxsecura.sqlite3`), migrations appliquées automatiquement.
+- Ajout de l'intent `GUILD_MESSAGES` ; `MESSAGE_CONTENT` volontairement non demandé.
+- Dispatch de `Message` vers un pipeline de protection des messages ; les erreurs des modules sont journalisées et ne sont jamais propagées au client.
+- Gardes du pipeline : messages hors guilde, de webhook ou d'auteur bot ignorés.
+
+### Anti-Spam
+
+- Branchement de bout en bout de l'anti-spam par rafales de messages : clé `(guilde, membre)`, déclenchement quand le nombre de messages dans la fenêtre atteint le seuil, état borné à 10 000 clés.
+- Suppression du message déclencheur avec résultats `deleted`, `not_deletable` (`Skipped`, `MissingPermission`) ou `failed` (`Failed`).
+- Incident structuré (type `Message`, preuve chiffrée, recommandation) journalisé localement et envoyé dans le salon de logs `message` s'il est configuré.
+- Alignement de `message_flood::evaluate` sur la sémantique `count >= seuil` (auparavant `count > limite`).
+- Cœur pur testable sans Discord : `MessageSnapshot`, `screen_message`, `MessageFloodTracker`, `plan_response`, `build_incident`.
+
+### Configuration
+
+- Migration SQLite `2` : colonnes `anti_spam_enabled`, `anti_spam_message_threshold` (2 à 50) et `anti_spam_window_seconds` (1 à 60) dans `guild_configs`.
+- Repository : lecture sans écriture (`find_guild_config`), `set_anti_spam_enabled` et `set_anti_spam_limits` validés.
+- `/config` réservé au propriétaire du serveur et aux membres `ADMINISTRATOR` ou `MANAGE_GUILD`, vérifié à chaque interaction.
+- Catégorie Anti-Spam de `/config` : interrupteur et modal des seuils, persistés et relus par le moteur.
+
+### Logs
+
+- Ajout de `format_security_log_message` : membre, salon, preuve chiffrée et recommandation, sans ping.
+
 ## [0.1.0] - 2026-09-07
 
 ### Fondation du projet

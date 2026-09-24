@@ -4,6 +4,13 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 
 > La présence d'un module dans cette page décrit le code actuellement présent dans le dépôt. Elle ne garantit pas que le module soit déjà branché à tous les événements du runtime Discord.
 
+## État du branchement runtime
+
+| Module | Branché au runtime Discord | Activation |
+| --- | --- | --- |
+| Anti-Spam — rafales de messages (`anti_spam::message_flood`) | **oui**, sur `MESSAGE_CREATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Tous les autres modules | non (moteurs testés isolément) | — |
+
 ## Anti-Nuke
 
 `anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur.
@@ -63,6 +70,23 @@ Les détecteurs présents comprennent :
 - message flood.
 
 Plusieurs modules utilisent un `detector.rs`, ce qui maintient la logique de détection séparée du wiring Discord.
+
+### Rafales de messages (branché au runtime)
+
+`message_flood` est le premier module relié de bout en bout au runtime Discord. Le pipeline suit `snapshot → détection → décision → action → log` :
+
+1. **Snapshot** (`src/app/pipeline/message.rs`) : l'événement `Message` est converti en `MessageSnapshot` (guilde, salon, message, auteur, webhook, horodatage déduit de l'identifiant Discord à la milliseconde).
+2. **Gardes** (`protection::shared::screen_message`), dans cet ordre : message hors guilde ignoré, message de webhook ignoré, auteur bot ignoré. Il n'y a ni liste blanche ni exemption implicite des administrateurs dans cette version.
+3. **Détection** (`MessageFloodTracker`) : clé `(guild_id, user_id)`, seuil et fenêtre lus dans la configuration persistée de la guilde, déclenchement quand le nombre de messages dans la fenêtre est **supérieur ou égal** au seuil. L'état est borné à 10 000 clés et les fenêtres expirées sont balayées périodiquement. La fonction sans état `message_flood::evaluate` applique la même sémantique `count >= seuil`.
+4. **Décision / plan d'action** (`plan_response`) : suppression du **message déclencheur** uniquement ; aucune exclusion temporaire ni bannissement.
+5. **Action** (`src/app/pipeline/anti_spam.rs`) : résultat `deleted`, `not_deletable` (permission `MANAGE_MESSAGES` absente d'après le cache, ou réponse HTTP 403 → action `Skipped`, code `MissingPermission`) ou `failed` (autre erreur API → `Failed`). Lorsque le cache montre que la permission manque, aucun appel voué au 403 n'est envoyé.
+6. **Incident** (`build_incident`) : `SecurityIncident` de type `Message`, module `anti_spam`, preuve `{observé, seuil, fenêtre, messages}`, sévérité `Warning` si le message est supprimé, sinon `Critical`, recommandation « examiner le membre suspect » ou « vérifier les permissions de suppression ». L'incident est toujours journalisé localement puis envoyé dans le salon de logs `message` de la guilde s'il est configuré ; un échec d'envoi n'annule pas l'action.
+
+Une erreur du module est journalisée et n'interrompt ni le pipeline, ni le client, ni les événements suivants.
+
+**Limites connues** : l'état des rafales est en mémoire d'un seul processus (perdu au redémarrage, non partagé entre plusieurs instances). Chaque message au-delà du seuil dans la fenêtre est supprimé et produit un incident, comme dans la V1.
+
+**Intents et permissions requis** : intent `GUILD_MESSAGES` (non privilégié) ; `MESSAGE_CONTENT` n'est pas nécessaire pour compter les messages. Permissions du bot : `MANAGE_MESSAGES` dans les salons protégés, `SEND_MESSAGES` et `VIEW_CHANNEL` dans le salon de logs.
 
 ### Liens suspects
 
