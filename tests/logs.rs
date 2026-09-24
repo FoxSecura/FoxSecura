@@ -5,9 +5,10 @@ use std::collections::HashSet;
 
 use foxsecura::i18n::Language;
 use foxsecura::logs::{
-    format_security_log, ActionCode, ActionStatus, LogSeverity, LogType, SecurityActionOutcome,
-    SecurityEvidence, SecurityIncident, SecurityIncidentError, LOG_CHANNEL_DEFINITIONS,
-    LOG_STRUCTURE_CATEGORY_ALIASES, LOG_STRUCTURE_CATEGORY_NAME,
+    ActionCode, ActionStatus, LOG_CHANNEL_DEFINITIONS, LOG_STRUCTURE_CATEGORY_ALIASES,
+    LOG_STRUCTURE_CATEGORY_NAME, LogSeverity, LogType, SecurityActionOutcome, SecurityActor,
+    SecurityEvidence, SecurityIncident, SecurityIncidentError, SecurityLocation, ThresholdUnit,
+    format_security_log, format_security_log_message,
 };
 
 fn successful_action(action: ActionCode) -> SecurityActionOutcome {
@@ -50,7 +51,10 @@ fn log_channel_metadata_is_localized() {
 
     assert_eq!(message_logs.label(Language::English), "Message logs");
     assert_eq!(message_logs.label(Language::French), "Logs messages");
-    assert_eq!(message_logs.label(Language::German), "Nachrichtenprotokolle");
+    assert_eq!(
+        message_logs.label(Language::German),
+        "Nachrichtenprotokolle"
+    );
 
     assert_ne!(
         message_logs.purpose(Language::English),
@@ -140,4 +144,40 @@ fn formats_security_incident_in_all_supported_languages() {
     assert!(german.contains("Typ: Nachrichten"));
     assert!(german.contains("Schweregrad: Warnung"));
     assert!(german.contains("Nachricht löschen: Erfolgreich"));
+}
+
+#[test]
+fn log_message_adds_actor_channel_evidence_and_recommendation() {
+    let mut incident = SecurityIncident::new(
+        "anti_spam",
+        LogType::Message,
+        LogSeverity::Warning,
+        "Rafale de messages détectée.",
+        vec![successful_action(ActionCode::DeleteMessage)],
+    );
+    incident.actor = Some(SecurityActor {
+        user_id: "10".to_owned(),
+        tag: None,
+        account_created_at: None,
+    });
+    incident.location = Some(SecurityLocation {
+        channel_id: Some("900".to_owned()),
+        message_id: Some("5".to_owned()),
+        jump_url: None,
+    });
+    incident.evidence = vec![SecurityEvidence::Threshold {
+        observed: 6,
+        threshold: 5,
+        window_seconds: Some(5),
+        unit: ThresholdUnit::Messages,
+    }];
+    incident.recommendation = Some("Examiner le membre suspect.".to_owned());
+
+    let message = format_security_log_message(Language::French, &incident);
+
+    assert!(message.starts_with(&format_security_log(Language::French, &incident)));
+    assert!(message.contains("Membre: <@10>"));
+    assert!(message.contains("Salon: <#900>"));
+    assert!(message.contains("Preuve: 6/5 messages en 5 s"));
+    assert!(message.contains("Recommandation: Examiner le membre suspect."));
 }
