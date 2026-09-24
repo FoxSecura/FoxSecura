@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 2;
+pub const LATEST_SCHEMA_VERSION: i64 = 3;
 
 struct Migration {
     version: i64,
@@ -48,6 +48,37 @@ ALTER TABLE guild_configs ADD COLUMN anti_spam_message_threshold INTEGER NOT NUL
     CHECK (anti_spam_message_threshold BETWEEN 2 AND 50);
 ALTER TABLE guild_configs ADD COLUMN anti_spam_window_seconds INTEGER NOT NULL DEFAULT 5
     CHECK (anti_spam_window_seconds BETWEEN 1 AND 60);
+"#,
+    },
+    Migration {
+        version: 3,
+        name: "whitelist_and_ignored_channels",
+        // Le rôle `@everyone` a l'identifiant de la guilde : l'exempter
+        // exempterait tout le serveur, la contrainte `CHECK` le refuse.
+        sql: r#"
+CREATE TABLE guild_whitelist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TABLE guild_whitelist_roles (
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL CHECK (role_id <> guild_id),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, role_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TABLE guild_ignored_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
 "#,
     },
 ];

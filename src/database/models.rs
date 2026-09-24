@@ -26,6 +26,27 @@ pub struct GuildLogChannel {
     pub updated_at: i64,
 }
 
+/// Liste blanche et salons ignorés d'une guilde (migration 3), triés par
+/// identifiant.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GuildExemptions {
+    pub whitelist_users: Vec<u64>,
+    pub whitelist_roles: Vec<u64>,
+    pub ignored_channels: Vec<u64>,
+}
+
+/// Données lues en un seul passage pour un message de guilde.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageGuardContext {
+    /// `None` si la guilde n'a jamais été configurée.
+    pub guild_config: Option<GuildConfig>,
+    pub channel_ignored: bool,
+    /// L'identifiant de l'auteur est sur la liste blanche.
+    pub author_listed: bool,
+    /// Rôles de la liste blanche de la guilde.
+    pub whitelist_roles: Vec<u64>,
+}
+
 pub(crate) fn parse_language(value: &str) -> Result<Language, DatabaseError> {
     Language::from_locale(value).ok_or_else(|| DatabaseError::InvalidLanguage(value.to_owned()))
 }

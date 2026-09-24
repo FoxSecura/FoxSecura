@@ -74,6 +74,8 @@ pub enum DatabaseError {
     InvalidLogType(String),
     InvalidSnowflake(String),
     InvalidAntiSpamConfig(MessageFloodConfigError),
+    /// `@everyone` ne peut pas être exempté : il exempterait tout le serveur.
+    EveryoneRoleNotExemptable,
 }
 
 impl fmt::Display for DatabaseError {
@@ -97,6 +99,9 @@ impl fmt::Display for DatabaseError {
                 )
             }
             Self::InvalidAntiSpamConfig(error) => error.fmt(formatter),
+            Self::EveryoneRoleNotExemptable => {
+                formatter.write_str("le rôle @everyone ne peut pas être exempté")
+            }
         }
     }
 }
@@ -110,7 +115,8 @@ impl Error for DatabaseError {
             Self::LockPoisoned
             | Self::InvalidLanguage(_)
             | Self::InvalidLogType(_)
-            | Self::InvalidSnowflake(_) => None,
+            | Self::InvalidSnowflake(_)
+            | Self::EveryoneRoleNotExemptable => None,
         }
     }
 }

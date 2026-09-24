@@ -8,10 +8,11 @@
 //! les repositories exposent les opérations utilisées par le reste du bot.
 
 mod client;
+mod exemptions;
 mod migrations;
 mod models;
 mod repository;
 
-pub use client::{Database, DatabaseError, DEFAULT_DATABASE_PATH};
+pub use client::{DEFAULT_DATABASE_PATH, Database, DatabaseError};
 pub use migrations::LATEST_SCHEMA_VERSION;
-pub use models::{GuildConfig, GuildLogChannel};
+pub use models::{GuildConfig, GuildExemptions, GuildLogChannel, MessageGuardContext};
