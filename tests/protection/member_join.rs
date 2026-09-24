@@ -19,6 +19,10 @@ use foxsecura::protection::member_join::anti_bot::{
 use foxsecura::protection::member_join::blacklist::{
     BLACKLIST_BAN, BLACKLIST_MODULE, blacklist_audit_reason, blacklist_response,
 };
+use foxsecura::protection::member_join::hoisting::{
+    FALLBACK_NICKNAME, MAX_NICKNAME_LENGTH, NicknameFix, anti_hoisting_audit_reason,
+    hoisting_response, plan_nickname_fix,
+};
 use foxsecura::protection::member_join::new_account::{
     NEW_ACCOUNT_BAN, NewAccountExemption, NewAccountPlan, exempt_new_account_response,
     new_account_audit_reason, new_account_ban_response, plan_new_account,
@@ -351,4 +355,147 @@ fn refused_ban_is_critical_and_says_the_quarantine_fallback_is_missing() {
             .contains("quarantaine de repli")
     );
     assert!(response.incident.validate().is_ok());
+}
+
+// --- Pseudos hoistés ---
+
+fn fix(name: &str) -> Option<String> {
+    plan_nickname_fix(name).map(|fix| fix.new)
+}
+
+#[test]
+fn clean_names_are_left_untouched() {
+    for name in ["Alice", "élodie", "Ødegaard", "李雷", "7even", "  Zoé "] {
+        assert_eq!(fix(name), None, "{name}");
+    }
+}
+
+#[test]
+fn hoisted_names_are_cleaned() {
+    assert_eq!(fix("!!! Alice").as_deref(), Some("Alice"));
+    assert_eq!(fix("._.Émile").as_deref(), Some("Émile"));
+    assert_eq!(
+        plan_nickname_fix("!Bob"),
+        Some(NicknameFix {
+            old: "!Bob".to_owned(),
+            new: "Bob".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn symbol_only_names_become_member() {
+    for name in ["!!!", "★", "🔥🔥", " - ", "\u{200b}"] {
+        assert_eq!(fix(name).as_deref(), Some(FALLBACK_NICKNAME), "{name:?}");
+    }
+}
+
+#[test]
+fn new_nickname_is_truncated_to_32_without_splitting_characters() {
+    let long = format!("!{}", "a".repeat(40));
+    assert_eq!(fix(&long), Some("a".repeat(MAX_NICKNAME_LENGTH)));
+
+    // Accents : un caractère chacun.
+    let accents = format!("#{}", "é".repeat(40));
+    assert_eq!(fix(&accents), Some("é".repeat(32)));
+
+    // Émojis hors BMP : deux unités UTF-16 chacun, jamais coupés.
+    let emoji = format!("!A{}", "😀".repeat(40));
+    let new = fix(&emoji).unwrap();
+    assert_eq!(new, format!("A{}", "😀".repeat(15)));
+    assert!(new.encode_utf16().count() <= MAX_NICKNAME_LENGTH);
+
+    // Pas d'espace final après la troncature.
+    let spaced = format!("!{} b", "a".repeat(31));
+    assert_eq!(fix(&spaced), Some("a".repeat(31)));
+}
+
+#[test]
+fn nickname_set_by_the_bot_never_triggers_again() {
+    for name in [
+        "!!! Alice",
+        "!!!",
+        "★☆ Star",
+        "Ⓐlice",
+        "🔥🔥Fire",
+        "   ._-Émile",
+        &format!("!{}", "😀x".repeat(30)),
+        &format!("!{}", "a b".repeat(20)),
+    ] {
+        let new = fix(name).unwrap_or_else(|| panic!("{name} devrait être hoisté"));
+        // La mise à jour de membre provoquée par le renommage ne relance rien.
+        assert_eq!(plan_nickname_fix(&new), None, "{name} → {new}");
+    }
+}
+
+#[test]
+fn renamed_member_is_a_warning_and_never_terminal() {
+    let fix = plan_nickname_fix("!Alice").unwrap();
+    let response = hoisting_response(Language::French, MEMBER, &fix, &SanctionOutcome::Applied);
+
+    assert!(response.result.detected && response.result.action_applied);
+    assert!(!response.result.terminal);
+    assert_eq!(response.incident.module, "anti_nickname_hoisting");
+    assert_eq!(response.incident.severity, LogSeverity::Warning);
+    assert_eq!(
+        response.incident.actions[0].action,
+        ActionCode::NormalizeNickname
+    );
+    assert_eq!(response.incident.recommendation, None);
+
+    let message =
+        foxsecura::logs::format_security_log_message(Language::French, &response.incident);
+    assert!(message.contains("Ancien nom = `!Alice`"), "{message}");
+    assert!(message.contains("Nouveau pseudo = `Alice`"), "{message}");
+}
+
+#[test]
+fn names_are_neutralized_in_the_log() {
+    let fix = plan_nickname_fix("@everyone **gras** <@1>").unwrap();
+    let response = hoisting_response(Language::French, MEMBER, &fix, &SanctionOutcome::Applied);
+    let message =
+        foxsecura::logs::format_security_log_message(Language::French, &response.incident);
+
+    // Valeurs en code en ligne : ni mention, ni formatage.
+    assert!(
+        message.contains("Ancien nom = `@everyone **gras** <@1>`"),
+        "{message}"
+    );
+    assert!(
+        message.contains("Nouveau pseudo = `everyone **gras** <@1>`"),
+        "{message}"
+    );
+}
+
+#[test]
+fn refused_rename_is_critical_and_classified() {
+    let fix = plan_nickname_fix("!Owner").unwrap();
+    let response = hoisting_response(
+        Language::French,
+        MEMBER,
+        &fix,
+        &SanctionOutcome::Skipped(SanctionSkip::OwnerNickname),
+    );
+
+    assert!(!response.result.action_applied && !response.result.terminal);
+    assert_eq!(response.incident.severity, LogSeverity::Critical);
+    assert_eq!(response.incident.actions[0].status, ActionStatus::Skipped);
+    assert_eq!(
+        response.incident.actions[0].failure_code,
+        Some(FailureCode::RoleHierarchy)
+    );
+    assert!(response.incident.validate().is_ok());
+    assert!(
+        response
+            .incident
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .contains("Gérer les pseudos")
+    );
+    assert_eq!(
+        anti_hoisting_audit_reason(),
+        "FoxSecura Anti-Nickname Hoisting"
+    );
+    assert!(is_foxsecura_audit_reason(&anti_hoisting_audit_reason()));
 }

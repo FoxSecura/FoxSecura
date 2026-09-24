@@ -11,7 +11,7 @@ use foxsecura::protection::shared::{
     AUDIT_REASON_MAX_CHARS, BotPermissions, BotStanding, SanctionContext, SanctionKind,
     SanctionOutcome, SanctionPermission, SanctionSkip, TargetLookup, TargetStanding, audit_reason,
     classify_sanction_http_failure, exempt_member_action, is_foxsecura_audit_reason,
-    precheck_sanction,
+    precheck_nickname_change, precheck_sanction,
 };
 
 const OWNER: u64 = 1;
@@ -32,6 +32,7 @@ fn all_permissions() -> BotPermissions {
         moderate_members: true,
         kick_members: true,
         ban_members: true,
+        manage_nicknames: true,
     }
 }
 
@@ -176,6 +177,7 @@ fn missing_permission_is_specific_to_the_sanction() {
         moderate_members: false,
         kick_members: false,
         ban_members: false,
+        manage_nicknames: false,
     });
     assert_eq!(precheck_sanction(TIMEOUT, &admin_bot), Ok(()));
     assert_eq!(precheck_sanction(BAN, &admin_bot), Ok(()));
@@ -368,4 +370,59 @@ fn kick_is_classified_like_the_other_sanctions() {
             ..
         }
     ));
+}
+
+#[test]
+fn nickname_change_is_classified_like_a_sanction_but_owner_is_hierarchy() {
+    assert_eq!(precheck_nickname_change(&context()), Ok(()));
+
+    // Le propriétaire n'est jamais modifiable : hiérarchie.
+    let owner = SanctionContext {
+        target_id: OWNER,
+        ..context()
+    };
+    let Err(outcome) = precheck_nickname_change(&owner) else {
+        panic!("le propriétaire ne doit pas être renommé");
+    };
+    let action = outcome.action_outcome_as(ActionCode::NormalizeNickname);
+    assert_eq!(action.action, ActionCode::NormalizeNickname);
+    assert_eq!(action.status, ActionStatus::Skipped);
+    assert_eq!(action.failure_code, Some(FailureCode::RoleHierarchy));
+
+    // Sans `MANAGE_NICKNAMES`.
+    let no_nicknames = SanctionContext {
+        bot: Some(BotStanding {
+            top_role_position: 10,
+            permissions: BotPermissions {
+                manage_nicknames: false,
+                ..all_permissions()
+            },
+        }),
+        ..context()
+    };
+    assert_eq!(
+        precheck_nickname_change(&no_nicknames),
+        Err(SanctionOutcome::Skipped(SanctionSkip::MissingPermission(
+            SanctionPermission::ManageNicknames
+        )))
+    );
+
+    // Membre au-dessus du bot : hiérarchie, même administrateur ou non.
+    let above = SanctionContext {
+        target: member(11, false),
+        ..context()
+    };
+    assert!(matches!(
+        precheck_nickname_change(&above),
+        Err(SanctionOutcome::Skipped(SanctionSkip::RoleHierarchy {
+            target: 11,
+            bot: 10
+        }))
+    ));
+    // Un administrateur sous le bot peut être renommé.
+    let admin = SanctionContext {
+        target: member(1, true),
+        ..context()
+    };
+    assert_eq!(precheck_nickname_change(&admin), Ok(()));
 }

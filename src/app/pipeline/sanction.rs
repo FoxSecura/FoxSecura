@@ -155,6 +155,7 @@ fn sanction_context(
                 moderate_members: permissions.moderate_members(),
                 kick_members: permissions.kick_members(),
                 ban_members: permissions.ban_members(),
+                manage_nicknames: permissions.manage_nicknames(),
             },
         });
     }

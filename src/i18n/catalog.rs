@@ -1066,5 +1066,30 @@ catalog! {
         en: "days",
         fr: "jours",
         de: "Tage"
+    },
+    ModuleAntiNicknameHoisting => {
+        en: "Hoisted nicknames",
+        fr: "Pseudos hoistés",
+        de: "Gehoistete Spitznamen"
+    },
+    HoistingSummary => {
+        en: "Hoisted display name detected.",
+        fr: "Nom affiché hoisté détecté.",
+        de: "Gehoisteter Anzeigename erkannt."
+    },
+    HoistingEvidenceOldName => {
+        en: "Previous name",
+        fr: "Ancien nom",
+        de: "Vorheriger Name"
+    },
+    HoistingEvidenceNewName => {
+        en: "New nickname",
+        fr: "Nouveau pseudo",
+        de: "Neuer Spitzname"
+    },
+    HoistingRecommendationCheckPermissions => {
+        en: "Check that FoxSecura has Manage Nicknames and a role above the member. The server owner can never be renamed by a bot.",
+        fr: "Vérifiez que FoxSecura a Gérer les pseudos et un rôle au-dessus du membre. Le propriétaire du serveur ne peut jamais être renommé par un bot.",
+        de: "Prüfen, ob FoxSecura Spitznamen verwalten und eine Rolle über dem Mitglied hat. Der Serverinhaber kann nie von einem Bot umbenannt werden."
     }
 }

@@ -18,3 +18,42 @@ fn accepts_unicode_letter_prefixes() {
     assert!(!result.triggered);
     assert_eq!(result.cleaned, "Équipe Fox");
 }
+
+#[test]
+fn letters_and_digits_of_every_script_are_not_hoisting() {
+    for name in [
+        "élodie",
+        "Ødegaard",
+        "Straße",
+        "Иван",
+        "李雷",
+        "مريم",
+        "7even",
+        "٣ نجوم",
+        "²nd",
+        "  Alice  ",
+    ] {
+        let result = detect_hoisted_name(name);
+        assert!(!result.triggered, "{name}");
+        assert_eq!(result.cleaned, name.trim(), "{name}");
+    }
+}
+
+#[test]
+fn symbols_punctuation_and_emoji_prefixes_are_hoisting() {
+    for (name, cleaned) in [
+        ("!Alice", "Alice"),
+        ("_ _Bob", "Bob"),
+        ("  .zoé", "zoé"),
+        ("★☆ Star", "Star"),
+        ("🔥🔥Fire", "Fire"),
+        ("\u{200b}Hidden", "Hidden"),
+        // Symbole alphabétique (catégorie `So`) : ni lettre ni chiffre.
+        ("Ⓐlice", "lice"),
+        ("!!!", ""),
+    ] {
+        let result = detect_hoisted_name(name);
+        assert!(result.triggered, "{name}");
+        assert_eq!(result.cleaned, cleaned, "{name}");
+    }
+}

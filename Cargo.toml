@@ -11,6 +11,9 @@ publish = false
 [dependencies]
 poise = "=0.7.0"
 reqwest = { version = "=0.13.4", default-features = false, features = ["json", "rustls"] }
+# Déjà présent via poise : catégories Unicode (\p{L}, \p{N}) de la règle V1
+# des pseudos hoistés, que la bibliothèque standard n'expose pas.
+regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode-gencat"] }
 rusqlite = { version = "=0.40.2", features = ["bundled"] }
 serde_json = "=1.0.145"
 serenity = { version = "=0.12.5", default-features = false, features = ["builder", "cache", "client", "gateway", "http", "model", "rustls_backend"] }
