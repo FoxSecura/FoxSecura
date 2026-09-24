@@ -20,7 +20,7 @@ impl Database {
         module: ProtectionModule,
         enabled: bool,
     ) -> Result<ModuleSet, DatabaseError> {
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
         ensure_guild_config(&connection, guild_id)?;
 
         connection.execute(

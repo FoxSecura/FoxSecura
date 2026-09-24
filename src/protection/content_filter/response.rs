@@ -125,14 +125,16 @@ impl RevisionCheck {
 /// disparu).
 ///
 /// Évite d'effacer une version déjà corrigée : un membre peut modifier deux
-/// fois son message avant que la suppression ne parte.
+/// fois son message avant que la suppression ne parte. Seuls les champs
+/// présents dans l'événement analysé sont comparés
+/// ([`MessageContent::same_revision`]).
 pub fn check_revision(
     analyzed: &MessageContent,
     current: Option<&MessageContent>,
 ) -> RevisionCheck {
     match current {
         None => RevisionCheck::Deleted,
-        Some(current) if current == analyzed => RevisionCheck::Current,
+        Some(current) if analyzed.same_revision(current) => RevisionCheck::Current,
         Some(_) => RevisionCheck::Superseded,
     }
 }

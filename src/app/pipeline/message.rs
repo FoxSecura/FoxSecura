@@ -6,7 +6,8 @@ use std::time::Duration;
 use foxsecura::i18n::DEFAULT_LANGUAGE;
 use foxsecura::protection::automod::bad_words::DEFAULT_BAD_WORDS_LANGUAGE;
 use foxsecura::protection::content_filter::{
-    AuthorContext, MessageContent, MessageEvent, MessageRoute, route_message,
+    AuthorContext, MessageContent, MessageEvent, MessageRoute, MessageUpdate, MissingFields,
+    route_message,
 };
 use foxsecura::protection::shared::{
     AuthorWhitelist, MessageSnapshot, ProtectionModule, is_author_exempt, message_scope,
@@ -86,17 +87,18 @@ pub async fn handle_update(
             webhook_id: event.webhook_id.flatten().map(serenity::WebhookId::get),
             timestamp: snowflake_timestamp(event.id.get()),
         },
-        content: MessageContent {
+        // Discord peut omettre les mentions ou les pièces jointes : les champs
+        // absents ne sont pas comparés à la version relue avant suppression.
+        content: MessageContent::from_update(MessageUpdate {
             content: content.clone(),
-            mentions_everyone: event.mention_everyone.unwrap_or(false),
-            mention_count: event.mentions.as_ref().map_or(0, Vec::len)
-                + event.mention_roles.as_ref().map_or(0, Vec::len),
+            mentions_everyone: event.mention_everyone,
+            user_mentions: event.mentions.as_ref().map(Vec::len),
+            role_mentions: event.mention_roles.as_ref().map(Vec::len),
             attachments: event
                 .attachments
                 .as_ref()
-                .map(|attachments| attachment_names(attachments))
-                .unwrap_or_default(),
-        },
+                .map(|attachments| attachment_names(attachments)),
+        }),
         author: author_context(author.id, unix_duration(edited_at), member),
         member_roles: member_roles(member),
     };
@@ -216,6 +218,7 @@ pub fn message_content(message: &serenity::Message) -> MessageContent {
         mentions_everyone: message.mention_everyone,
         mention_count: message.mentions.len() + message.mention_roles.len(),
         attachments: attachment_names(&message.attachments),
+        missing: MissingFields::default(),
     }
 }
 

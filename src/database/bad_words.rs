@@ -28,19 +28,18 @@ impl Database {
         guild_id: u64,
         language: BadWordsLanguage,
     ) -> Result<BadWordsSettings, DatabaseError> {
-        self.write(guild_id, |connection| {
-            connection.execute(
-                r#"
+        let connection = self.write_connection(guild_id)?;
+        connection.execute(
+            r#"
 INSERT INTO guild_configs (guild_id, bad_words_language)
 VALUES (?1, ?2)
 ON CONFLICT(guild_id) DO UPDATE SET
     bad_words_language = excluded.bad_words_language,
     updated_at = unixepoch()
 "#,
-                params![guild_id.to_string(), language.key()],
-            )?;
-            read_bad_words(connection, guild_id)
-        })
+            params![guild_id.to_string(), language.key()],
+        )?;
+        read_bad_words(&connection, guild_id)
     }
 
     /// Remplace la liste des mots personnalisés, après validation des bornes
@@ -56,24 +55,22 @@ ON CONFLICT(guild_id) DO UPDATE SET
         S: AsRef<str>,
     {
         let words = normalize_custom_words(words)?;
-        self.write(guild_id, move |connection| {
-            let transaction = connection.unchecked_transaction()?;
-            ensure_guild_config(&transaction, guild_id)?;
-            transaction.execute(
-                "DELETE FROM guild_bad_words WHERE guild_id = ?1",
-                params![guild_id.to_string()],
-            )?;
-            {
-                let mut insert = transaction.prepare_cached(
-                    "INSERT INTO guild_bad_words (guild_id, word) VALUES (?1, ?2)",
-                )?;
-                for word in &words {
-                    insert.execute(params![guild_id.to_string(), word])?;
-                }
+        let connection = self.write_connection(guild_id)?;
+        let transaction = connection.unchecked_transaction()?;
+        ensure_guild_config(&transaction, guild_id)?;
+        transaction.execute(
+            "DELETE FROM guild_bad_words WHERE guild_id = ?1",
+            params![guild_id.to_string()],
+        )?;
+        {
+            let mut insert = transaction
+                .prepare_cached("INSERT INTO guild_bad_words (guild_id, word) VALUES (?1, ?2)")?;
+            for word in &words {
+                insert.execute(params![guild_id.to_string(), word])?;
             }
-            transaction.commit()?;
-            read_bad_words(connection, guild_id)
-        })
+        }
+        transaction.commit()?;
+        read_bad_words(&connection, guild_id)
     }
 
     /// Réglages des mots interdits ; aucun écrit.

@@ -22,7 +22,7 @@ impl Database {
     }
 
     pub fn guild_config(&self, guild_id: u64) -> Result<GuildConfig, DatabaseError> {
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
         ensure_guild_config(&connection, guild_id)?;
         read_guild_config(&connection, guild_id)
     }
@@ -45,7 +45,7 @@ impl Database {
         guild_id: u64,
         enabled: bool,
     ) -> Result<GuildConfig, DatabaseError> {
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
 
         connection.execute(
             r#"
@@ -69,7 +69,7 @@ ON CONFLICT(guild_id) DO UPDATE SET
         window_seconds: u32,
     ) -> Result<GuildConfig, DatabaseError> {
         MessageFloodConfig::validated(false, message_threshold, window_seconds)?;
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
 
         connection.execute(
             r#"
@@ -91,7 +91,7 @@ ON CONFLICT(guild_id) DO UPDATE SET
         guild_id: u64,
         language: Language,
     ) -> Result<GuildConfig, DatabaseError> {
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
         let guild_id_text = guild_id.to_string();
 
         connection.execute(
@@ -114,7 +114,7 @@ ON CONFLICT(guild_id) DO UPDATE SET
         log_type: LogType,
         channel_id: u64,
     ) -> Result<GuildLogChannel, DatabaseError> {
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
         ensure_guild_config(&connection, guild_id)?;
 
         connection.execute(
@@ -179,7 +179,7 @@ ORDER BY log_type
         guild_id: u64,
         log_type: LogType,
     ) -> Result<bool, DatabaseError> {
-        let connection = self.connection()?;
+        let connection = self.write_connection(guild_id)?;
         let affected = connection.execute(
             "DELETE FROM guild_log_channels WHERE guild_id = ?1 AND log_type = ?2",
             params![guild_id.to_string(), log_type.as_str()],

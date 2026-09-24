@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use std::sync::Arc;
+
 use crate::i18n::Language;
 use crate::logs::LogType;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
@@ -55,7 +57,7 @@ pub struct MessageGuardContext {
     /// Mots interdits personnalisés (migration 5), lus seulement si le module
     /// `bad_words` est activé. La langue de la liste intégrée est dans
     /// `guild_config`.
-    pub custom_bad_words: Vec<String>,
+    pub custom_bad_words: Arc<[String]>,
 }
 
 pub(crate) fn parse_language(value: &str) -> Result<Language, DatabaseError> {

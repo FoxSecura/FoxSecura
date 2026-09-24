@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::{
@@ -418,7 +419,7 @@ fn message_guard_context_of_unconfigured_guild_is_empty_and_read_only() {
             author_listed: false,
             whitelist_roles: Vec::new(),
             enabled_modules: ModuleSet::empty(),
-            custom_bad_words: Vec::new(),
+            custom_bad_words: Arc::from([]),
         }
     );
     assert_eq!(database.find_guild_config(1).unwrap(), None);
@@ -981,7 +982,7 @@ fn message_guard_context_reads_custom_words_only_when_bad_words_is_enabled() {
         .set_protection_module(1, ProtectionModule::BadWords, true)
         .unwrap();
     let enabled = database.message_guard_context(1, 2, 3).unwrap();
-    assert_eq!(enabled.custom_bad_words, vec!["spoiler".to_owned()]);
+    assert_eq!(&*enabled.custom_bad_words, ["spoiler".to_owned()]);
     assert_eq!(
         enabled.guild_config.unwrap().bad_words_language,
         BadWordsLanguage::French
@@ -1130,6 +1131,338 @@ VALUES ('123', 'anti_invite', 1);
     );
     drop(reopened);
     fs::remove_dir_all(directory).unwrap();
+}
+
+// --- Cache de configuration par guilde ---
+
+#[test]
+fn message_context_is_served_from_memory_after_the_first_load() {
+    let database = Database::open_in_memory().unwrap();
+    database
+        .set_protection_module(1, ProtectionModule::BadWords, true)
+        .unwrap();
+    database.add_whitelist_user(1, 3).unwrap();
+    database.add_ignored_channel(1, 9).unwrap();
+    let before = database.guild_cache_stats();
+
+    // 1 000 messages de la même guilde (auteurs et salons variés).
+    for index in 0..1_000u64 {
+        database
+            .message_guard_context(1, 2 + index % 10, index % 7)
+            .unwrap();
+    }
+
+    let after = database.guild_cache_stats();
+    // Un seul chargement SQLite (six requêtes) au lieu de quatre à six
+    // requêtes par message sans cache.
+    assert_eq!(after.loads - before.loads, 1);
+    assert_eq!(after.hits - before.hits, 999);
+}
+
+#[test]
+fn cached_context_matches_a_fresh_read() {
+    let database = Database::open_in_memory().unwrap();
+    database.set_anti_spam_enabled(1, true).unwrap();
+    database.add_whitelist_user(1, 3).unwrap();
+    database.add_whitelist_role(1, 50).unwrap();
+    database.add_ignored_channel(1, 9).unwrap();
+    database
+        .set_protection_module(1, ProtectionModule::BadWords, true)
+        .unwrap();
+    database.set_custom_bad_words(1, ["spoiler"]).unwrap();
+
+    for (channel, author) in [(2, 3), (2, 4), (9, 4)] {
+        let first = database.message_guard_context(1, channel, author).unwrap();
+        let cached = database.message_guard_context(1, channel, author).unwrap();
+        assert_eq!(first, cached);
+    }
+
+    let listed = database.message_guard_context(1, 2, 3).unwrap();
+    assert!(listed.author_listed);
+    assert!(listed.whitelist_roles.is_empty());
+    let other = database.message_guard_context(1, 2, 4).unwrap();
+    assert!(!other.author_listed);
+    assert_eq!(other.whitelist_roles, vec![50]);
+    assert_eq!(&*other.custom_bad_words, ["spoiler".to_owned()]);
+    let ignored = database.message_guard_context(1, 9, 4).unwrap();
+    assert!(ignored.channel_ignored);
+    assert!(ignored.enabled_modules.is_empty());
+    assert!(ignored.custom_bad_words.is_empty());
+}
+
+/// Réchauffe le cache, applique l'écriture et vérifie qu'elle a invalidé la
+/// guilde (et elle seule) : le message suivant voit le nouvel état.
+fn assert_write_invalidates(
+    label: &str,
+    write: impl FnOnce(&Database),
+    check: impl FnOnce(&MessageGuardContext),
+) {
+    let database = Database::open_in_memory().unwrap();
+    database.guild_config(1).unwrap();
+    database.guild_config(2).unwrap();
+    database.message_guard_context(1, 2, 3).unwrap();
+    database.message_guard_context(2, 2, 3).unwrap();
+    let before = database.guild_cache_stats();
+
+    write(&database);
+
+    let context = database.message_guard_context(1, 2, 3).unwrap();
+    database.message_guard_context(2, 2, 3).unwrap();
+    let after = database.guild_cache_stats();
+    assert!(
+        after.invalidations > before.invalidations,
+        "{label} : aucune invalidation"
+    );
+    assert_eq!(
+        after.loads - before.loads,
+        1,
+        "{label} : seule la guilde écrite est rechargée"
+    );
+    check(&context);
+}
+
+#[test]
+fn every_configuration_write_invalidates_the_guild_cache() {
+    assert_write_invalidates(
+        "anti-spam",
+        |database| {
+            database.set_anti_spam_enabled(1, true).unwrap();
+        },
+        |context| assert!(context.guild_config.as_ref().unwrap().anti_spam.enabled),
+    );
+    assert_write_invalidates(
+        "seuils anti-spam",
+        |database| {
+            database.set_anti_spam_limits(1, 9, 20).unwrap();
+        },
+        |context| {
+            let anti_spam = context.guild_config.as_ref().unwrap().anti_spam;
+            assert_eq!(
+                (anti_spam.message_threshold, anti_spam.window_seconds),
+                (9, 20)
+            );
+        },
+    );
+    assert_write_invalidates(
+        "langue",
+        |database| {
+            database.set_guild_language(1, Language::German).unwrap();
+        },
+        |context| {
+            assert_eq!(
+                context.guild_config.as_ref().unwrap().language,
+                Language::German
+            )
+        },
+    );
+    assert_write_invalidates(
+        "salon de logs",
+        |database| {
+            database.set_log_channel(1, LogType::Message, 99).unwrap();
+        },
+        |_| {},
+    );
+    assert_write_invalidates(
+        "retrait du salon de logs",
+        |database| {
+            database.remove_log_channel(1, LogType::Message).unwrap();
+        },
+        |_| {},
+    );
+    assert_write_invalidates(
+        "utilisateur exempté",
+        |database| {
+            database.add_whitelist_user(1, 3).unwrap();
+        },
+        |context| assert!(context.author_listed),
+    );
+    assert_write_invalidates(
+        "rôle exempté",
+        |database| {
+            database.add_whitelist_role(1, 50).unwrap();
+        },
+        |context| assert_eq!(context.whitelist_roles, vec![50]),
+    );
+    assert_write_invalidates(
+        "salon ignoré",
+        |database| {
+            database.add_ignored_channel(1, 2).unwrap();
+        },
+        |context| assert!(context.channel_ignored),
+    );
+    assert_write_invalidates(
+        "module",
+        |database| {
+            database
+                .set_protection_module(1, ProtectionModule::AntiScam, true)
+                .unwrap();
+        },
+        |context| assert!(context.enabled_modules.contains(ProtectionModule::AntiScam)),
+    );
+    assert_write_invalidates(
+        "langue des mots interdits",
+        |database| {
+            database
+                .set_bad_words_language(1, BadWordsLanguage::English)
+                .unwrap();
+        },
+        |context| {
+            assert_eq!(
+                context.guild_config.as_ref().unwrap().bad_words_language,
+                BadWordsLanguage::English
+            )
+        },
+    );
+    assert_write_invalidates(
+        "mots personnalisés",
+        |database| {
+            database
+                .set_protection_module(1, ProtectionModule::BadWords, true)
+                .unwrap();
+            database.set_custom_bad_words(1, ["spoiler"]).unwrap();
+        },
+        |context| assert_eq!(&*context.custom_bad_words, ["spoiler".to_owned()]),
+    );
+}
+
+#[test]
+fn removals_invalidate_the_guild_cache() {
+    let database = Database::open_in_memory().unwrap();
+    database.add_whitelist_user(1, 3).unwrap();
+    database.add_whitelist_role(1, 50).unwrap();
+    database.add_ignored_channel(1, 2).unwrap();
+    database
+        .set_protection_module(1, ProtectionModule::BadWords, true)
+        .unwrap();
+    database.set_custom_bad_words(1, ["spoiler"]).unwrap();
+    assert!(
+        database
+            .message_guard_context(1, 2, 3)
+            .unwrap()
+            .channel_ignored
+    );
+
+    database.remove_ignored_channel(1, 2).unwrap();
+    let context = database.message_guard_context(1, 2, 3).unwrap();
+    assert!(!context.channel_ignored);
+    assert!(context.author_listed);
+
+    database.remove_whitelist_user(1, 3).unwrap();
+    let context = database.message_guard_context(1, 2, 3).unwrap();
+    assert!(!context.author_listed);
+    assert_eq!(context.whitelist_roles, vec![50]);
+
+    database.remove_whitelist_role(1, 50).unwrap();
+    assert!(
+        database
+            .message_guard_context(1, 2, 3)
+            .unwrap()
+            .whitelist_roles
+            .is_empty()
+    );
+
+    database
+        .set_custom_bad_words(1, Vec::<String>::new())
+        .unwrap();
+    assert!(
+        database
+            .message_guard_context(1, 2, 3)
+            .unwrap()
+            .custom_bad_words
+            .is_empty()
+    );
+
+    database
+        .set_protection_module(1, ProtectionModule::BadWords, false)
+        .unwrap();
+    assert!(
+        database
+            .message_guard_context(1, 2, 3)
+            .unwrap()
+            .enabled_modules
+            .is_empty()
+    );
+}
+
+#[test]
+fn first_configuration_of_a_cached_unknown_guild_is_seen() {
+    let database = Database::open_in_memory().unwrap();
+    // Guilde inconnue mise en cache comme « non configurée »…
+    assert!(
+        database
+            .message_guard_context(1, 2, 3)
+            .unwrap()
+            .guild_config
+            .is_none()
+    );
+    // …puis configurée : l'écriture qui crée la ligne invalide le cache.
+    database
+        .set_protection_module(1, ProtectionModule::AntiInvite, true)
+        .unwrap();
+    let context = database.message_guard_context(1, 2, 3).unwrap();
+    assert!(context.guild_config.is_some());
+    assert!(
+        context
+            .enabled_modules
+            .contains(ProtectionModule::AntiInvite)
+    );
+}
+
+#[test]
+fn refused_writes_leave_a_consistent_cache() {
+    let database = Database::open_in_memory().unwrap();
+    database.set_custom_bad_words(1, ["garde"]).unwrap();
+    database
+        .set_protection_module(1, ProtectionModule::BadWords, true)
+        .unwrap();
+    database.message_guard_context(1, 2, 3).unwrap();
+
+    assert!(database.set_anti_spam_limits(1, 1, 5).is_err());
+    assert!(database.add_whitelist_role(1, 1).is_err());
+    assert!(database.set_custom_bad_words(1, ["x".repeat(101)]).is_err());
+
+    let context = database.message_guard_context(1, 2, 3).unwrap();
+    assert_eq!(&*context.custom_bad_words, ["garde".to_owned()]);
+    assert!(context.whitelist_roles.is_empty());
+}
+
+#[test]
+fn concurrent_reads_never_keep_a_stale_state_after_a_write() {
+    let database = Arc::new(Database::open_in_memory().unwrap());
+    database.guild_config(1).unwrap();
+
+    for round in 0..20 {
+        let readers = (0..4)
+            .map(|_| {
+                let database = Arc::clone(&database);
+                std::thread::spawn(move || {
+                    for _ in 0..200 {
+                        database.message_guard_context(1, 2, 3).unwrap();
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let enabled = round % 2 == 0;
+        for _ in 0..10 {
+            database
+                .set_protection_module(1, ProtectionModule::AntiScam, enabled)
+                .unwrap();
+        }
+        for reader in readers {
+            reader.join().unwrap();
+        }
+
+        assert_eq!(
+            database
+                .message_guard_context(1, 2, 3)
+                .unwrap()
+                .enabled_modules
+                .contains(ProtectionModule::AntiScam),
+            enabled,
+            "tour {round}"
+        );
+    }
 }
 
 fn temporary_directory(label: &str) -> PathBuf {

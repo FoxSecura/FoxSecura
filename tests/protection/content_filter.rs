@@ -17,8 +17,9 @@ use foxsecura::protection::automod::bad_words::{
 };
 use foxsecura::protection::content_filter::{
     AuthorContext, CONTENT_FILTERS, ContentDetection, ContentFinding, EXCERPT_MAX_CHARS,
-    MASS_MENTION_THRESHOLD, MessageContent, MessageEvent, MessageRoute, RevisionCheck,
-    build_incident, check_revision, detect_content, excerpt, revision_fetch_failure, route_message,
+    MASS_MENTION_THRESHOLD, MessageContent, MessageEvent, MessageRoute, MessageUpdate,
+    MissingFields, RevisionCheck, build_incident, check_revision, detect_content, excerpt,
+    revision_fetch_failure, route_message,
 };
 use foxsecura::protection::shared::{
     DeleteMessageOutcome, GuildMessage, MessageScope, ModuleSet, ProtectionModule,
@@ -144,6 +145,7 @@ fn disabled_modules_never_trigger() {
         mentions_everyone: true,
         mention_count: 50,
         attachments: Vec::new(),
+        missing: MissingFields::default(),
     };
     assert_eq!(
         detect_content(ModuleSet::empty(), &message, established_author(), None),
@@ -352,6 +354,7 @@ fn broadcast_mentions_are_blocked_when_discord_flags_them() {
         mentions_everyone: true,
         mention_count: 0,
         attachments: Vec::new(),
+        missing: MissingFields::default(),
     };
     assert_eq!(
         detect(ProtectionModule::AntiEveryone, &message),
@@ -381,6 +384,7 @@ fn mass_mention_threshold_is_inclusive() {
         mentions_everyone: false,
         mention_count: count,
         attachments: Vec::new(),
+        missing: MissingFields::default(),
     };
 
     assert_eq!(MASS_MENTION_THRESHOLD, 5);
@@ -412,6 +416,7 @@ fn modules_are_evaluated_in_v1_order_and_the_first_one_wins() {
         mentions_everyone: true,
         mention_count: MASS_MENTION_THRESHOLD,
         attachments: vec!["facture.pdf.exe".to_owned()],
+        missing: MissingFields::default(),
     };
     let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
 
@@ -1042,4 +1047,133 @@ fn attachment_changes_make_a_new_revision() {
         check_revision(&analyzed, Some(&removed)),
         RevisionCheck::Superseded
     );
+}
+
+// --- Modification partielle (régression) ---
+
+/// Événement `MESSAGE_UPDATE` sans les champs de mention ni de pièces jointes.
+fn partial_update(content: &str) -> MessageContent {
+    MessageContent::from_update(MessageUpdate {
+        content: content.to_owned(),
+        ..MessageUpdate::default()
+    })
+}
+
+#[test]
+fn partial_edit_adding_a_malicious_link_is_still_deleted() {
+    // Avant le correctif, les champs absents valaient 0 : la version relue
+    // (2 mentions, une image) différait, la révision était jugée
+    // `Superseded` et le lien ajouté par modification restait en ligne.
+    let link = "salut https://grabify.link/abc";
+    let analyzed = partial_update(link);
+    let current = MessageContent {
+        content: link.to_owned(),
+        mentions_everyone: false,
+        mention_count: 2,
+        attachments: vec!["image.png".to_owned()],
+        missing: MissingFields::default(),
+    };
+
+    assert!(matches!(
+        route_message(
+            MessageScope::Enforce,
+            MessageEvent::Edited,
+            only(ProtectionModule::MaliciousLink),
+            &analyzed,
+            established_author(),
+            None,
+        ),
+        MessageRoute::Filter(_)
+    ));
+    assert_eq!(
+        check_revision(&analyzed, Some(&current)),
+        RevisionCheck::Current
+    );
+
+    // Le texte reste comparé : une correction entre-temps est respectée.
+    let corrected = MessageContent {
+        content: "salut".to_owned(),
+        ..current
+    };
+    assert_eq!(
+        check_revision(&analyzed, Some(&corrected)),
+        RevisionCheck::Superseded
+    );
+}
+
+#[test]
+fn partial_update_records_which_fields_are_missing() {
+    let partial = partial_update("x");
+    assert_eq!(
+        partial.missing,
+        MissingFields {
+            mentions_everyone: true,
+            mentions: true,
+            attachments: true,
+        }
+    );
+    assert_eq!(partial.mention_count, 0);
+    assert!(partial.attachments.is_empty());
+
+    // Une seule des deux listes de mentions : le décompte est inconnu.
+    let half = MessageContent::from_update(MessageUpdate {
+        content: "x".to_owned(),
+        user_mentions: Some(3),
+        ..MessageUpdate::default()
+    });
+    assert!(half.missing.mentions);
+    assert_eq!(half.mention_count, 0);
+
+    let complete = MessageContent::from_update(MessageUpdate {
+        content: "x".to_owned(),
+        mentions_everyone: Some(true),
+        user_mentions: Some(3),
+        role_mentions: Some(1),
+        attachments: Some(vec!["a.png".to_owned()]),
+    });
+    assert_eq!(complete.missing, MissingFields::default());
+    assert_eq!(complete.mention_count, 4);
+    assert!(complete.mentions_everyone);
+    assert_eq!(complete.attachments, vec!["a.png".to_owned()]);
+}
+
+#[test]
+fn fields_present_in_the_edit_are_still_compared() {
+    let analyzed = MessageContent::from_update(MessageUpdate {
+        content: "x".to_owned(),
+        mentions_everyone: Some(false),
+        user_mentions: Some(1),
+        role_mentions: Some(0),
+        attachments: Some(Vec::new()),
+    });
+    let same = MessageContent {
+        content: "x".to_owned(),
+        mention_count: 1,
+        ..MessageContent::default()
+    };
+    assert_eq!(
+        check_revision(&analyzed, Some(&same)),
+        RevisionCheck::Current
+    );
+
+    for changed in [
+        MessageContent {
+            mention_count: 2,
+            ..same.clone()
+        },
+        MessageContent {
+            mentions_everyone: true,
+            ..same.clone()
+        },
+        MessageContent {
+            attachments: vec!["a.exe".to_owned()],
+            ..same.clone()
+        },
+    ] {
+        assert_eq!(
+            check_revision(&analyzed, Some(&changed)),
+            RevisionCheck::Superseded,
+            "{changed:?}"
+        );
+    }
 }

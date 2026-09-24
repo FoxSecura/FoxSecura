@@ -64,7 +64,8 @@ pub const MASS_MENTION_THRESHOLD: usize = DEFAULT_MASS_MENTION_THRESHOLD;
 /// Version analysée d'un message : tout ce dont dépendent les filtres.
 ///
 /// Sert aussi de révision : après une modification, le message n'est supprimé
-/// que si sa version courante est encore celle-ci.
+/// que si sa version courante est encore celle-ci, sur les champs réellement
+/// fournis par l'événement analysé (voir [`MissingFields`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MessageContent {
     pub content: String,
@@ -76,6 +77,61 @@ pub struct MessageContent {
     pub mention_count: usize,
     /// Noms des pièces jointes, tels que fournis par Discord.
     pub attachments: Vec<String>,
+    /// Champs absents de l'événement analysé (modification partielle). Vide
+    /// pour un message complet.
+    pub missing: MissingFields,
+}
+
+/// Champs qu'une modification partielle (`MESSAGE_UPDATE`) peut omettre.
+///
+/// Un champ absent vaut sa valeur par défaut pour les filtres (aucune mention,
+/// aucune pièce jointe : les filtres qui en dépendent ne déclenchent pas), et
+/// n'est pas comparé lors de la vérification de révision : sinon la version
+/// relue, complète, différerait toujours et un lien ajouté par modification
+/// ne serait jamais supprimé.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MissingFields {
+    pub mentions_everyone: bool,
+    /// Mentions d'utilisateurs ou de rôles (l'une des deux listes manque).
+    pub mentions: bool,
+    pub attachments: bool,
+}
+
+/// Champs d'une modification tels que reçus : `None` = absent de l'événement.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MessageUpdate {
+    pub content: String,
+    pub mentions_everyone: Option<bool>,
+    pub user_mentions: Option<usize>,
+    pub role_mentions: Option<usize>,
+    pub attachments: Option<Vec<String>>,
+}
+
+impl MessageContent {
+    /// Version analysée d'une modification, en notant les champs absents.
+    pub fn from_update(update: MessageUpdate) -> Self {
+        let mentions = update.user_mentions.zip(update.role_mentions);
+        Self {
+            content: update.content,
+            mentions_everyone: update.mentions_everyone.unwrap_or(false),
+            mention_count: mentions.map_or(0, |(users, roles)| users + roles),
+            missing: MissingFields {
+                mentions_everyone: update.mentions_everyone.is_none(),
+                mentions: mentions.is_none(),
+                attachments: update.attachments.is_none(),
+            },
+            attachments: update.attachments.unwrap_or_default(),
+        }
+    }
+
+    /// Même révision que `current` sur les champs présents ici.
+    pub fn same_revision(&self, current: &Self) -> bool {
+        self.content == current.content
+            && (self.missing.mentions_everyone
+                || self.mentions_everyone == current.mentions_everyone)
+            && (self.missing.mentions || self.mention_count == current.mention_count)
+            && (self.missing.attachments || self.attachments == current.attachments)
+    }
 }
 
 /// Contexte temporel de l'auteur, pour les liens risqués des comptes récents.
