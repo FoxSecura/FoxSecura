@@ -8,9 +8,10 @@
 
 use rusqlite::{Connection, params};
 
-use crate::protection::shared::is_everyone_role;
+use crate::protection::shared::{ModuleSet, is_everyone_role};
 
 use super::models::parse_snowflake;
+use super::modules::enabled_modules;
 use super::repository::{ensure_guild_config, read_guild_config};
 use super::{Database, DatabaseError, GuildExemptions, MessageGuardContext};
 
@@ -126,12 +127,14 @@ impl Database {
         })
     }
 
-    /// Tout ce que le pipeline de messages lit en base, sous un seul verrou.
+    /// Tout ce que le pipeline de messages lit en base, sous un seul verrou et
+    /// en un seul aller-retour : configuration, salon ignoré, liste blanche et
+    /// modules activés.
     ///
     /// Chemin chaud (un appel par message) : aucune écriture. Une guilde sans
-    /// configuration n'a, par clé étrangère, ni liste blanche ni salon ignoré ;
-    /// un salon ignoré rend la liste blanche inutile. Ces deux cas s'arrêtent
-    /// donc après une ou deux requêtes.
+    /// configuration n'a, par clé étrangère, ni liste blanche, ni salon ignoré,
+    /// ni module activé ; un salon ignoré rend le reste inutile. Ces deux cas
+    /// s'arrêtent donc après une ou deux requêtes.
     pub fn message_guard_context(
         &self,
         guild_id: u64,
@@ -144,6 +147,7 @@ impl Database {
             channel_ignored: false,
             author_listed: false,
             whitelist_roles: Vec::new(),
+            enabled_modules: ModuleSet::empty(),
         };
 
         match read_guild_config(&connection, guild_id) {
@@ -165,6 +169,7 @@ impl Database {
         if !context.author_listed {
             context.whitelist_roles = list_ids(&connection, IdList::WhitelistRoles, guild_id)?;
         }
+        context.enabled_modules = enabled_modules(&connection, guild_id)?;
 
         Ok(context)
     }

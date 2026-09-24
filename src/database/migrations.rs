@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 3;
+pub const LATEST_SCHEMA_VERSION: i64 = 4;
 
 struct Migration {
     version: i64,
@@ -77,6 +77,30 @@ CREATE TABLE guild_ignored_channels (
     channel_id TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+"#,
+    },
+    Migration {
+        version: 4,
+        name: "protection_modules",
+        // Une ligne par module réglé, plutôt qu'une colonne par module : les
+        // 43 modules à venir n'exigeront pas de migration chacun. Les clés
+        // sont validées côté Rust (`ProtectionModule`) ; une clé inconnue
+        // (base écrite par une version plus récente) est ignorée à la lecture.
+        // Une guilde sans ligne pour un module l'a désactivé.
+        //
+        // L'anti-spam par rafales garde ses colonnes `anti_spam_*` de
+        // `guild_configs` (migration 2) : il a des seuils en plus de son
+        // interrupteur, et n'est pas déplacé ici.
+        sql: r#"
+CREATE TABLE guild_protection_modules (
+    guild_id TEXT NOT NULL,
+    module_key TEXT NOT NULL CHECK (length(module_key) BETWEEN 1 AND 64),
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, module_key),
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
 );
 "#,

@@ -4,6 +4,7 @@
 use crate::i18n::Language;
 use crate::logs::LogType;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
+use crate::protection::shared::ModuleSet;
 
 use super::DatabaseError;
 
@@ -45,6 +46,9 @@ pub struct MessageGuardContext {
     pub author_listed: bool,
     /// Rôles de la liste blanche de la guilde.
     pub whitelist_roles: Vec<u64>,
+    /// Modules de protection activés (migration 4). Vide si la guilde n'est
+    /// pas configurée ou si le salon est ignoré : rien ne s'y applique.
+    pub enabled_modules: ModuleSet,
 }
 
 pub(crate) fn parse_language(value: &str) -> Result<Language, DatabaseError> {
