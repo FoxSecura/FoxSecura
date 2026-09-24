@@ -274,8 +274,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_six() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 6);
+fn latest_schema_version_is_seven() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 7);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -1691,7 +1691,7 @@ INSERT INTO guild_bad_words (guild_id, word) VALUES ('123', 'spoiler');
     }
 
     let database = Database::open(&path).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 6);
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
 
     let config = database.find_guild_config(123).unwrap().unwrap();
     assert_eq!(config.language, Language::German);
@@ -1735,7 +1735,7 @@ INSERT INTO guild_bad_words (guild_id, word) VALUES ('123', 'spoiler');
     database.add_blacklist_user(123, 99).unwrap();
     drop(database);
     let reopened = Database::open(&path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 6);
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
     assert_eq!(reopened.blacklist_users(123).unwrap(), vec![99]);
     drop(reopened);
     fs::remove_dir_all(directory).unwrap();
@@ -1950,4 +1950,231 @@ fn member_configuration_writes_invalidate_the_guild_cache() {
     let context = database.member_guard_context(1, 20).unwrap();
     assert!(!context.blacklisted && context.user_whitelisted);
     assert_eq!(context.guild_config.unwrap().new_account_min_age_days, 30);
+}
+
+// --- Quarantaine (migration 7) ---
+
+#[test]
+fn migrates_version_six_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v6");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        // Schéma v6 figé, tel que publié avant la quarantaine.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_configs (
+    guild_id TEXT PRIMARY KEY NOT NULL,
+    language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'de')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_log_channels (
+    guild_id TEXT NOT NULL,
+    log_type TEXT NOT NULL CHECK (
+        log_type IN ('message', 'server', 'member', 'channel', 'role', 'moderation')
+    ),
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, log_type),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_enabled INTEGER NOT NULL DEFAULT 0
+    CHECK (anti_spam_enabled IN (0, 1));
+ALTER TABLE guild_configs ADD COLUMN anti_spam_message_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_message_threshold BETWEEN 2 AND 50);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_window_seconds INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_window_seconds BETWEEN 1 AND 60);
+CREATE TABLE guild_whitelist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_whitelist_roles (
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL CHECK (role_id <> guild_id),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, role_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_ignored_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_protection_modules (
+    guild_id TEXT NOT NULL,
+    module_key TEXT NOT NULL CHECK (length(module_key) BETWEEN 1 AND 64),
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, module_key),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN bad_words_language TEXT NOT NULL DEFAULT 'all'
+    CHECK (bad_words_language IN ('french', 'english', 'all'));
+CREATE TABLE guild_bad_words (
+    guild_id TEXT NOT NULL,
+    word TEXT NOT NULL CHECK (length(word) BETWEEN 1 AND 100),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, word),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN new_account_min_age_days INTEGER NOT NULL DEFAULT 7
+    CHECK (new_account_min_age_days BETWEEN 1 AND 365);
+
+CREATE TABLE guild_blacklist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TRIGGER guild_blacklist_users_exclusive
+BEFORE INSERT ON guild_blacklist_users
+WHEN EXISTS (
+    SELECT 1 FROM guild_whitelist_users
+    WHERE guild_id = NEW.guild_id AND user_id = NEW.user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'user is on the whitelist');
+END;
+
+CREATE TRIGGER guild_whitelist_users_exclusive
+BEFORE INSERT ON guild_whitelist_users
+WHEN EXISTS (
+    SELECT 1 FROM guild_blacklist_users
+    WHERE guild_id = NEW.guild_id AND user_id = NEW.user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'user is on the blacklist');
+END;
+INSERT INTO schema_migrations (version, name) VALUES (1, 'initial');
+INSERT INTO schema_migrations (version, name) VALUES (2, 'anti_spam_settings');
+INSERT INTO schema_migrations (version, name) VALUES (3, 'whitelist_and_ignored_channels');
+INSERT INTO schema_migrations (version, name) VALUES (4, 'protection_modules');
+INSERT INTO schema_migrations (version, name) VALUES (5, 'bad_words');
+INSERT INTO schema_migrations (version, name) VALUES (6, 'member_protection');
+INSERT INTO guild_configs (
+    guild_id, language, created_at, updated_at,
+    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
+    bad_words_language, new_account_min_age_days
+)
+VALUES ('123', 'en', 1000, 2000, 1, 9, 20, 'english', 30);
+INSERT INTO guild_whitelist_users (guild_id, user_id) VALUES ('123', '7');
+INSERT INTO guild_blacklist_users (guild_id, user_id) VALUES ('123', '66');
+INSERT INTO guild_protection_modules (guild_id, module_key, enabled)
+VALUES ('123', 'anti_new_account', 1);
+"#,
+            )
+            .unwrap();
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 7);
+
+    let config = database.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(config.language, Language::English);
+    assert_eq!((config.created_at, config.updated_at), (1000, 2000));
+    assert_eq!(config.new_account_min_age_days, 30);
+    // Aucun rôle de quarantaine après la migration.
+    assert_eq!(config.quarantine_role_id, None);
+    assert_eq!(database.blacklist_users(123).unwrap(), vec![66]);
+    assert_eq!(database.whitelist_users(123).unwrap(), vec![7]);
+    assert!(
+        database
+            .enabled_modules(123)
+            .unwrap()
+            .contains(ProtectionModule::AntiNewAccount)
+    );
+    // Le déclencheur d'exclusion de la migration 6 est conservé.
+    assert!(matches!(
+        database.add_whitelist_user(123, 66),
+        Err(DatabaseError::UserBlacklisted(66))
+    ));
+
+    database.set_quarantine_role(123, 500).unwrap();
+    drop(database);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), 7);
+    assert_eq!(reopened.quarantine_role_id(123).unwrap(), Some(500));
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn quarantine_role_is_persisted_and_everyone_is_refused() {
+    let database = Database::open_in_memory().unwrap();
+    assert_eq!(database.quarantine_role_id(1).unwrap(), None);
+    assert_eq!(database.guild_config(1).unwrap().quarantine_role_id, None);
+
+    let config = database.set_quarantine_role(1, 42).unwrap();
+    assert_eq!(config.quarantine_role_id, Some(42));
+    assert_eq!(database.quarantine_role_id(1).unwrap(), Some(42));
+    // Scopé par guilde.
+    assert_eq!(database.quarantine_role_id(2).unwrap(), None);
+
+    // Remplacement (création d'un nouveau rôle ou autre sélection).
+    database.set_quarantine_role(1, 43).unwrap();
+    assert_eq!(database.quarantine_role_id(1).unwrap(), Some(43));
+
+    assert!(matches!(
+        database.set_quarantine_role(1, 1),
+        Err(DatabaseError::EveryoneRoleNotQuarantinable)
+    ));
+    assert_eq!(database.quarantine_role_id(1).unwrap(), Some(43));
+}
+
+#[test]
+fn schema_rejects_everyone_as_quarantine_role() {
+    let path = temporary_directory("quarantine-everyone").join("foxsecura.sqlite3");
+    let database = Database::open(&path).unwrap();
+    database.guild_config(1).unwrap();
+    drop(database);
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    assert!(
+        connection
+            .execute(
+                "UPDATE guild_configs SET quarantine_role_id = '1' WHERE guild_id = '1'",
+                [],
+            )
+            .is_err()
+    );
+    drop(connection);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn quarantine_role_write_invalidates_the_guild_cache() {
+    let database = Database::open_in_memory().unwrap();
+    database.guild_config(1).unwrap();
+    database.guild_config(2).unwrap();
+
+    assert_member_write_invalidates(
+        &database,
+        "rôle de quarantaine",
+        |database| {
+            database.set_quarantine_role(1, 42).unwrap();
+        },
+        |context| context.guild_config.as_ref().unwrap().quarantine_role_id == Some(42),
+    );
+
+    // Lecture servie par le cache : aucun chargement de plus.
+    let loads = database.guild_cache_stats().loads;
+    assert_eq!(database.quarantine_role_id(1).unwrap(), Some(42));
+    assert_eq!(database.guild_cache_stats().loads, loads);
 }

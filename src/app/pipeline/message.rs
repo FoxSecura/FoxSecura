@@ -15,7 +15,7 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
-use super::{BOT_ASSIGNED_ROLES, anti_spam, content_filter, unix_duration};
+use super::{anti_spam, bot_assigned_roles, content_filter, unix_duration};
 use crate::app::{AppData, run_database};
 
 /// Message converti depuis un événement Discord, prêt pour le pipeline.
@@ -141,7 +141,7 @@ async fn process(
             listed_roles: &context.whitelist_roles,
         },
         inspected.member_roles.as_deref(),
-        BOT_ASSIGNED_ROLES,
+        bot_assigned_roles(context.guild_config.as_ref()),
     );
     let scope = message_scope(context.channel_ignored, author_exempt);
 

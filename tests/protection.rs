@@ -17,5 +17,7 @@ mod content_filter;
 mod content_modules;
 #[path = "protection/member_join.rs"]
 mod member_join;
+#[path = "protection/quarantine.rs"]
+mod quarantine;
 #[path = "protection/shared/mod.rs"]
 mod shared;

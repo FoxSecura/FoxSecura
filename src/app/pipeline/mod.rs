@@ -13,18 +13,23 @@ mod delete;
 mod incident_log;
 pub mod member;
 pub mod message;
+pub mod quarantine;
 mod sanction;
 
 use std::time::Duration;
 
+use foxsecura::database::GuildConfig;
+use foxsecura::protection::quarantine::bot_assigned_roles as guild_bot_assigned_roles;
 use poise::serenity_prelude as serenity;
 
-/// Rôles que FoxSecura attribue lui-même et qui n'exemptent jamais.
+/// Rôles que FoxSecura attribue lui-même dans la guilde et qui n'exemptent
+/// jamais de la liste blanche.
 ///
-/// Dans la V1 : rôles de vérification, de quarantaine et rôle limité. Aucun
-/// n'existe encore dans la V2 : la liste est vide tant que ces modules ne sont
-/// pas portés.
-const BOT_ASSIGNED_ROLES: &[u64] = &[];
+/// Dans la V1 : rôles de vérification, de quarantaine et rôle limité. Seul le
+/// rôle de quarantaine existe dans la V2.
+fn bot_assigned_roles(guild_config: Option<&GuildConfig>) -> &[u64] {
+    guild_bot_assigned_roles(guild_config.and_then(|config| config.quarantine_role_id.as_ref()))
+}
 
 /// Horodatage Discord en durée depuis l'époque Unix ; `None` avant 1970.
 fn unix_duration(timestamp: serenity::Timestamp) -> Option<Duration> {

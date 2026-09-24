@@ -46,7 +46,7 @@ use foxsecura::protection::shared::{
 use poise::serenity_prelude as serenity;
 
 use super::sanction::{self, NicknameRequest, SanctionRequest};
-use super::{BOT_ASSIGNED_ROLES, incident_log, unix_duration};
+use super::{bot_assigned_roles, incident_log, unix_duration};
 use crate::app::{AppData, run_database};
 
 /// Membre analysé, converti depuis l'événement.
@@ -199,7 +199,7 @@ async fn new_account(
             listed_roles: &context.whitelist_roles,
         },
         Some(&facts.roles),
-        BOT_ASSIGNED_ROLES,
+        bot_assigned_roles(context.guild_config.as_ref()),
     );
     let check = plan_new_account(
         AntiNewAccountInput {

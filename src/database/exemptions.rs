@@ -196,7 +196,10 @@ impl Database {
 
     /// Instantané de la guilde, depuis le cache ou chargé sous le verrou de
     /// la connexion (jamais entre une écriture et son invalidation).
-    fn guild_snapshot(&self, guild_id: u64) -> Result<Arc<GuildSnapshot>, DatabaseError> {
+    pub(super) fn guild_snapshot(
+        &self,
+        guild_id: u64,
+    ) -> Result<Arc<GuildSnapshot>, DatabaseError> {
         let cached = self.guild_cache().get(guild_id);
         if let Some(snapshot) = cached {
             return Ok(snapshot);
