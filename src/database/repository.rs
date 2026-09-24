@@ -5,6 +5,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 
 use super::models::{parse_language, parse_log_type, parse_snowflake};
 use super::{Database, DatabaseError, GuildConfig, GuildLogChannel};
@@ -22,6 +23,65 @@ impl Database {
     pub fn guild_config(&self, guild_id: u64) -> Result<GuildConfig, DatabaseError> {
         let connection = self.connection()?;
         ensure_guild_config(&connection, guild_id)?;
+        read_guild_config(&connection, guild_id)
+    }
+
+    /// Lit la configuration d'une guilde sans créer de ligne.
+    ///
+    /// Destiné aux chemins chauds (un appel par message) : aucune écriture.
+    pub fn find_guild_config(&self, guild_id: u64) -> Result<Option<GuildConfig>, DatabaseError> {
+        let connection = self.connection()?;
+        match read_guild_config(&connection, guild_id) {
+            Ok(config) => Ok(Some(config)),
+            Err(DatabaseError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Active ou désactive l'anti-spam d'une guilde.
+    pub fn set_anti_spam_enabled(
+        &self,
+        guild_id: u64,
+        enabled: bool,
+    ) -> Result<GuildConfig, DatabaseError> {
+        let connection = self.connection()?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, anti_spam_enabled)
+VALUES (?1, ?2)
+ON CONFLICT(guild_id) DO UPDATE SET
+    anti_spam_enabled = excluded.anti_spam_enabled,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), enabled],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
+    /// Enregistre le seuil et la fenêtre anti-spam après validation des bornes.
+    pub fn set_anti_spam_limits(
+        &self,
+        guild_id: u64,
+        message_threshold: u32,
+        window_seconds: u32,
+    ) -> Result<GuildConfig, DatabaseError> {
+        MessageFloodConfig::validated(false, message_threshold, window_seconds)?;
+        let connection = self.connection()?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, anti_spam_message_threshold, anti_spam_window_seconds)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(guild_id) DO UPDATE SET
+    anti_spam_message_threshold = excluded.anti_spam_message_threshold,
+    anti_spam_window_seconds = excluded.anti_spam_window_seconds,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), message_threshold, window_seconds],
+        )?;
+
         read_guild_config(&connection, guild_id)
     }
 
@@ -64,12 +124,15 @@ ON CONFLICT(guild_id, log_type) DO UPDATE SET
     channel_id = excluded.channel_id,
     updated_at = unixepoch()
 "#,
-            params![guild_id.to_string(), log_type.as_str(), channel_id.to_string()],
+            params![
+                guild_id.to_string(),
+                log_type.as_str(),
+                channel_id.to_string()
+            ],
         )?;
 
-        read_log_channel(&connection, guild_id, log_type)?.ok_or_else(|| {
-            DatabaseError::Sqlite(rusqlite::Error::QueryReturnedNoRows)
-        })
+        read_log_channel(&connection, guild_id, log_type)?
+            .ok_or_else(|| DatabaseError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
     }
 
     pub fn log_channel(
@@ -142,7 +205,8 @@ fn read_guild_config(
 ) -> Result<GuildConfig, DatabaseError> {
     let row = connection.query_row(
         r#"
-SELECT guild_id, language, created_at, updated_at
+SELECT guild_id, language, created_at, updated_at,
+    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -153,6 +217,9 @@ WHERE guild_id = ?1
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, bool>(4)?,
+                row.get::<_, u32>(5)?,
+                row.get::<_, u32>(6)?,
             ))
         },
     )?;
@@ -160,6 +227,7 @@ WHERE guild_id = ?1
     Ok(GuildConfig {
         guild_id: parse_snowflake(&row.0)?,
         language: parse_language(&row.1)?,
+        anti_spam: MessageFloodConfig::validated(row.4, row.5, row.6)?,
         created_at: row.2,
         updated_at: row.3,
     })

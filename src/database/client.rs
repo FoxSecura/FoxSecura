@@ -10,6 +10,8 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
+use crate::protection::anti_spam::message_flood::MessageFloodConfigError;
+
 use super::migrations::run_migrations;
 
 pub const DEFAULT_DATABASE_PATH: &str = "data/foxsecura.sqlite3";
@@ -21,7 +23,10 @@ pub struct Database {
 impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let path = path.as_ref();
-        if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             fs::create_dir_all(parent)?;
         }
 
@@ -53,9 +58,7 @@ impl Database {
 
 fn configure_connection(connection: &Connection) -> Result<(), DatabaseError> {
     connection.busy_timeout(Duration::from_secs(5))?;
-    connection.execute_batch(
-        "PRAGMA foreign_keys = ON;\nPRAGMA synchronous = NORMAL;",
-    )?;
+    connection.execute_batch("PRAGMA foreign_keys = ON;\nPRAGMA synchronous = NORMAL;")?;
 
     let _: String = connection.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
 
@@ -70,6 +73,7 @@ pub enum DatabaseError {
     InvalidLanguage(String),
     InvalidLogType(String),
     InvalidSnowflake(String),
+    InvalidAntiSpamConfig(MessageFloodConfigError),
 }
 
 impl fmt::Display for DatabaseError {
@@ -77,7 +81,9 @@ impl fmt::Display for DatabaseError {
         match self {
             Self::Sqlite(error) => write!(formatter, "erreur SQLite : {error}"),
             Self::Io(error) => write!(formatter, "erreur d'accès au stockage : {error}"),
-            Self::LockPoisoned => formatter.write_str("le verrou de la base de données est empoisonné"),
+            Self::LockPoisoned => {
+                formatter.write_str("le verrou de la base de données est empoisonné")
+            }
             Self::InvalidLanguage(value) => {
                 write!(formatter, "langue invalide stockée en base : {value}")
             }
@@ -85,8 +91,12 @@ impl fmt::Display for DatabaseError {
                 write!(formatter, "type de log invalide stocké en base : {value}")
             }
             Self::InvalidSnowflake(value) => {
-                write!(formatter, "identifiant Discord invalide stocké en base : {value}")
+                write!(
+                    formatter,
+                    "identifiant Discord invalide stocké en base : {value}"
+                )
             }
+            Self::InvalidAntiSpamConfig(error) => error.fmt(formatter),
         }
     }
 }
@@ -96,6 +106,7 @@ impl Error for DatabaseError {
         match self {
             Self::Sqlite(error) => Some(error),
             Self::Io(error) => Some(error),
+            Self::InvalidAntiSpamConfig(error) => Some(error),
             Self::LockPoisoned
             | Self::InvalidLanguage(_)
             | Self::InvalidLogType(_)
@@ -107,6 +118,12 @@ impl Error for DatabaseError {
 impl From<rusqlite::Error> for DatabaseError {
     fn from(error: rusqlite::Error) -> Self {
         Self::Sqlite(error)
+    }
+}
+
+impl From<MessageFloodConfigError> for DatabaseError {
+    fn from(error: MessageFloodConfigError) -> Self {
+        Self::InvalidAntiSpamConfig(error)
     }
 }
 
