@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Exécution d'une sanction (timeout, ban) contre l'auteur d'un message.
+//! Exécution d'une sanction (timeout, expulsion, ban) contre un membre.
 //!
 //! La décision et le classement des échecs sont dans
 //! `foxsecura::protection::shared::sanction` ; ce module relève l'état du
@@ -77,6 +77,11 @@ pub async fn execute(ctx: &serenity::Context, request: &SanctionRequest<'_>) -> 
                 .await
                 .map(|_| ())
         }
+        SanctionKind::Kick => {
+            guild_id
+                .kick_with_reason(&ctx.http, user_id, request.reason)
+                .await
+        }
         SanctionKind::Ban { .. } => {
             guild_id
                 .ban_with_reason(
@@ -148,6 +153,7 @@ fn sanction_context(
             permissions: BotPermissions {
                 administrator: permissions.administrator(),
                 moderate_members: permissions.moderate_members(),
+                kick_members: permissions.kick_members(),
                 ban_members: permissions.ban_members(),
             },
         });

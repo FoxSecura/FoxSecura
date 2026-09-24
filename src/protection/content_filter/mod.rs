@@ -343,6 +343,9 @@ fn detect_module(
                 threshold: result.threshold,
             })
         }
+        // Modules des arrivées de membres (`member_join`) : absents de
+        // `CONTENT_FILTERS`, ils n'analysent jamais un message.
+        ProtectionModule::AntiBot => None,
     }
 }
 

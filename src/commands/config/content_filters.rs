@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Interrupteurs des filtres de contenu, dans les catégories Anti-Spam et
-//! AutoMod du tableau de bord.
+//! Interrupteurs des modules de protection, dans les catégories Anti-Spam,
+//! AutoMod et Anti-Raid du tableau de bord.
 //!
 //! L'état affiché est celui lu en base (`guild_protection_modules`). Chaque
 //! écriture invalide le cache de configuration de la guilde : le moteur
@@ -36,7 +36,11 @@ pub const AUTOMOD_MODULES: &[ProtectionModule] = &[
 /// Boutons par rangée : limite Discord.
 const BUTTONS_PER_ROW: usize = 5;
 
+/// Modules des arrivées de membres, affichés dans la catégorie Anti-Raid.
+pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[ProtectionModule::AntiBot];
+
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
+pub const ANTI_RAID_CATEGORY_ID: &str = "anti_raid";
 
 /// Demande d'activation ou de désactivation d'un module.
 ///
@@ -62,6 +66,8 @@ impl ModuleToggle {
     pub fn category_id(self) -> &'static str {
         if AUTOMOD_MODULES.contains(&self.module) {
             AUTOMOD_CATEGORY_ID
+        } else if ANTI_RAID_MODULES.contains(&self.module) {
+            ANTI_RAID_CATEGORY_ID
         } else {
             super::anti_spam::CATEGORY_ID
         }
@@ -174,6 +180,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AttachmentFilter => TextKey::ModuleAttachmentFilter,
         ProtectionModule::AntiScam => TextKey::ModuleAntiScam,
         ProtectionModule::BadWords => TextKey::ModuleBadWords,
+        ProtectionModule::AntiBot => TextKey::ModuleAntiBot,
     }
 }
 
@@ -187,6 +194,7 @@ mod tests {
             let count = ANTI_SPAM_MODULES
                 .iter()
                 .chain(AUTOMOD_MODULES)
+                .chain(ANTI_RAID_MODULES)
                 .filter(|candidate| **candidate == module)
                 .count();
             assert_eq!(count, 1, "{module}");
@@ -195,6 +203,7 @@ mod tests {
         // sous la limite Discord de cinq rangées.
         assert!(ANTI_SPAM_MODULES.len() <= 2 * BUTTONS_PER_ROW);
         assert!(AUTOMOD_MODULES.len() <= BUTTONS_PER_ROW);
+        assert!(ANTI_RAID_MODULES.len() <= BUTTONS_PER_ROW);
     }
 
     #[test]

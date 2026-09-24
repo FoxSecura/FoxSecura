@@ -9,6 +9,7 @@
 //! renommage) sont exécutés par le runtime avec le socle des sanctions
 //! (`protection::shared::sanction`).
 
+pub mod anti_bot;
 pub mod blacklist;
 
 use std::time::UNIX_EPOCH;

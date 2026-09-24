@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Sanctions d'un membre (timeout, ban) : décision et classement des échecs,
-//! sans effet Discord.
+//! Sanctions d'un membre (timeout, expulsion, ban) : décision et classement
+//! des échecs, sans effet Discord.
 //!
 //! Le runtime relève l'état du cache ([`SanctionContext`]), demande à
 //! [`precheck_sanction`] s'il faut appeler Discord, puis classe la réponse de
@@ -42,11 +42,13 @@ pub const MAX_TIMEOUT: Duration = Duration::from_secs(28 * 24 * 60 * 60);
 /// Purge maximale des messages lors d'un ban (7 jours).
 pub const MAX_BAN_PURGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
-/// Sanction à appliquer à l'auteur d'un message.
+/// Sanction à appliquer à un membre.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SanctionKind {
     /// Exclusion temporaire (`communication_disabled_until`).
     Timeout { duration: Duration },
+    /// Expulsion : le membre peut revenir avec une invitation.
+    Kick,
     /// Bannissement, avec purge des messages récents (7 jours au plus).
     Ban { purge: Duration },
 }
@@ -55,6 +57,7 @@ impl SanctionKind {
     pub const fn action_code(self) -> ActionCode {
         match self {
             Self::Timeout { .. } => ActionCode::TimeoutMember,
+            Self::Kick => ActionCode::KickMember,
             Self::Ban { .. } => ActionCode::BanMember,
         }
     }
@@ -63,6 +66,7 @@ impl SanctionKind {
     pub const fn required_permission(self) -> SanctionPermission {
         match self {
             Self::Timeout { .. } => SanctionPermission::ModerateMembers,
+            Self::Kick => SanctionPermission::KickMembers,
             Self::Ban { .. } => SanctionPermission::BanMembers,
         }
     }
@@ -71,7 +75,7 @@ impl SanctionKind {
     pub fn timeout_duration(self) -> Option<Duration> {
         match self {
             Self::Timeout { duration } => Some(duration.min(MAX_TIMEOUT)),
-            Self::Ban { .. } => None,
+            Self::Kick | Self::Ban { .. } => None,
         }
     }
 
@@ -81,7 +85,7 @@ impl SanctionKind {
             Self::Ban { purge } => {
                 Some((purge.min(MAX_BAN_PURGE).as_secs() / (24 * 60 * 60)) as u8)
             }
-            Self::Timeout { .. } => None,
+            Self::Timeout { .. } | Self::Kick => None,
         }
     }
 }
@@ -90,6 +94,7 @@ impl SanctionKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SanctionPermission {
     ModerateMembers,
+    KickMembers,
     BanMembers,
 }
 
@@ -97,6 +102,7 @@ impl SanctionPermission {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ModerateMembers => "MODERATE_MEMBERS",
+            Self::KickMembers => "KICK_MEMBERS",
             Self::BanMembers => "BAN_MEMBERS",
         }
     }
@@ -107,6 +113,7 @@ impl SanctionPermission {
 pub struct BotPermissions {
     pub administrator: bool,
     pub moderate_members: bool,
+    pub kick_members: bool,
     pub ban_members: bool,
 }
 
@@ -115,6 +122,7 @@ impl BotPermissions {
         self.administrator
             || match permission {
                 SanctionPermission::ModerateMembers => self.moderate_members,
+                SanctionPermission::KickMembers => self.kick_members,
                 SanctionPermission::BanMembers => self.ban_members,
             }
     }

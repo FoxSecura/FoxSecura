@@ -996,5 +996,35 @@ catalog! {
         en: "Check the ban hierarchy: FoxSecura needs Ban Members and a role above the member. Ban them manually if they are still on the server.",
         fr: "Vérifier la hiérarchie du ban : FoxSecura doit avoir Bannir des membres et un rôle au-dessus du membre. Bannissez-le manuellement s'il est encore sur le serveur.",
         de: "Die Bann-Hierarchie prüfen: FoxSecura braucht Mitglieder bannen und eine Rolle über dem Mitglied. Manuell bannen, falls es noch auf dem Server ist."
+    },
+    ModuleAntiBot => {
+        en: "Anti-bot",
+        fr: "Anti-bot",
+        de: "Anti-Bot"
+    },
+    AntiBotSummaryUnauthorized => {
+        en: "An unauthorized bot joined the server.",
+        fr: "Un bot non autorisé a rejoint le serveur.",
+        de: "Ein nicht autorisierter Bot ist dem Server beigetreten."
+    },
+    AntiBotSummaryAuthorized => {
+        en: "Authorized bot ignored (whitelist).",
+        fr: "Bot autorisé ignoré (liste blanche).",
+        de: "Autorisierter Bot ignoriert (Whitelist)."
+    },
+    AntiBotEvidenceAccount => {
+        en: "Account type",
+        fr: "Type de compte",
+        de: "Kontotyp"
+    },
+    AntiBotRecommendationKicked => {
+        en: "Unauthorized bot kicked. If it is legitimate, add its ID to the whitelist, then invite it again.",
+        fr: "Bot non autorisé expulsé. S'il est légitime, ajoutez son identifiant à la liste blanche, puis réinvitez-le.",
+        de: "Nicht autorisierter Bot gekickt. Ist er legitim, seine ID zur Whitelist hinzufügen und ihn erneut einladen."
+    },
+    AntiBotRecommendationCheckKick => {
+        en: "Check the kick: FoxSecura needs Kick Members and a role above the bot's role. Kick it manually if it is still on the server.",
+        fr: "Vérifier l'expulsion : FoxSecura doit avoir Expulser des membres et un rôle au-dessus de celui du bot. Expulsez-le manuellement s'il est encore sur le serveur.",
+        de: "Den Kick prüfen: FoxSecura braucht Mitglieder kicken und eine Rolle über der des Bots. Manuell kicken, falls er noch auf dem Server ist."
     }
 }

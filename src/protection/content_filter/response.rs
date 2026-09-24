@@ -240,7 +240,11 @@ pub fn record_follow_up(
             incident.actions.push(outcome.action_outcome(*kind));
             match (outcome.is_applied(), kind) {
                 (false, _) => TextKey::AntiScamRecommendationCheckHierarchy,
-                (true, SanctionKind::Ban { .. }) => TextKey::AntiScamRecommendationBanFalsePositive,
+                // `plan_follow_up` n'expulse jamais : une expulsion, qui retire
+                // aussi le membre, suivrait le ban.
+                (true, SanctionKind::Ban { .. } | SanctionKind::Kick) => {
+                    TextKey::AntiScamRecommendationBanFalsePositive
+                }
                 (true, SanctionKind::Timeout { .. }) => {
                     TextKey::AntiScamRecommendationTimeoutFalsePositive
                 }
@@ -361,5 +365,6 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AttachmentFilter => TextKey::ContentFilterSummaryAttachment,
         ProtectionModule::AntiScam => TextKey::ContentFilterSummaryScam,
         ProtectionModule::BadWords => TextKey::ContentFilterSummaryBadWord,
+        ProtectionModule::AntiBot => TextKey::AntiBotSummaryUnauthorized,
     }
 }
