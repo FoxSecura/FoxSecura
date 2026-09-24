@@ -18,6 +18,7 @@ use foxsecura::protection::anti_spam::message_flood::{
 use foxsecura::protection::automod::bad_words::{
     BadWordsLanguage, CustomWordsError, MAX_CUSTOM_WORDS,
 };
+use foxsecura::protection::quarantine::{PermissionState, RecordedOverwrite};
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule};
 
 #[test]
@@ -2177,4 +2178,146 @@ fn quarantine_role_write_invalidates_the_guild_cache() {
     let loads = database.guild_cache_stats().loads;
     assert_eq!(database.quarantine_role_id(1).unwrap(), Some(42));
     assert_eq!(database.guild_cache_stats().loads, loads);
+}
+
+// --- Overwrites enregistrés et libérations en attente (migration 7) ---
+
+fn recorded(view: PermissionState, connect: PermissionState) -> RecordedOverwrite {
+    RecordedOverwrite { view, connect }
+}
+
+#[test]
+fn recorded_overwrites_keep_the_first_origin_and_are_scoped() {
+    let database = Database::open_in_memory().unwrap();
+    let origin = recorded(PermissionState::Allow, PermissionState::Unset);
+
+    assert_eq!(database.quarantine_overwrite(1, 10, 100).unwrap(), None);
+    assert!(
+        database
+            .record_quarantine_overwrite(1, 10, 100, origin)
+            .unwrap()
+    );
+    // Une ligne existante n'est jamais remplacée.
+    assert!(
+        !database
+            .record_quarantine_overwrite(
+                1,
+                10,
+                100,
+                recorded(PermissionState::Deny, PermissionState::Deny)
+            )
+            .unwrap()
+    );
+    assert_eq!(
+        database.quarantine_overwrite(1, 10, 100).unwrap(),
+        Some(origin)
+    );
+
+    let other = recorded(PermissionState::Unset, PermissionState::Deny);
+    database
+        .record_quarantine_overwrite(1, 10, 50, other)
+        .unwrap();
+    database
+        .record_quarantine_overwrite(1, 11, 100, other)
+        .unwrap();
+    database
+        .record_quarantine_overwrite(2, 10, 100, other)
+        .unwrap();
+    // Triées par salon, scopées par guilde et par membre.
+    assert_eq!(
+        database.quarantine_overwrites(1, 10).unwrap(),
+        vec![(50, other), (100, origin)]
+    );
+
+    assert!(database.forget_quarantine_overwrite(1, 10, 100).unwrap());
+    assert!(!database.forget_quarantine_overwrite(1, 10, 100).unwrap());
+    assert_eq!(
+        database.quarantine_overwrites(1, 10).unwrap(),
+        vec![(50, other)]
+    );
+    assert_eq!(database.quarantine_overwrites(1, 11).unwrap().len(), 1);
+    assert_eq!(database.quarantine_overwrites(2, 10).unwrap().len(), 1);
+}
+
+#[test]
+fn schema_rejects_unknown_overwrite_states() {
+    let path = temporary_directory("quarantine-states").join("foxsecura.sqlite3");
+    let database = Database::open(&path).unwrap();
+    database.guild_config(1).unwrap();
+    drop(database);
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    for (view, connect) in [("maybe", "unset"), ("allow", ""), ("ALLOW", "deny")] {
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO guild_quarantine_overwrites \
+                     (guild_id, user_id, channel_id, previous_view, previous_connect) \
+                     VALUES ('1', '10', '100', ?1, ?2)",
+                    [view, connect],
+                )
+                .is_err(),
+            "{view}/{connect}"
+        );
+    }
+    drop(connection);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn pending_releases_are_listed_oldest_first_and_cleared() {
+    let database = Database::open_in_memory().unwrap();
+    assert!(database.pending_releases(10).unwrap().is_empty());
+
+    database.set_pending_release(2, 20, true).unwrap();
+    database.set_pending_release(1, 10, true).unwrap();
+    database.set_pending_release(1, 11, true).unwrap();
+    // Réenregistrée : reste unique.
+    database.set_pending_release(1, 10, true).unwrap();
+    assert!(database.is_pending_release(1, 10).unwrap());
+    assert!(!database.is_pending_release(1, 12).unwrap());
+
+    // Même seconde : ordre stable par guilde puis membre.
+    assert_eq!(
+        database.pending_releases(10).unwrap(),
+        vec![(1, 10), (1, 11), (2, 20)]
+    );
+    assert_eq!(database.pending_releases(2).unwrap().len(), 2);
+
+    // Remise en quarantaine ou libération achevée : effacée, idempotent.
+    database.set_pending_release(1, 10, false).unwrap();
+    database.set_pending_release(1, 10, false).unwrap();
+    assert!(!database.is_pending_release(1, 10).unwrap());
+    assert_eq!(
+        database.pending_releases(10).unwrap(),
+        vec![(1, 11), (2, 20)]
+    );
+}
+
+#[test]
+fn quarantine_rows_cascade_when_guild_config_is_deleted() {
+    let path = temporary_directory("quarantine-cascade").join("foxsecura.sqlite3");
+    let database = Database::open(&path).unwrap();
+    database
+        .record_quarantine_overwrite(
+            1,
+            10,
+            100,
+            recorded(PermissionState::Unset, PermissionState::Unset),
+        )
+        .unwrap();
+    database.set_pending_release(1, 10, true).unwrap();
+    drop(database);
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON; DELETE FROM guild_configs WHERE guild_id = '1';")
+        .unwrap();
+    drop(connection);
+
+    let database = Database::open(&path).unwrap();
+    assert!(database.quarantine_overwrites(1, 10).unwrap().is_empty());
+    assert!(database.pending_releases(10).unwrap().is_empty());
+    drop(database);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }

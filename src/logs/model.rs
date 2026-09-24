@@ -102,6 +102,8 @@ pub enum ActionCode {
     RequestStaffReview,
     RecordAlert,
     NotifyMember,
+    RemoveDangerousRoles,
+    LockMemberChannels,
 }
 
 impl ActionCode {
@@ -130,6 +132,8 @@ impl ActionCode {
             Self::RequestStaffReview => "request_staff_review",
             Self::RecordAlert => "record_alert",
             Self::NotifyMember => "notify_member",
+            Self::RemoveDangerousRoles => "remove_dangerous_roles",
+            Self::LockMemberChannels => "lock_member_channels",
         }
     }
 }

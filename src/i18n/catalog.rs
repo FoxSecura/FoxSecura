@@ -542,6 +542,16 @@ catalog! {
         fr: "Notifier le membre",
         de: "Mitglied benachrichtigen"
     },
+    LogsActionRemoveDangerousRoles => {
+        en: "Remove dangerous roles",
+        fr: "Retirer les rôles dangereux",
+        de: "Gefährliche Rollen entfernen"
+    },
+    LogsActionLockMemberChannels => {
+        en: "Lock channels for the member",
+        fr: "Verrouiller les salons pour le membre",
+        de: "Kanäle für das Mitglied sperren"
+    },
     LogsFieldActor => {
         en: "Member",
         fr: "Membre",
