@@ -36,13 +36,14 @@ Le composant utilise l'identifiant interne `foxsecura:config:category`. Lorsqu'u
 
 La commande `/config` et tous ses composants (menu, boutons, sélecteurs, modal) sont réservés au **propriétaire du serveur** et aux membres disposant de `ADMINISTRATOR` ou `MANAGE_GUILD`. Les permissions sont vérifiées côté bot à chaque interaction, pas seulement à l'ouverture du tableau de bord ; les autres membres reçoivent un refus éphémère.
 
-Les **listes blanche et noire** exigent un droit plus fort : propriétaire du serveur ou `ADMINISTRATOR` uniquement ; `MANAGE_GUILD` ne suffit pas. Figurer sur la liste blanche ne donne jamais accès à `/config`.
+Les **listes blanche et noire** et la **quarantaine** (rôle de quarantaine, libération d'un membre) exigent un droit plus fort : propriétaire du serveur ou `ADMINISTRATOR` uniquement (`Right::Whitelist`) ; `MANAGE_GUILD` ne suffit pas. Figurer sur la liste blanche ne donne jamais accès à `/config`.
 
 | Action | Propriétaire | `ADMINISTRATOR` | `MANAGE_GUILD` seul | Autre membre |
 | --- | --- | --- | --- | --- |
 | Ouvrir `/config`, Anti-Spam, Anti-Raid, filtres de contenu, salons ignorés | oui | oui | oui | non |
 | Modifier la liste blanche | oui | oui | non | non |
 | Modifier la liste noire | oui | oui | non | non |
+| Créer ou choisir le rôle de quarantaine, libérer un membre | oui | oui | non | non |
 
 ### Catégorie Anti-Spam
 
@@ -100,16 +101,26 @@ Protections des arrivées de membres (voir [Modules de protection](Protection-Mo
 | --- | --- | --- | --- |
 | Anti-bot (`anti_bot`) | `guild_protection_modules` | désactivé | on/off |
 | Nouveaux comptes (`anti_new_account`) | `guild_protection_modules` | désactivé | on/off |
+| Usurpation d'identité (`anti_impersonation`) | `guild_protection_modules` | désactivé | on/off |
 | Pseudos hoistés (`anti_nickname_hoisting`) | `guild_protection_modules` | désactivé | on/off |
 | Âge minimal des comptes (jours) | `guild_configs.new_account_min_age_days` (migration 6) | 7 | 1 à 365 |
+| Rôle de quarantaine | `guild_configs.quarantine_role_id` (migration 7) | non configuré | jamais `@everyone` |
 
 - Interrupteurs identiques à ceux des filtres de contenu (`foxsecura:config:module:<clé>:on|off`, état cible porté par le bouton), droit `Right::Config`.
 - **Modifier l'âge minimal** ouvre un modal prérempli ; une valeur hors bornes ou non numérique est refusée sans écriture. Bornes validées côté Rust et par une contrainte `CHECK`.
 - L'état affiché est relu depuis la base ; chaque écriture invalide le cache de la guilde : le réglage s'applique dès l'arrivée suivante.
 
+**Quarantaine** (propriétaire ou `ADMINISTRATOR`, droit revérifié à chaque composant et à chaque modal ; contrôles masqués pour `MANAGE_GUILD`) :
+
+- **Créer le rôle de quarantaine** : crée « FoxSecura Quarantine » sans aucune permission, juste sous le rôle le plus haut de FoxSecura, puis l'enregistre. Exige `MANAGE_ROLES` (vérifié avant l'appel). Réponse différée : plusieurs appels Discord.
+- **Sélecteur de rôle** : utilise un rôle existant, refusé sans écriture pour `@everyone`, un rôle géré par une intégration, un rôle que FoxSecura ne peut pas gérer ou un rôle portant une permission dangereuse (liste V1, rappelée dans le refus).
+- Après chaque enregistrement, le **verrou des salons** est posé en arrière-plan (un appel API par catégorie, salon sans catégorie ou salon désynchronisé) ; un message éphémère le confirme.
+- **Libérer un membre** : modal (identifiant ou mention), puis retrait du rôle et restauration exacte des salons ; le bilan (salons restaurés, déjà restaurés, supprimés, en échec) est renvoyé en éphémère. Une libération inachevée est reprise automatiquement toutes les 5 minutes.
+- Remplacer le rôle ne le retire pas aux membres déjà en quarantaine : libérez-les d'abord.
+
 > ⚠️ **Nouveaux comptes** : ban avec purge de 7 jours. Un faux positif bannit un nouveau venu légitime ; activez-le si l'équipe suit le salon de logs `member`. Permissions ci-dessous : `KICK_MEMBERS` (anti-bot), `BAN_MEMBERS` (nouveaux comptes, liste noire), `MANAGE_NICKNAMES` (pseudos), rôle de FoxSecura au-dessus des membres.
 
-Identifiants internes : `foxsecura:config:anti_raid:min_age` et le modal `foxsecura:config:anti_raid:min_age_modal`.
+Identifiants internes : `foxsecura:config:anti_raid:min_age` et le modal `foxsecura:config:anti_raid:min_age_modal` ; quarantaine : `foxsecura:config:anti_raid:quarantine_create`, `…:quarantine_role` (sélecteur), `…:quarantine_release` et le modal `…:quarantine_release_modal`.
 
 ### Catégorie Contrôle d'accès
 
@@ -138,7 +149,7 @@ Identifiants internes : `foxsecura:config:access_control:whitelist_users`, `foxs
 
 ## Important : interface et configuration persistée
 
-Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 6 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, la liste noire, les salons ignorés, l'activation des filtres de contenu et des modules d'arrivée, l'âge minimal des comptes et les mots interdits (liste intégrée, mots personnalisés). Les autres catégories affichent encore un état de substitution.
+Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 7 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, la liste noire, les salons ignorés, l'activation des filtres de contenu et des modules d'arrivée, l'âge minimal des comptes, les mots interdits (liste intégrée, mots personnalisés), le rôle de quarantaine, l'état d'origine des overwrites posés par la quarantaine et les libérations en attente. Les autres catégories affichent encore un état de substitution.
 
 Cela signifie qu'une catégorie visible dans `/config` peut représenter une **surface d'interface prévue** avant que son stockage et son exécution soient entièrement branchés. Les futures PR doivent éviter de présenter un réglage comme actif tant que les trois couches suivantes ne sont pas reliées :
 
@@ -172,7 +183,8 @@ La configuration par défaut active :
 
 - `GUILDS` ;
 - `GUILD_MODERATION` ;
-- `GUILD_MEMBERS` (privilégié : **Server Members Intent**) : arrivées et mises à jour de membres (liste noire, anti-bot, nouveaux comptes, pseudos hoistés) ;
+- `GUILDS` sert aussi à la quarantaine : `CHANNEL_CREATE` réapplique le verrou du rôle aux nouveaux salons ;
+- `GUILD_MEMBERS` (privilégié : **Server Members Intent**) : arrivées et mises à jour de membres (liste noire, anti-bot, nouveaux comptes, usurpation d'identité, pseudos hoistés, rôle de quarantaine retiré à la main) et cache des membres (noms protégés de l'usurpation) ;
 - `GUILD_MESSAGES` : créations et modifications de messages (anti-spam, filtres de contenu) ;
 - `MESSAGE_CONTENT` (privilégié : **Message Content Intent**) : texte et mentions des messages, lus par les filtres de contenu. Sans lui, Discord livre des messages vides.
 
@@ -198,6 +210,9 @@ Permissions nécessaires aux fonctionnalités branchées :
 | Liste noire (ban à l'arrivée) | `BAN_MEMBERS` | serveur |
 | Anti-bot (expulsion) | `KICK_MEMBERS` | serveur |
 | Nouveaux comptes (ban, purge de 7 jours) | `BAN_MEMBERS` | serveur |
+| Quarantaine : créer, poser et retirer le rôle, retirer les rôles dangereux | `MANAGE_ROLES`, rôle de FoxSecura au-dessus du rôle de quarantaine et des membres | serveur |
+| Quarantaine : verrou du rôle et du membre (overwrites) | `MANAGE_ROLES` (« Gérer les permissions » d'un salon), `MANAGE_CHANNELS`, et chaque permission refusée (`VIEW_CHANNEL`, `SEND_MESSAGES`, `CONNECT`, `SPEAK`…) | catégories et salons verrouillés |
+| Quarantaine : repli timeout (nouveaux comptes) | `MODERATE_MEMBERS` | serveur |
 | Pseudos hoistés (renommage) | `MANAGE_NICKNAMES` | serveur |
 | Envoi des incidents des arrivées | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `member` |
 | Toute sanction ou tout renommage | **rôle de FoxSecura au-dessus** du rôle le plus haut du membre visé | Paramètres du serveur → Rôles |
@@ -206,4 +221,4 @@ Sans `MANAGE_MESSAGES`, l'anti-spam et les filtres produisent un incident `Criti
 
 Sanctions : sans `MODERATE_MEMBERS` / `BAN_MEMBERS`, ou si le membre est au-dessus ou au niveau du rôle le plus haut du bot, la sanction n'est pas tentée (vérification d'après le cache) ; l'action est `Skipped` avec `MissingPermission` ou `RoleHierarchy`, et la recommandation « vérifier la hiérarchie du ban ». Discord refuse le timeout d'un membre `ADMINISTRATOR` (classé `RoleHierarchy`). Le propriétaire du serveur, le bot lui-même et les membres sur liste blanche ne sont jamais sanctionnés.
 
-Arrivées : sans `KICK_MEMBERS`, un bot non autorisé reste sur le serveur (incident `Critical`, `MissingPermission`) ; un bot ajouté avec un rôle plus haut que celui de FoxSecura ne peut pas être expulsé (`RoleHierarchy`). Sans `BAN_MEMBERS`, la liste noire et les nouveaux comptes produisent un incident `Critical`. Sans `MANAGE_NICKNAMES`, ou pour un membre au-dessus de FoxSecura, le pseudo n'est pas corrigé (`Critical`) ; le pseudo du propriétaire n'est jamais modifiable par un bot.
+Arrivées : sans `KICK_MEMBERS`, un bot non autorisé reste sur le serveur (incident `Critical`, `MissingPermission`) ; un bot ajouté avec un rôle plus haut que celui de FoxSecura ne peut pas être expulsé (`RoleHierarchy`). Sans `BAN_MEMBERS`, la liste noire produit un incident `Critical` et un nouveau compte part en quarantaine de repli (ou timeout). Sans `MANAGE_ROLES`, ou avec un rôle de quarantaine au-dessus de FoxSecura, la quarantaine n'est pas posée (`MissingPermission` ou `RoleHierarchy`) ; un salon que FoxSecura ne peut pas modifier est compté en échec (`Partial`) sans bloquer les autres. Sans `MANAGE_NICKNAMES`, ou pour un membre au-dessus de FoxSecura, le pseudo n'est pas corrigé (`Critical`) ; le pseudo du propriétaire n'est jamais modifiable par un bot.

@@ -22,13 +22,27 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 
 ### Arrivées de membres
 
-- Pipeline des membres branché sur `GuildMemberAddition` et `GuildMemberUpdate` : ordre de la V1 (liste noire → anti-bot → nouveaux comptes → pseudos hoistés), arrêt au premier résultat terminal (membre banni ou expulsé), résultats non terminaux cumulés ; arrivée du bot ignorée ; une seule lecture de contexte par événement, via le cache de la guilde.
+- Pipeline des membres branché sur `GuildMemberAddition` et `GuildMemberUpdate` : ordre de la V1 (liste noire → anti-bot → nouveaux comptes → usurpation d'identité → pseudos hoistés), arrêt au premier résultat terminal (membre banni, expulsé ou mis en quarantaine), résultats non terminaux cumulés ; arrivée du bot ignorée ; une seule lecture de contexte par événement, via le cache de la guilde.
 - Liste noire : ban à l'arrivée (`FoxSecura Blacklist: …`), **terminal même si le ban échoue** ; incident `Critical`. N'agit qu'à l'arrivée.
 - Anti-bot (`anti_bot`) : expulsion d'un bot absent de la liste blanche (`FoxSecura Anti-Bot: unauthorized bot join`) ; bot autorisé : incident `Info`.
-- Nouveaux comptes (`anti_new_account`) : ban avec purge de 7 jours d'un compte plus jeune que l'âge minimal (7 jours par défaut, 1 à 365) ; propriétaire et liste blanche exemptés (`Warning`) ; un ban refusé produit un incident `Critical` qui signale l'absence de quarantaine de repli (tranche 6). **Un faux positif bannit un nouveau venu légitime** : voir le wiki Sécurité.
+- Nouveaux comptes (`anti_new_account`) : ban avec purge de 7 jours d'un compte plus jeune que l'âge minimal (7 jours par défaut, 1 à 365) ; propriétaire et liste blanche exemptés (`Warning`) ; un ban non appliqué déclenche la **quarantaine de repli avec repli timeout** (10 minutes) ; l'incident `Critical` liste le ban en échec puis les actions de la quarantaine, terminal si le membre est contenu. **Un faux positif bannit un nouveau venu légitime** : voir le wiki Sécurité.
+- Usurpation d'identité (`anti_impersonation`) : un membre qui arrive avec le nom (normalisé) du propriétaire ou d'un membre en cache ayant `ADMINISTRATOR` ou `MANAGE_GUILD` est mis en quarantaine, sans retrait des rôles dangereux ni repli timeout (`FoxSecura Anti-Impersonation: …`) ; incident `Critical`, terminal si le membre est contenu ; jamais appliqué au propriétaire, à un membre privilégié ni à la liste blanche ; noms rendus par `inline_literal`. Ordre : après les nouveaux comptes, avant les pseudos hoistés, uniquement à l'arrivée.
 - Pseudos hoistés (`anti_nickname_hoisting`) : règle V1 `^[^\p{L}\p{N}]+` (catégories Unicode exactes), pseudo nettoyé tronqué à 32, « Member » s'il est vide ; correction appliquée aussi à la liste blanche ; mise à jour de membre analysée seulement si le nom affiché a changé ; aucune boucle.
 - Nouvelles permissions selon les modules activés : `KICK_MEMBERS`, `BAN_MEMBERS`, `MANAGE_NICKNAMES` et un rôle de FoxSecura au-dessus des membres.
 - Dépendance directe `regex` `=1.13.1` (déjà présente via poise, même version, fonctionnalités `std` et `unicode-gencat`) pour les catégories Unicode de la règle de hoisting.
+
+### Quarantaine
+
+- Migration 7 : `guild_configs.quarantine_role_id` (jamais `@everyone`), `guild_quarantine_overwrites` (état d'origine à trois états de `VIEW_CHANNEL` et `CONNECT` par membre et par salon) et `guild_quarantine_pending_releases`.
+- Rôle de quarantaine créé (« FoxSecura Quarantine », aucune permission, juste sous le rôle le plus haut du bot) ou choisi dans `/config` → Anti-Raid, avec `Right::Whitelist` (propriétaire ou `ADMINISTRATOR`) ; refusé pour `@everyone`, un rôle géré, un rôle non gérable ou portant une permission dangereuse (liste V1). Il n'exempte jamais de la liste blanche.
+- Verrou du rôle (refus de voir, écrire, créer des fils, réagir, se connecter et parler) posé en arrière-plan sur les catégories, salons sans catégorie et salons désynchronisés, puis réappliqué sur `ChannelCreate` et `CategoryCreate`.
+- Mise en quarantaine : garde (propriétaire, bot, liste blanche), opérations sérialisées par membre, retrait optionnel des rôles dangereux (**non rendus à la libération**, listés dans l'incident), pose du rôle avec échecs distingués, verrou au niveau du membre enregistré **avant** chaque modification (double refus préexistant ni touché ni enregistré, ligne existante conservée, ligne supprimée si la modification échoue), timeout de repli seulement s'il est autorisé.
+- Libération : retrait du rôle et restauration exacte des trois états, idempotente ; salon disparu ignoré ; libération en attente reprise toutes les 5 minutes et à la libération suivante, obsolète après une remise en quarantaine. Déclencheurs : « Libérer un membre » dans `/config`, rôle retiré à la main (`GuildMemberUpdate`).
+- Un membre qui part puis revient **garde ses refus** au niveau du membre (Discord conserve ses overwrites).
+- Nouvelles actions de log : `remove_dangerous_roles`, `lock_member_channels`.
+- Coût : un appel API par salon verrouillable (et par membre pour le verrou du membre), faits un par un ; pendant une limitation de débit, serenity attend puis reprend.
+- Nouvelles permissions si la quarantaine est utilisée : `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MODERATE_MEMBERS` (repli timeout) et un rôle de FoxSecura au-dessus du rôle de quarantaine et des membres.
+- `tokio` : fonctionnalités `sync` et `time` déclarées (déjà activées par serenity, aucune nouvelle crate).
 
 ### Anti-Spam
 
