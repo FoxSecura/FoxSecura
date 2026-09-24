@@ -18,7 +18,8 @@ pub use config::{
     MIN_MESSAGE_THRESHOLD, MIN_WINDOW_SECONDS, MessageFloodConfig, MessageFloodConfigError,
 };
 pub use detector::{MessageWindow, evaluate};
-pub use response::{
-    DeleteMessageOutcome, DeleteMessagePlan, MESSAGE_FLOOD_MODULE, build_incident, plan_response,
-};
+pub use response::{MESSAGE_FLOOD_MODULE, build_incident, plan_response};
+// Le plan et le résultat de suppression sont communs à tous les modules qui
+// suppriment un message ; réexportés ici pour les appelants existants.
+pub use crate::protection::shared::{DeleteMessageOutcome, DeleteMessagePlan};
 pub use tracker::{MessageFloodDetection, MessageFloodTracker};

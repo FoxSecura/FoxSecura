@@ -27,7 +27,20 @@ Garde-fous :
 - `@everyone` ne peut pas être exempté (refus dans `/config`, dans le repository et par contrainte SQLite) ;
 - les rôles que FoxSecura attribue lui-même n'exemptent jamais ;
 - si les rôles de l'auteur manquent dans l'événement, aucune exemption par rôle n'est accordée ;
-- un salon ignoré désactive toutes les protections dans ce salon : réservez-le aux salons de confiance (salons du staff, salons de bots).
+- un salon ignoré désactive toutes les protections dans ce salon, filtres de contenu compris : réservez-le aux salons de confiance (salons du staff, salons de bots) ;
+- un membre sur liste blanche échappe aux sanctions, pas aux filtres de contenu : ses liens malveillants, invitations ou mentions de masse sont supprimés comme ceux des autres.
+
+## Intent Message Content
+
+Les filtres de contenu exigent l'intent privilégié `MESSAGE_CONTENT` : le bot reçoit alors le texte de tous les messages des salons qu'il voit. Ce texte n'est analysé qu'en mémoire et n'est jamais stocké en base ; seul un extrait court (120 caractères au plus) d'un message **retenu** par un filtre est envoyé dans le salon de logs `message`. Réservez ce salon au staff.
+
+## Contenu non fiable dans les logs
+
+Un message filtré est par définition hostile. Avant d'être recopié dans un log, tout contenu issu d'un message (extrait, hôte, invitation, motif) est rendu en code en ligne neutralisé (`logs::inline_literal`) : pas de ping (mentions désactivées en plus via `allowed_mentions`), pas de Markdown, pas de lien cliquable (domaines écrits `exemple[.]com`), pas de fausse ligne de log (retours à la ligne aplatis), pas de caractère invisible ou bidirectionnel capable d'inverser l'affichage de la suite. Tout nouveau module qui journalise du contenu doit passer par cette fonction.
+
+## Suppression après modification
+
+Avant de supprimer un message modifié, FoxSecura relit sa version courante par l'API et ne supprime que si elle est identique à la version analysée : une version déjà corrigée par son auteur n'est jamais effacée. Si la relecture échoue (hors 404), rien n'est supprimé à l'aveugle et un incident critique est émis.
 
 ## Fail-safe
 

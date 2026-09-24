@@ -11,6 +11,7 @@ mod client;
 mod exemptions;
 mod migrations;
 mod models;
+mod modules;
 mod repository;
 
 pub use client::{DEFAULT_DATABASE_PATH, Database, DatabaseError};

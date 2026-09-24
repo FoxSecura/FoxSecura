@@ -40,7 +40,7 @@ La **liste blanche** exige un droit plus fort : propriétaire du serveur ou `ADM
 
 | Action | Propriétaire | `ADMINISTRATOR` | `MANAGE_GUILD` seul | Autre membre |
 | --- | --- | --- | --- | --- |
-| Ouvrir `/config`, Anti-Spam, salons ignorés | oui | oui | oui | non |
+| Ouvrir `/config`, Anti-Spam, filtres de contenu, salons ignorés | oui | oui | oui | non |
 | Modifier la liste blanche | oui | oui | non | non |
 
 ### Catégorie Anti-Spam
@@ -59,6 +59,24 @@ La catégorie Anti-Spam est la première catégorie réellement persistée et lu
 - L'état affiché est relu depuis la base après chaque écriture : il correspond exactement à ce que le moteur utilise au message suivant.
 
 Identifiants internes : `foxsecura:config:anti_spam:enable`, `foxsecura:config:anti_spam:disable`, `foxsecura:config:anti_spam:limits` et le modal `foxsecura:config:anti_spam:limits_modal`.
+
+### Filtres de contenu (catégories Anti-Spam et AutoMod)
+
+Un interrupteur par module, persisté dans la table générique `guild_protection_modules` (migration 4) et relu par le pipeline à chaque message. Tous les modules sont **désactivés par défaut**. Voir [Modules de protection](Protection-Modules#filtres-de-contenu-branchés-au-runtime) pour ce que chacun détecte.
+
+| Catégorie | Modules |
+| --- | --- |
+| Anti-Spam | Caractères invisibles (`invisible_char_filter`), Liens malveillants (`malicious_link`), `@everyone` / `@here` (`anti_everyone`), Mentions de masse (`anti_mass_mention`) |
+| AutoMod | Liens adultes (`adult_link`), Invitations Discord (`anti_invite`) |
+
+- Chaque bouton affiche le module et son état persisté (vert = actif) ; un clic enregistre l'**état cible** porté par le bouton, si bien que deux clics simultanés de deux administrateurs aboutissent au même état.
+- Droit exigé : `Right::Config` (propriétaire, `ADMINISTRATOR` ou `MANAGE_GUILD`), revérifié à chaque clic.
+- L'état affiché est relu depuis la base après chaque écriture : « actif » signifie que le moteur applique réellement le filtre au message suivant.
+- La clé de module est validée côté Rust (`ProtectionModule`) : un identifiant de bouton forgé avec une clé inconnue est refusé sans écriture.
+
+Identifiants internes : `foxsecura:config:module:<clé>:on` et `foxsecura:config:module:<clé>:off`.
+
+**Coexistence avec l'anti-spam** : l'anti-spam par rafales garde ses colonnes `anti_spam_*` dans `guild_configs` (interrupteur et seuils, migration 2) ; il n'est pas déplacé dans `guild_protection_modules`, réservée aux modules activables par clé. Les deux sources sont lues dans le même passage SQLite.
 
 ### Catégorie Contrôle d'accès
 
@@ -79,7 +97,7 @@ Identifiants internes : `foxsecura:config:access_control:whitelist_users`, `foxs
 
 ## Important : interface et configuration persistée
 
-Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 3 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche et les salons ignorés. Les autres catégories affichent encore un état de substitution.
+Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 4 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, les salons ignorés et l'activation des filtres de contenu. Les autres catégories affichent encore un état de substitution.
 
 Cela signifie qu'une catégorie visible dans `/config` peut représenter une **surface d'interface prévue** avant que son stockage et son exécution soient entièrement branchés. Les futures PR doivent éviter de présenter un réglage comme actif tant que les trois couches suivantes ne sont pas reliées :
 
@@ -114,9 +132,10 @@ La configuration par défaut active :
 - `GUILDS` ;
 - `GUILD_MODERATION` ;
 - `GUILD_MEMBERS` (privilégié : **Server Members Intent**) ;
-- `GUILD_MESSAGES` : réception des nouveaux messages pour l'anti-spam.
+- `GUILD_MESSAGES` : créations et modifications de messages (anti-spam, filtres de contenu) ;
+- `MESSAGE_CONTENT` (privilégié : **Message Content Intent**) : texte et mentions des messages, lus par les filtres de contenu. Sans lui, Discord livre des messages vides.
 
-`MESSAGE_CONTENT` (intent privilégié) n'est **pas** demandé : l'anti-spam compte les messages à partir de l'auteur, du salon et de l'horodatage, sans lire leur contenu. Il ne sera ajouté qu'avec les modules qui analysent réellement le contenu.
+Si un intent privilégié n'est pas activé dans le portail développeur, Discord ferme la connexion avec le code **4014** et le bot ne démarre pas. FoxSecura intercepte ce cas et affiche quoi activer et où (Discord Developer Portal → application → **Bot** → **Privileged Gateway Intents**). Au-delà de 100 serveurs, ces intents doivent aussi être approuvés par Discord.
 
 Chaque nouvel intent privilégié doit être justifié. FoxSecura ne doit pas demander plus de données Discord que ce qui est nécessaire aux fonctionnalités réellement activées.
 
@@ -130,7 +149,8 @@ Permissions nécessaires aux fonctionnalités branchées :
 
 | Fonctionnalité | Permission du bot | Où |
 | --- | --- | --- |
-| Anti-Spam (suppression du message déclencheur) | `MANAGE_MESSAGES` | salons protégés |
+| Anti-Spam et filtres de contenu (suppression du message) | `MANAGE_MESSAGES` | salons protégés |
+| Filtres de contenu sur un message modifié (relecture de la version courante) | `READ_MESSAGE_HISTORY` | salons protégés |
 | Envoi des incidents | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `message` |
 
-Sans `MANAGE_MESSAGES`, l'anti-spam produit un incident `Critical` avec l'action `Skipped` et le code `MissingPermission`.
+Sans `MANAGE_MESSAGES`, l'anti-spam et les filtres produisent un incident `Critical` avec l'action `Skipped` et le code `MissingPermission`. Sans `READ_MESSAGE_HISTORY`, un message modifié n'est pas supprimé à l'aveugle : l'incident est `Critical` avec l'action `Failed`.

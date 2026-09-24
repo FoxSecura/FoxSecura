@@ -3,4 +3,6 @@
 
 mod detector;
 
-pub use detector::{AntiMassMentionDetectionResult, detect_mass_mention};
+pub use detector::{
+    AntiMassMentionDetectionResult, DEFAULT_MASS_MENTION_THRESHOLD, detect_mass_mention,
+};

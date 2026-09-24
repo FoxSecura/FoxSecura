@@ -19,7 +19,7 @@ La connexion est protégée par un `Mutex`, ce qui donne une surface de synchron
 
 ## Migrations
 
-Le schéma est versionné dans `schema_migrations`. La version actuelle est `3` : la migration `1` crée `guild_configs` et `guild_log_channels`, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, et la migration `3` (`whitelist_and_ignored_channels`) crée les tables de liste blanche et de salons ignorés. Chaque migration s'applique sans perte des données existantes.
+Le schéma est versionné dans `schema_migrations`. La version actuelle est `4` : la migration `1` crée `guild_configs` et `guild_log_channels`, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, la migration `3` (`whitelist_and_ignored_channels`) crée les tables de liste blanche et de salons ignorés, et la migration `4` (`protection_modules`) crée `guild_protection_modules`. Chaque migration s'applique sans perte des données existantes.
 
 ### `guild_configs`
 
@@ -40,7 +40,15 @@ La clé primaire `(guild_id, log_type)` garantit un salon par type et par guild 
 
 Chaque table associe une guild à un identifiant Discord (`user_id`, `role_id` ou `channel_id`, stockés en texte) avec `created_at`. La clé primaire composite `(guild_id, identifiant)` rend les ajouts idempotents, et une suppression de `guild_configs` cascade vers ces tables. `guild_whitelist_roles` refuse `role_id = guild_id` (`@everyone`) par une contrainte `CHECK`.
 
-Les listes sont relues triées numériquement. `Database::message_guard_context` lit en une fois, pour le pipeline de messages, la configuration de la guilde, le statut du salon et le statut de liste blanche de l'auteur.
+Les listes sont relues triées numériquement. `Database::message_guard_context` lit en une fois, pour le pipeline de messages, la configuration de la guilde, le statut du salon, le statut de liste blanche de l'auteur et les modules activés.
+
+### `guild_protection_modules` (migration 4)
+
+Une ligne par module réglé : `(guild_id, module_key, enabled, created_at, updated_at)`, clé primaire composite `(guild_id, module_key)`, cascade depuis `guild_configs`, `enabled` contraint à `0`/`1`. Une table générique plutôt qu'une colonne par module : les modules à venir n'exigeront pas une migration chacun. Absence de ligne = module désactivé.
+
+Les clés sont validées côté Rust par l'énumération `ProtectionModule` : l'API d'écriture n'accepte que ce type, et un identifiant de composant `/config` portant une clé inconnue est refusé. À la lecture, une clé inconnue (écrite par une version plus récente, après un retour arrière) est ignorée plutôt que de couper toutes les protections de la guilde.
+
+L'anti-spam par rafales reste dans les colonnes `anti_spam_*` de `guild_configs` : il porte des seuils en plus de son interrupteur.
 
 ## Validation de domaine
 

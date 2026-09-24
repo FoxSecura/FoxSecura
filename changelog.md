@@ -10,11 +10,13 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 
 - `AppData` porte désormais la base SQLite (`Arc<Database>`) et l'état en mémoire des protections.
 - Ouverture de la base au démarrage via `DATABASE_PATH` (défaut : `data/foxsecura.sqlite3`), migrations appliquées automatiquement.
-- Ajout de l'intent `GUILD_MESSAGES` ; `MESSAGE_CONTENT` volontairement non demandé.
+- Ajout de l'intent `GUILD_MESSAGES`.
+- Ajout de l'intent privilégié `MESSAGE_CONTENT`, nécessaire aux filtres de contenu ; un refus de Discord (code 4014) affiche au démarrage quoi activer et où dans le portail développeur.
+- Dispatch de `MessageUpdate` : les modifications de messages passent par les filtres de contenu (jamais par l'anti-spam).
 - Dispatch de `Message` vers un pipeline de protection des messages ; les erreurs des modules sont journalisées et ne sont jamais propagées au client.
 - Gardes du pipeline : messages hors guilde, de webhook ou d'auteur bot ignorés.
 - Ordre des gardes aligné sur la V1 : hors guilde, salon ignoré, webhook, bot, puis auteur sur liste blanche (aucune sanction).
-- Configuration de la guilde, salon ignoré et liste blanche de l'auteur lus en un seul passage `spawn_blocking` par message.
+- Configuration de la guilde, salon ignoré, liste blanche de l'auteur et modules activés lus en un seul passage `spawn_blocking` par message.
 
 ### Anti-Spam
 
@@ -24,12 +26,22 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Alignement de `message_flood::evaluate` sur la sémantique `count >= seuil` (auparavant `count > limite`).
 - Cœur pur testable sans Discord : `MessageSnapshot`, `screen_message`, `MessageFloodTracker`, `plan_response`, `build_incident`.
 
+### Filtres de contenu
+
+- Six filtres branchés de bout en bout : caractères invisibles, liens malveillants, liens adultes, invitations Discord, `@everyone`/`@here`, mentions de masse (seuil 5).
+- Ordre de la V1 avec court-circuit : le premier filtre qui déclenche arrête la chaîne (une seule suppression, un seul incident par message) ; filtres évalués avant l'anti-spam.
+- Un message retenu par un filtre n'est pas compté par l'anti-spam.
+- Les auteurs sur liste blanche subissent la suppression (correction de contenu) mais aucune sanction ; rien ne s'applique dans un salon ignoré.
+- Messages modifiés analysés avec les mêmes filtres ; la version courante est relue avant suppression pour ne jamais effacer une version déjà corrigée.
+- Incident par module (preuve : hôte, invitation, motif, nombre de mentions, type d'obfuscation ; extrait du message), sévérité `Warning` si supprimé, `Critical` sinon.
+- Plan, résultat de suppression et squelette d'incident mutualisés avec l'anti-spam (`protection::shared`).
+
 ### Liste blanche et salons ignorés
 
 - La liste blanche est une exemption de sanction de l'auteur, jamais un droit d'administration : elle ne donne pas accès à `/config`.
 - Exemption si l'identifiant de l'auteur ou l'un de ses rôles est listé ; rôles absents de l'événement → pas d'exemption par rôle.
 - Paramètre des rôles attribués par FoxSecura (qui n'exemptent jamais), vide tant que vérification, quarantaine et rôle limité ne sont pas portés.
-- Un auteur exempté saute l'anti-spam ; un salon ignoré court-circuite toutes les protections.
+- Un auteur exempté saute l'anti-spam (les filtres de contenu s'appliquent encore) ; un salon ignoré court-circuite toutes les protections.
 - `@everyone` refusé comme rôle exempté.
 
 ### Configuration
@@ -42,10 +54,13 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Repository : ajout et retrait idempotents, test d'appartenance et listes pour la liste blanche et les salons ignorés.
 - Catégorie Contrôle d'accès de `/config` : sélecteurs natifs en bascule pour les utilisateurs, rôles et salons.
 - Liste blanche réservée au propriétaire du serveur et à `ADMINISTRATOR` (`MANAGE_GUILD` ne suffit pas) ; salons ignorés avec l'accès normal à `/config`.
+- Migration SQLite `4` : table générique `guild_protection_modules` (clé composite, suppression en cascade, modules désactivés par défaut) ; clés validées par l'énumération `ProtectionModule`. L'anti-spam garde ses colonnes.
+- `/config` : un interrupteur persistant par filtre de contenu dans les catégories Anti-Spam et AutoMod.
 
 ### Logs
 
 - Ajout de `format_security_log_message` : membre, salon, preuve chiffrée et recommandation, sans ping.
+- Rendu des extraits, domaines et textes issus de messages via `inline_literal` : code en ligne neutralisé (ni formatage, ni lien cliquable, ni fausse ligne, ni caractère invisible ou bidirectionnel).
 
 ## [0.1.0] - 2026-09-07
 

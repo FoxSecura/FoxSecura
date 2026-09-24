@@ -8,5 +8,7 @@
 //! convertir les événements et exécuter les effets Discord.
 
 mod anti_spam;
+mod content_filter;
+mod delete;
 mod incident_log;
 pub mod message;

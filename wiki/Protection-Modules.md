@@ -9,6 +9,12 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Module | Branché au runtime Discord | Activation |
 | --- | --- | --- |
 | Anti-Spam — rafales de messages (`anti_spam::message_flood`) | **oui**, sur `MESSAGE_CREATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Caractères invisibles (`invisible_char_filter`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Liens malveillants (`malicious_link`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Liens adultes (`adult_link`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → AutoMod, désactivé par défaut |
+| Invitations Discord (`anti_invite`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → AutoMod, désactivé par défaut |
+| `@everyone` / `@here` (`anti_everyone`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
+| Mentions de masse (`anti_mass_mention`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
 | Liste blanche et salons ignorés (`shared::exemption`) | **oui**, gardes du pipeline de messages | `/config` → Contrôle d'accès, vides par défaut |
 | Tous les autres modules | non (moteurs testés isolément) | — |
 
@@ -87,7 +93,7 @@ Une erreur du module est journalisée et n'interrompt ni le pipeline, ni le clie
 
 **Limites connues** : l'état des rafales est en mémoire d'un seul processus (perdu au redémarrage, non partagé entre plusieurs instances). Chaque message au-delà du seuil dans la fenêtre est supprimé et produit un incident, comme dans la V1.
 
-**Intents et permissions requis** : intent `GUILD_MESSAGES` (non privilégié) ; `MESSAGE_CONTENT` n'est pas nécessaire pour compter les messages. Permissions du bot : `MANAGE_MESSAGES` dans les salons protégés, `SEND_MESSAGES` et `VIEW_CHANNEL` dans le salon de logs.
+**Intents et permissions requis** : intent `GUILD_MESSAGES` (non privilégié) ; l'anti-spam seul n'a pas besoin du contenu, mais `MESSAGE_CONTENT` est demandé pour les filtres de contenu. Permissions du bot : `MANAGE_MESSAGES` dans les salons protégés, `SEND_MESSAGES` et `VIEW_CHANNEL` dans le salon de logs.
 
 ### Liste blanche et salons ignorés
 
@@ -106,13 +112,55 @@ Ordre des gardes du pipeline de messages (V1) :
 2. **salon ignoré → aucune protection** ;
 3. message de webhook → ignoré ;
 4. auteur bot → ignoré ;
-5. **auteur sur liste blanche → aucune sanction**. Dans la V1, il passe encore par les « corrections de contenu de confiance » ; ces modules de contenu n'existent pas en Rust, donc concrètement l'auteur saute l'anti-spam. Le bras `MessageScope::ExemptAuthor` du pipeline est le point d'extension prévu.
+5. **auteur sur liste blanche → aucune sanction**. Comme dans la V1, il passe encore par les corrections de contenu : les [filtres de contenu](#filtres-de-contenu-branchés-au-runtime), qui ne font que supprimer, s'appliquent à lui ; l'anti-spam est sauté.
 
 Les gardes webhook et bot sont évaluées avant la lecture du salon en base : les gardes 2 à 4 aboutissent toutes à « aucune protection », l'issue est donc identique à la V1 et les messages de bots ou de webhooks n'entraînent aucune requête SQLite.
 
-**Performance** : configuration de la guilde, statut du salon et statut de l'auteur sont lus en un seul passage `spawn_blocking`, sous un seul verrou (`Database::message_guard_context`). Une guilde jamais configurée ne coûte qu'une requête ; un salon ignoré en coûte deux. Il n'y a pas encore de cache par guilde : chaque message relit la base.
+**Performance** : configuration de la guilde, statut du salon, statut de l'auteur et modules activés sont lus en un seul passage `spawn_blocking`, sous un seul verrou (`Database::message_guard_context`). Une guilde jamais configurée ne coûte qu'une requête ; un salon ignoré en coûte deux. Il n'y a pas encore de cache par guilde : chaque message relit la base.
 
 **Limites connues** : seul l'identifiant du salon du message est comparé ; un fil d'un salon ignoré n'est pas ignoré tant que le fil lui-même n'est pas ajouté.
+
+### Filtres de contenu (branchés au runtime)
+
+Six modules suppriment un message selon son contenu, sans aucune sanction du membre. Détecteurs dans leurs familles (`anti_spam::*`, `automod::*`) ; chaîne pure dans `protection::content_filter` ; effets Discord dans `src/app/pipeline/content_filter.rs`.
+
+| Ordre | Module (clé) | Déclenche si… | Preuve dans l'incident |
+| --- | --- | --- | --- |
+| 1 | `invisible_char_filter` | caractère invisible (U+200B, U+FEFF, balises U+E0000…), contrôle bidirectionnel (U+202A–U+202E), isolat non fermé, ALM hors contexte arabe/hébreu, ou au moins 5 marques combinantes empilées (zalgo) | type et point de code |
+| 2 | `malicious_link` | IP logger, raccourcisseur, faux domaine Steam/Discord, motif « free nitro », punycode trompeur ; ou lien risqué (IP, identifiants, TLD suspect, sous-domaines profonds) posté par un compte de moins de 7 jours ou un membre arrivé depuis moins de 10 minutes | motif ou hôte + raison |
+| 3 | `adult_link` | domaine, libellé d'hôte, TLD (`.xxx`, `.porn`…) ou segment de chemin adulte | hôte |
+| 4 | `anti_invite` | invitation `discord.gg`, `discord.com/invite`, `discordapp.com/invite`, `discord.me`, `dsc.gg` avec un code | invitation |
+| 5 | `anti_everyone` | Discord signale une vraie mention `@everyone`/`@here` (auteur autorisé) ; un simple texte « @everyone » qui n'a notifié personne est ignoré | mention |
+| 6 | `anti_mass_mention` | au moins 5 utilisateurs et rôles mentionnés (seuil de la V1, non réglable) | `observé/seuil mentions` |
+
+Les hôtes sont comparés sans tenir compte de la casse (`HTTPS://DISCORD.GG/x` est une invitation). Chaque incident contient aussi un extrait du message (120 caractères au plus) et, pour une modification, la mention « message modifié ».
+
+**Ordre et court-circuit** (spécification V1) : les modules activés sont évalués dans l'ordre du tableau ; **le premier qui déclenche arrête la chaîne**. Un message ne produit jamais deux suppressions ni deux incidents. Les filtres passent **avant** l'anti-spam.
+
+**Anti-spam et messages filtrés** : un message retenu par un filtre n'est **pas** compté dans la fenêtre anti-spam, que sa suppression ait réussi ou non. Choix retenu : un message = un seul module responsable, donc un seul incident ; et un message supprimé n'a plus d'effet de flood. Conséquence assumée : une rafale d'invitations est traitée message par message par l'anti-invite (chacune supprimée) et ne déclenche pas en plus l'anti-spam.
+
+**Portées** (`route_message`) :
+
+| Portée | Filtres de contenu | Anti-spam |
+| --- | --- | --- |
+| Salon ignoré | non | non |
+| Auteur sur liste blanche | **oui** (suppression, jamais de sanction) | non |
+| Autres membres | oui | oui, si aucun filtre n'a déclenché et s'il s'agit d'une création |
+
+**Modifications de messages** : `MESSAGE_UPDATE` passe par les mêmes filtres (un message propre modifié en message malveillant est supprimé). Seules les vraies modifications de texte sont analysées (`edited_timestamp` et contenu présents) : les mises à jour d'aperçus de liens ou d'épinglage sont ignorées. Une modification n'est jamais comptée par l'anti-spam. Avant de supprimer, le message est **relu par l'API** et comparé à la version analysée (texte, indicateur `@everyone`, nombre de mentions) :
+
+- version identique → suppression ;
+- version différente (le membre a déjà corrigé ou remodifié) → rien, la nouvelle version est analysée par son propre événement ;
+- message introuvable (404) → rien ;
+- relecture impossible (403 `READ_MESSAGE_HISTORY` manquant, 429, 5xx) → pas de suppression à l'aveugle, incident `Critical` avec l'action `failed` pour que l'équipe vérifie le message.
+
+**Action et incident** : même classification que l'anti-spam (`deleted` → `Success`, `not_deletable` → `Skipped` / `MissingPermission`, `failed` → `Failed`), sévérité `Warning` si supprimé et `Critical` sinon, module = clé du filtre. Plan, résultat et squelette d'incident sont mutualisés dans `protection::shared::message_deletion` ; la suppression Discord dans `src/app/pipeline/delete.rs`.
+
+**Rendu dans le salon de logs** : toute valeur issue d'un message (extrait, hôte, invitation, motif) est rendue par `logs::inline_literal` en code en ligne : accents graves remplacés, retours à la ligne aplatis, caractères invisibles et bidirectionnels remplacés par `�`, zalgo réduit, longueur bornée ; les domaines sont en plus neutralisés (`https[:]//exemple[.]com`). Un contenu hostile ne peut donc ni notifier (les mentions sont de toute façon désactivées), ni injecter de formatage, ni simuler une autre ligne du log, ni produire un lien cliquable.
+
+**Intents et permissions requis** : `GUILD_MESSAGES` et **`MESSAGE_CONTENT` (privilégié)** ; sans ce dernier, Discord livre des messages vides et aucun filtre ne peut déclencher. Permissions : `MANAGE_MESSAGES` dans les salons protégés, `READ_MESSAGE_HISTORY` pour relire un message modifié, `VIEW_CHANNEL` et `SEND_MESSAGES` dans le salon de logs.
+
+**Hors périmètre de cette tranche** : `anti_scam` (sanctions graduées), `attachment_filter` et `bad_words` (listes configurables).
 
 ### Liens suspects
 

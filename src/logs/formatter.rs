@@ -99,8 +99,12 @@ pub fn format_security_log_message(language: Language, incident: &SecurityIncide
     lines.join("\n")
 }
 
-/// Rend les preuves chiffrées. Les autres variantes (extraits de contenu,
-/// domaines…) seront rendues par les modules qui les produisent.
+/// Rend une preuve sur une ligne.
+///
+/// Toute valeur issue d'un message (extrait, domaine, motif, texte) passe par
+/// [`inline_literal`] : elle ne peut ni notifier, ni injecter de formatage, ni
+/// produire un lien cliquable. Les autres variantes seront rendues par les
+/// modules qui les produisent.
 fn format_evidence(language: Language, evidence: &SecurityEvidence) -> Option<String> {
     match evidence {
         SecurityEvidence::Threshold {
@@ -118,9 +122,124 @@ fn format_evidence(language: Language, evidence: &SecurityEvidence) -> Option<St
             }
             Some(value)
         }
-        SecurityEvidence::Text { label, value } => Some(format!("{label} = {value}")),
+        SecurityEvidence::Text { label, value } => Some(format!(
+            "{label} = {}",
+            inline_literal(value, LITERAL_MAX_CHARS)
+        )),
+        SecurityEvidence::Content { excerpt } => Some(format!(
+            "{} = {}",
+            text(language, TextKey::LogsEvidenceExcerpt),
+            inline_literal(excerpt, LITERAL_MAX_CHARS)
+        )),
+        SecurityEvidence::Domain {
+            domain, signals, ..
+        } => {
+            let mut value = format!(
+                "{} = {}",
+                text(language, TextKey::LogsEvidenceDomain),
+                inline_literal(&defang(domain), LITERAL_MAX_CHARS)
+            );
+            for signal in signals {
+                value.push_str(&format!(" ({})", inline_literal(signal, LITERAL_MAX_CHARS)));
+            }
+            Some(value)
+        }
         _ => None,
     }
+}
+
+/// Longueur maximale d'une valeur rendue dans un log, en caractères.
+const LITERAL_MAX_CHARS: usize = 150;
+
+/// Rend une valeur non fiable en code en ligne Discord, sans possibilité d'en
+/// sortir.
+///
+/// - Le code en ligne désactive le Markdown, les liens et le rendu des
+///   mentions ; les accents graves sont remplacés (`ˋ`) pour qu'aucun ne ferme
+///   le bloc.
+/// - Les retours à la ligne et caractères de contrôle deviennent des espaces :
+///   une valeur ne peut pas simuler une autre ligne du log.
+/// - Les caractères invisibles, bidirectionnels ou de balise deviennent `�`,
+///   et les marques combinantes empilées (zalgo) sont réduites à une seule : la
+///   suite du message de log reste lisible et dans le bon sens.
+/// - La valeur est tronquée à `max_chars` caractères.
+pub fn inline_literal(value: &str, max_chars: usize) -> String {
+    let mut rendered = String::with_capacity(value.len().min(max_chars * 4) + 2);
+    rendered.push('`');
+
+    let mut count = 0;
+    let mut previous_combining = false;
+    let mut truncated = false;
+    for character in value.chars() {
+        let combining = is_combining_mark(character);
+        if combining && previous_combining {
+            continue;
+        }
+        previous_combining = combining;
+
+        if count == max_chars {
+            truncated = true;
+            break;
+        }
+        count += 1;
+
+        rendered.push(match character {
+            '`' => 'ˋ',
+            character if character.is_control() => ' ',
+            character if is_hidden_character(character) => '\u{fffd}',
+            character => character,
+        });
+    }
+
+    if truncated {
+        rendered.push('…');
+    }
+    if count == 0 {
+        rendered.push(' ');
+    }
+    rendered.push('`');
+    rendered
+}
+
+/// Neutralise un domaine ou une URL (`https[:]//exemple[.]com`) : même copié
+/// hors du bloc de code, il ne forme plus un lien.
+fn defang(value: &str) -> String {
+    value.replace("://", "[:]//").replace('.', "[.]")
+}
+
+/// Caractères invisibles ou qui modifient l'affichage du texte qui suit :
+/// format Unicode (Cf), direction, balises, remplissages Hangul. Les liants
+/// U+200C et U+200D sont conservés : ils composent des émojis et certaines
+/// écritures.
+fn is_hidden_character(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x00ad
+            | 0x034f
+            | 0x061c
+            | 0x115f
+            | 0x1160
+            | 0x17b4
+            | 0x17b5
+            | 0x180b..=0x180f
+            | 0x200b
+            | 0x200e
+            | 0x200f
+            | 0x2028..=0x202e
+            | 0x205f..=0x206f
+            | 0x3164
+            | 0xfeff
+            | 0xffa0
+            | 0xfff9..=0xfffb
+            | 0xe0000..=0xe0fff
+    )
+}
+
+fn is_combining_mark(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x0300..=0x036f | 0x1ab0..=0x1aff | 0x1dc0..=0x1dff | 0x20d0..=0x20ff | 0xfe20..=0xfe2f
+    )
 }
 
 const fn unit_key(unit: ThresholdUnit) -> TextKey {

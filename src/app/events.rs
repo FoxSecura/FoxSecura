@@ -21,6 +21,9 @@ pub async fn handle(
         serenity::FullEvent::Message { new_message } => {
             pipeline::message::handle(ctx, data, new_message).await;
         }
+        serenity::FullEvent::MessageUpdate { event, .. } => {
+            pipeline::message::handle_update(ctx, data, event).await;
+        }
         serenity::FullEvent::InteractionCreate { interaction } => {
             if let Err(error) = crate::commands::handle_interaction(ctx, data, interaction).await {
                 eprintln!("[interaction] erreur lors du traitement d'un composant : {error}");

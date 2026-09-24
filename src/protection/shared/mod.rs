@@ -5,6 +5,8 @@ mod action_burst;
 mod decision;
 mod exemption;
 mod message;
+mod message_deletion;
+mod module;
 mod url_signal;
 
 pub use action_burst::{
@@ -18,4 +20,6 @@ pub use message::{
     DISCORD_EPOCH_MILLIS, GuildMessage, MessageIgnoreReason, MessageSnapshot, screen_message,
     snowflake_timestamp,
 };
+pub use message_deletion::{DeleteMessageOutcome, DeleteMessagePlan, message_incident};
+pub use module::{ModuleSet, ProtectionModule, UnknownModuleKey};
 pub use url_signal::{UrlSignal, extract_url_signals, host_matches};
