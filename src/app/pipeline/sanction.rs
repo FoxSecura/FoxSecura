@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Exécution d'une sanction (timeout, expulsion, ban) contre un membre.
+//! Exécution d'une sanction (timeout, expulsion, ban) ou d'un renommage
+//! contre un membre.
 //!
 //! La décision et le classement des échecs sont dans
 //! `foxsecura::protection::shared::sanction` ; ce module relève l'état du
@@ -12,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use foxsecura::logs::FailureCode;
 use foxsecura::protection::shared::{
     BotPermissions, BotStanding, SanctionContext, SanctionKind, SanctionOutcome, TargetLookup,
-    TargetStanding, classify_sanction_http_failure, precheck_sanction,
+    TargetStanding, classify_sanction_http_failure, precheck_nickname_change, precheck_sanction,
 };
 use poise::serenity_prelude as serenity;
 
@@ -30,26 +31,23 @@ pub struct SanctionRequest<'a> {
     pub reason: &'a str,
 }
 
+/// Renommage à exécuter (correction de pseudo, pas une sanction).
+pub struct NicknameRequest<'a> {
+    pub guild_id: u64,
+    pub user_id: u64,
+    /// Rôles joints à l'événement ; `None` : lecture du membre.
+    pub member_roles: Option<&'a [u64]>,
+    pub nickname: &'a str,
+    pub reason: &'a str,
+}
+
 /// Exécute la sanction et classe le résultat. Ne panique jamais et ne bloque
 /// rien : un échec est un résultat journalisé.
 pub async fn execute(ctx: &serenity::Context, request: &SanctionRequest<'_>) -> SanctionOutcome {
     let guild_id = serenity::GuildId::new(request.guild_id);
     let user_id = serenity::UserId::new(request.user_id);
 
-    let roles = match request.member_roles {
-        Some(roles) => Ok(roles.to_vec()),
-        None => match guild_id.member(ctx, user_id).await {
-            Ok(member) => Ok(member.roles.iter().map(|role| role.get()).collect()),
-            Err(error) => Err(match delete::http_status(&error) {
-                Some(404) => TargetLookup::NotFound,
-                _ => TargetLookup::Unavailable {
-                    details: error.to_string(),
-                },
-            }),
-        },
-    };
-
-    let context = sanction_context(ctx, request, roles);
+    let context = resolve_context(ctx, guild_id, user_id, request.member_roles).await;
     if let Err(outcome) = precheck_sanction(request.kind, &context) {
         return outcome;
     }
@@ -94,6 +92,60 @@ pub async fn execute(ctx: &serenity::Context, request: &SanctionRequest<'_>) -> 
         }
     };
 
+    classify(result)
+}
+
+/// Renomme le membre et classe le résultat, comme une sanction.
+pub async fn execute_nickname(
+    ctx: &serenity::Context,
+    request: &NicknameRequest<'_>,
+) -> SanctionOutcome {
+    let guild_id = serenity::GuildId::new(request.guild_id);
+    let user_id = serenity::UserId::new(request.user_id);
+
+    let context = resolve_context(ctx, guild_id, user_id, request.member_roles).await;
+    if let Err(outcome) = precheck_nickname_change(&context) {
+        return outcome;
+    }
+
+    let result = guild_id
+        .edit_member(
+            &ctx.http,
+            user_id,
+            serenity::EditMember::new()
+                .nickname(request.nickname)
+                .audit_log_reason(request.reason),
+        )
+        .await
+        .map(|_| ());
+    classify(result)
+}
+
+/// Rôles du membre (joints à l'événement, sinon lus par l'API), puis état du
+/// cache.
+async fn resolve_context(
+    ctx: &serenity::Context,
+    guild_id: serenity::GuildId,
+    user_id: serenity::UserId,
+    member_roles: Option<&[u64]>,
+) -> SanctionContext {
+    let roles = match member_roles {
+        Some(roles) => Ok(roles.to_vec()),
+        None => match guild_id.member(ctx, user_id).await {
+            Ok(member) => Ok(member.roles.iter().map(|role| role.get()).collect()),
+            Err(error) => Err(match delete::http_status(&error) {
+                Some(404) => TargetLookup::NotFound,
+                _ => TargetLookup::Unavailable {
+                    details: error.to_string(),
+                },
+            }),
+        },
+    };
+
+    sanction_context(ctx, guild_id, user_id, roles)
+}
+
+fn classify(result: serenity::Result<()>) -> SanctionOutcome {
     match result {
         Ok(()) => SanctionOutcome::Applied,
         Err(serenity::Error::Http(error)) => classify_sanction_http_failure(
@@ -118,12 +170,13 @@ fn timeout_deadline(now: SystemTime, duration: std::time::Duration) -> Option<se
 /// Relève l'état du cache. Le verrou du cache est relâché avant tout `.await`.
 fn sanction_context(
     ctx: &serenity::Context,
-    request: &SanctionRequest<'_>,
+    guild_id: serenity::GuildId,
+    user_id: serenity::UserId,
     roles: Result<Vec<u64>, TargetLookup>,
 ) -> SanctionContext {
     let bot_id = ctx.cache.current_user().id;
     let mut context = SanctionContext {
-        target_id: request.user_id,
+        target_id: user_id.get(),
         bot_id: bot_id.get(),
         owner_id: None,
         bot: None,
@@ -136,7 +189,7 @@ fn sanction_context(
         },
     };
 
-    let Some(guild) = ctx.cache.guild(serenity::GuildId::new(request.guild_id)) else {
+    let Some(guild) = ctx.cache.guild(guild_id) else {
         return context;
     };
     context.owner_id = Some(guild.owner_id.get());

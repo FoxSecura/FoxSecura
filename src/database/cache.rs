@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Cache mémoire, par guilde, de ce que lit le pipeline de messages.
+//! Cache mémoire, par guilde, de ce que lisent les pipelines de messages et
+//! de membres.
 //!
 //! Sans cache, chaque message relit en SQLite la configuration, le salon
 //! ignoré, la liste blanche, les modules activés et les mots personnalisés
-//! (jusqu'à six requêtes par message). Avec le cache, une guilde est chargée
-//! une fois (six requêtes), puis chaque message est servi depuis la mémoire
-//! jusqu'à la prochaine écriture de sa configuration.
+//! (jusqu'à six requêtes par message), et chaque arrivée la liste noire en
+//! plus. Avec le cache, une guilde est chargée une fois (sept requêtes),
+//! puis chaque événement est servi depuis la mémoire jusqu'à la prochaine
+//! écriture de sa configuration.
 //!
 //! # Cohérence
 //!
@@ -37,7 +39,8 @@ use super::GuildConfig;
 /// Nombre de guildes conservées par défaut.
 pub const DEFAULT_GUILD_CACHE_CAPACITY: usize = 1024;
 
-/// Tout ce que le pipeline de messages lit pour une guilde.
+/// Tout ce que les pipelines de messages et de membres lisent pour une
+/// guilde.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GuildSnapshot {
     /// `None` si la guilde n'a jamais été configurée : rien n'est activé.
@@ -46,6 +49,7 @@ pub(crate) struct GuildSnapshot {
     pub ignored_channels: Vec<u64>,
     pub whitelist_users: Vec<u64>,
     pub whitelist_roles: Vec<u64>,
+    pub blacklist_users: Vec<u64>,
     pub enabled_modules: ModuleSet,
     pub custom_bad_words: Arc<[String]>,
 }
@@ -53,7 +57,7 @@ pub(crate) struct GuildSnapshot {
 /// Compteurs du cache, pour mesurer les lectures SQLite évitées.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GuildCacheStats {
-    /// Messages servis depuis la mémoire.
+    /// Événements servis depuis la mémoire.
     pub hits: u64,
     /// Chargements depuis SQLite.
     pub loads: u64,
@@ -148,6 +152,7 @@ mod tests {
             ignored_channels: Vec::new(),
             whitelist_users: Vec::new(),
             whitelist_roles: Vec::new(),
+            blacklist_users: Vec::new(),
             enabled_modules: ModuleSet::empty(),
             custom_bad_words: Arc::from([]),
         })

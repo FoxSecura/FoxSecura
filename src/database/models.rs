@@ -62,6 +62,22 @@ pub struct MessageGuardContext {
     pub custom_bad_words: Arc<[String]>,
 }
 
+/// Données lues en un seul passage pour une arrivée ou une mise à jour de
+/// membre.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberGuardContext {
+    /// `None` si la guilde n'a jamais été configurée : rien n'est activé.
+    pub guild_config: Option<GuildConfig>,
+    /// L'utilisateur est sur la liste noire (migration 6).
+    pub blacklisted: bool,
+    /// L'identifiant de l'utilisateur est sur la liste blanche.
+    pub user_whitelisted: bool,
+    /// Rôles de la liste blanche de la guilde.
+    pub whitelist_roles: Vec<u64>,
+    /// Modules de protection activés.
+    pub enabled_modules: ModuleSet,
+}
+
 pub(crate) fn parse_language(value: &str) -> Result<Language, DatabaseError> {
     Language::from_locale(value).ok_or_else(|| DatabaseError::InvalidLanguage(value.to_owned()))
 }

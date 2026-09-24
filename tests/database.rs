@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::{
     BadWordsSettings, Database, DatabaseError, GuildExemptions, LATEST_SCHEMA_VERSION,
-    MessageGuardContext,
+    MemberGuardContext, MessageGuardContext,
 };
 use foxsecura::i18n::Language;
 use foxsecura::logs::LogType;
@@ -1801,4 +1801,153 @@ fn schema_rejects_out_of_range_new_account_min_age() {
     }
     drop(connection);
     fs::remove_dir_all(directory).unwrap();
+}
+
+// --- Contexte des membres ---
+
+#[test]
+fn member_guard_context_of_unconfigured_guild_is_empty_and_read_only() {
+    let database = Database::open_in_memory().unwrap();
+
+    assert_eq!(
+        database.member_guard_context(1, 2).unwrap(),
+        MemberGuardContext {
+            guild_config: None,
+            blacklisted: false,
+            user_whitelisted: false,
+            whitelist_roles: Vec::new(),
+            enabled_modules: ModuleSet::empty(),
+        }
+    );
+    assert_eq!(database.find_guild_config(1).unwrap(), None);
+}
+
+#[test]
+fn member_guard_context_reads_lists_modules_and_minimum_age_in_one_pass() {
+    let database = Database::open_in_memory().unwrap();
+    database.add_blacklist_user(1, 20).unwrap();
+    database.add_whitelist_user(1, 30).unwrap();
+    database.add_whitelist_role(1, 50).unwrap();
+    database.set_new_account_min_age(1, 14).unwrap();
+    database
+        .set_protection_module(1, ProtectionModule::AntiBot, true)
+        .unwrap();
+    // Un salon ignoré ne concerne pas les arrivées.
+    database.add_ignored_channel(1, 20).unwrap();
+
+    let blacklisted = database.member_guard_context(1, 20).unwrap();
+    assert!(blacklisted.blacklisted);
+    assert!(!blacklisted.user_whitelisted);
+    assert_eq!(blacklisted.whitelist_roles, vec![50]);
+    assert_eq!(
+        blacklisted.guild_config.unwrap().new_account_min_age_days,
+        14
+    );
+    assert!(
+        blacklisted
+            .enabled_modules
+            .contains(ProtectionModule::AntiBot)
+    );
+
+    let whitelisted = database.member_guard_context(1, 30).unwrap();
+    assert!(whitelisted.user_whitelisted && !whitelisted.blacklisted);
+
+    // Une autre guilde ne voit rien.
+    assert!(!database.member_guard_context(2, 20).unwrap().blacklisted);
+
+    // Servi par le cache : une seule lecture SQLite par guilde.
+    let loads = database.guild_cache_stats().loads;
+    database.member_guard_context(1, 20).unwrap();
+    database.message_guard_context(1, 3, 20).unwrap();
+    assert_eq!(database.guild_cache_stats().loads, loads);
+}
+
+/// Même vérification que `assert_write_invalidates`, sur le contexte des
+/// membres.
+fn assert_member_write_invalidates(
+    database: &Database,
+    label: &str,
+    write: impl FnOnce(&Database),
+    check: impl FnOnce(&MemberGuardContext) -> bool,
+) {
+    database.member_guard_context(1, 20).unwrap();
+    database.member_guard_context(2, 20).unwrap();
+    let before = database.guild_cache_stats();
+
+    write(database);
+
+    let context = database.member_guard_context(1, 20).unwrap();
+    database.member_guard_context(2, 20).unwrap();
+    let after = database.guild_cache_stats();
+    assert!(after.invalidations > before.invalidations, "{label}");
+    assert_eq!(after.loads - before.loads, 1, "{label}");
+    assert!(check(&context), "{label}");
+}
+
+#[test]
+fn member_configuration_writes_invalidate_the_guild_cache() {
+    let database = Database::open_in_memory().unwrap();
+    database.guild_config(1).unwrap();
+    database.guild_config(2).unwrap();
+
+    assert_member_write_invalidates(
+        &database,
+        "ajout à la liste noire",
+        |database| {
+            database.add_blacklist_user(1, 20).unwrap();
+        },
+        |context| context.blacklisted,
+    );
+    assert_member_write_invalidates(
+        &database,
+        "retrait de la liste noire",
+        |database| {
+            database.remove_blacklist_user(1, 20).unwrap();
+        },
+        |context| !context.blacklisted,
+    );
+    assert_member_write_invalidates(
+        &database,
+        "âge minimal",
+        |database| {
+            database.set_new_account_min_age(1, 30).unwrap();
+        },
+        |context| {
+            context
+                .guild_config
+                .as_ref()
+                .unwrap()
+                .new_account_min_age_days
+                == 30
+        },
+    );
+    assert_member_write_invalidates(
+        &database,
+        "module des arrivées",
+        |database| {
+            database
+                .set_protection_module(1, ProtectionModule::AntiNicknameHoisting, true)
+                .unwrap();
+        },
+        |context| {
+            context
+                .enabled_modules
+                .contains(ProtectionModule::AntiNicknameHoisting)
+        },
+    );
+    assert_member_write_invalidates(
+        &database,
+        "liste blanche",
+        |database| {
+            database.add_whitelist_user(1, 20).unwrap();
+        },
+        |context| context.user_whitelisted,
+    );
+
+    // Écriture refusée (listes exclusives, âge hors bornes) : cache cohérent.
+    assert!(database.add_blacklist_user(1, 20).is_err());
+    assert!(database.set_new_account_min_age(1, 0).is_err());
+    let context = database.member_guard_context(1, 20).unwrap();
+    assert!(!context.blacklisted && context.user_whitelisted);
+    assert_eq!(context.guild_config.unwrap().new_account_min_age_days, 30);
 }

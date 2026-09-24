@@ -11,7 +11,6 @@ use foxsecura::protection::anti_raid::anti_new_account::{
     AntiNewAccountInput, DEFAULT_MIN_ACCOUNT_AGE_DAYS, MIN_ACCOUNT_AGE_DAYS_RANGE,
     is_valid_min_account_age_days,
 };
-use foxsecura::protection::member_join::MemberRef;
 use foxsecura::protection::member_join::anti_bot::{
     ANTI_BOT_SANCTION, AntiBotPlan, anti_bot_audit_reason, anti_bot_response,
     authorized_bot_response, plan_anti_bot,
@@ -27,7 +26,12 @@ use foxsecura::protection::member_join::new_account::{
     NEW_ACCOUNT_BAN, NewAccountExemption, NewAccountPlan, exempt_new_account_response,
     new_account_audit_reason, new_account_ban_response, plan_new_account,
 };
-use foxsecura::protection::shared::{SanctionOutcome, SanctionSkip, is_foxsecura_audit_reason};
+use foxsecura::protection::member_join::{
+    JOIN_ORDER, JoinChain, JoinStep, MemberRef, ModuleResult, display_name_changed,
+};
+use foxsecura::protection::shared::{
+    ModuleSet, ProtectionModule, SanctionOutcome, SanctionSkip, is_foxsecura_audit_reason,
+};
 
 const MEMBER: MemberRef = MemberRef {
     guild_id: 1,
@@ -498,4 +502,156 @@ fn refused_rename_is_critical_and_classified() {
         "FoxSecura Anti-Nickname Hoisting"
     );
     assert!(is_foxsecura_audit_reason(&anti_hoisting_audit_reason()));
+}
+
+// --- Chaîne des arrivées ---
+
+fn all_join_modules() -> ModuleSet {
+    [
+        ProtectionModule::AntiBot,
+        ProtectionModule::AntiNewAccount,
+        ProtectionModule::AntiNicknameHoisting,
+    ]
+    .into_iter()
+    .collect()
+}
+
+const DETECTED: ModuleResult = ModuleResult {
+    detected: true,
+    action_applied: true,
+    terminal: false,
+};
+
+const TERMINAL: ModuleResult = ModuleResult {
+    detected: true,
+    action_applied: true,
+    terminal: true,
+};
+
+/// Parcourt la chaîne avec un exécuteur factice ; renvoie les étapes
+/// exécutées.
+fn run(enabled: ModuleSet, mut outcome: impl FnMut(JoinStep) -> ModuleResult) -> JoinChain {
+    let mut chain = JoinChain::new(enabled);
+    while let Some(step) = chain.next_step() {
+        chain.record(step, outcome(step));
+    }
+    chain
+}
+
+fn steps(chain: &JoinChain) -> Vec<JoinStep> {
+    chain.results().iter().map(|(step, _)| *step).collect()
+}
+
+#[test]
+fn join_chain_follows_the_v1_order() {
+    assert_eq!(
+        JOIN_ORDER,
+        [
+            JoinStep::Blacklist,
+            JoinStep::AntiBot,
+            JoinStep::AntiNewAccount,
+            JoinStep::AntiNicknameHoisting,
+        ]
+    );
+
+    let chain = run(all_join_modules(), |_| ModuleResult::NOT_DETECTED);
+    assert_eq!(steps(&chain), JOIN_ORDER);
+    assert_eq!(chain.stopped_by(), None);
+}
+
+#[test]
+fn disabled_modules_are_skipped_but_the_blacklist_always_runs() {
+    let chain = run(ModuleSet::empty(), |_| ModuleResult::NOT_DETECTED);
+    assert_eq!(steps(&chain), [JoinStep::Blacklist]);
+
+    let only_hoisting: ModuleSet = [ProtectionModule::AntiNicknameHoisting]
+        .into_iter()
+        .collect();
+    let chain = run(only_hoisting, |_| ModuleResult::NOT_DETECTED);
+    assert_eq!(
+        steps(&chain),
+        [JoinStep::Blacklist, JoinStep::AntiNicknameHoisting]
+    );
+    assert_eq!(JoinStep::Blacklist.module(), None);
+}
+
+#[test]
+fn terminal_result_stops_the_chain() {
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiBot => TERMINAL,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(steps(&chain), [JoinStep::Blacklist, JoinStep::AntiBot]);
+    assert_eq!(chain.stopped_by(), Some(JoinStep::AntiBot));
+
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiNewAccount => TERMINAL,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    // Un compte banni n'est pas renommé.
+    assert!(!steps(&chain).contains(&JoinStep::AntiNicknameHoisting));
+}
+
+#[test]
+fn blacklist_with_a_failed_ban_still_stops_the_chain() {
+    let response = blacklist_response(
+        Language::French,
+        MEMBER,
+        &failed(FailureCode::MissingPermission),
+    );
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::Blacklist => response.result,
+        _ => panic!("aucun module ne doit suivre la liste noire : {step:?}"),
+    });
+
+    assert_eq!(steps(&chain), [JoinStep::Blacklist]);
+    assert_eq!(chain.stopped_by(), Some(JoinStep::Blacklist));
+    assert!(!chain.results()[0].1.action_applied);
+}
+
+#[test]
+fn non_terminal_results_accumulate() {
+    // Bot autorisé (info), compte ancien, pseudo corrigé.
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiBot | JoinStep::AntiNicknameHoisting => DETECTED,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+
+    assert_eq!(steps(&chain), JOIN_ORDER);
+    assert_eq!(
+        chain
+            .results()
+            .iter()
+            .filter(|(_, result)| result.detected)
+            .count(),
+        2
+    );
+    assert_eq!(chain.stopped_by(), None);
+}
+
+#[test]
+fn failed_kick_lets_the_chain_continue() {
+    let refused = anti_bot_response(
+        Language::French,
+        MEMBER,
+        &SanctionOutcome::Skipped(SanctionSkip::RoleHierarchy { target: 8, bot: 3 }),
+    );
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiBot => refused.result,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(steps(&chain), JOIN_ORDER);
+}
+
+#[test]
+fn member_update_is_screened_only_when_the_display_name_changed() {
+    assert!(!display_name_changed(Some("Alice"), "Alice"));
+    assert!(display_name_changed(Some("Alice"), "!Alice"));
+    // Ancien nom inconnu : analysé (idempotent).
+    assert!(display_name_changed(None, "Alice"));
+
+    // Renommage par FoxSecura : le nom change, mais n'est plus hoisté.
+    let fix = plan_nickname_fix("!Alice").unwrap();
+    assert!(display_name_changed(Some(&fix.old), &fix.new));
+    assert_eq!(plan_nickname_fix(&fix.new), None);
 }
