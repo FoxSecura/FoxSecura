@@ -18,6 +18,17 @@ N'accordez au bot que les permissions nécessaires aux protections effectivement
 
 La hiérarchie Discord s'applique toujours : FoxSecura ne peut pas sanctionner un membre ou modifier un rôle placé au-dessus de son rôle le plus élevé.
 
+## Liste blanche et contrôle d'accès
+
+La liste blanche exempte l'auteur d'un message des sanctions ; ce n'est **pas** un rôle d'administration et elle ne donne jamais accès à `/config`. Elle est donc gérée avec un droit plus strict que le reste du tableau de bord : propriétaire du serveur ou `ADMINISTRATOR` uniquement, revérifié à chaque interaction. `MANAGE_GUILD` permet de régler les protections et les salons ignorés, mais pas d'exempter des membres.
+
+Garde-fous :
+
+- `@everyone` ne peut pas être exempté (refus dans `/config`, dans le repository et par contrainte SQLite) ;
+- les rôles que FoxSecura attribue lui-même n'exemptent jamais ;
+- si les rôles de l'auteur manquent dans l'événement, aucune exemption par rôle n'est accordée ;
+- un salon ignoré désactive toutes les protections dans ce salon : réservez-le aux salons de confiance (salons du staff, salons de bots).
+
 ## Fail-safe
 
 Une protection doit définir ce qui se passe quand une dépendance échoue. Exemples : audit log en retard, Discord indisponible, timeout fournisseur IA, file pleine, permission retirée pendant l'action ou ressource déjà supprimée.

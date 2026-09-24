@@ -13,6 +13,8 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Ajout de l'intent `GUILD_MESSAGES` ; `MESSAGE_CONTENT` volontairement non demandé.
 - Dispatch de `Message` vers un pipeline de protection des messages ; les erreurs des modules sont journalisées et ne sont jamais propagées au client.
 - Gardes du pipeline : messages hors guilde, de webhook ou d'auteur bot ignorés.
+- Ordre des gardes aligné sur la V1 : hors guilde, salon ignoré, webhook, bot, puis auteur sur liste blanche (aucune sanction).
+- Configuration de la guilde, salon ignoré et liste blanche de l'auteur lus en un seul passage `spawn_blocking` par message.
 
 ### Anti-Spam
 
@@ -22,12 +24,24 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Alignement de `message_flood::evaluate` sur la sémantique `count >= seuil` (auparavant `count > limite`).
 - Cœur pur testable sans Discord : `MessageSnapshot`, `screen_message`, `MessageFloodTracker`, `plan_response`, `build_incident`.
 
+### Liste blanche et salons ignorés
+
+- La liste blanche est une exemption de sanction de l'auteur, jamais un droit d'administration : elle ne donne pas accès à `/config`.
+- Exemption si l'identifiant de l'auteur ou l'un de ses rôles est listé ; rôles absents de l'événement → pas d'exemption par rôle.
+- Paramètre des rôles attribués par FoxSecura (qui n'exemptent jamais), vide tant que vérification, quarantaine et rôle limité ne sont pas portés.
+- Un auteur exempté saute l'anti-spam ; un salon ignoré court-circuite toutes les protections.
+- `@everyone` refusé comme rôle exempté.
+
 ### Configuration
 
 - Migration SQLite `2` : colonnes `anti_spam_enabled`, `anti_spam_message_threshold` (2 à 50) et `anti_spam_window_seconds` (1 à 60) dans `guild_configs`.
 - Repository : lecture sans écriture (`find_guild_config`), `set_anti_spam_enabled` et `set_anti_spam_limits` validés.
 - `/config` réservé au propriétaire du serveur et aux membres `ADMINISTRATOR` ou `MANAGE_GUILD`, vérifié à chaque interaction.
 - Catégorie Anti-Spam de `/config` : interrupteur et modal des seuils, persistés et relus par le moteur.
+- Migration SQLite `3` : tables `guild_whitelist_users`, `guild_whitelist_roles` et `guild_ignored_channels` (clé composite, suppression en cascade avec la guilde, `CHECK` contre `@everyone`).
+- Repository : ajout et retrait idempotents, test d'appartenance et listes pour la liste blanche et les salons ignorés.
+- Catégorie Contrôle d'accès de `/config` : sélecteurs natifs en bascule pour les utilisateurs, rôles et salons.
+- Liste blanche réservée au propriétaire du serveur et à `ADMINISTRATOR` (`MANAGE_GUILD` ne suffit pas) ; salons ignorés avec l'accès normal à `/config`.
 
 ### Logs
 
