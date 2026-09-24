@@ -13,11 +13,11 @@
 //!
 //! Ordre de la V1 ([`JOIN_ORDER`]) : liste noire → anti-raid → anti-bot →
 //! nouveaux comptes → doubles comptes → usurpation → pseudos hoistés.
-//! L'anti-raid et les doubles comptes (tranche 7) et l'usurpation d'identité
-//! (tranche 6) ne sont pas encore portés.
+//! L'anti-raid et les doubles comptes (tranche 7) ne sont pas encore portés.
 //!
-//! Un résultat `terminal` (membre banni ou expulsé, ou liste noire) arrête la
-//! chaîne ; les résultats non terminaux se cumulent ([`JoinChain`]).
+//! Un résultat `terminal` (membre banni, expulsé ou mis en quarantaine, ou
+//! liste noire) arrête la chaîne ; les résultats non terminaux se cumulent
+//! ([`JoinChain`]).
 //!
 //! Une mise à jour de membre n'exécute que l'anti-pseudo hoisté, et
 //! seulement si le nom affiché a changé ([`display_name_changed`]).
@@ -25,14 +25,17 @@
 pub mod anti_bot;
 pub mod blacklist;
 pub mod hoisting;
+pub mod impersonation;
 pub mod new_account;
 
 use std::time::UNIX_EPOCH;
 
+use crate::i18n::{Language, TextKey, text};
 use crate::logs::{
     AffectedResource, AffectedResourceType, LogSeverity, LogType, SecurityActionOutcome,
-    SecurityActor, SecurityIncident,
+    SecurityActor, SecurityEvidence, SecurityIncident,
 };
+use crate::protection::quarantine::QuarantineOutcome;
 use crate::protection::shared::{ModuleSet, ProtectionModule, snowflake_timestamp};
 
 /// Membre visé par un module.
@@ -49,8 +52,8 @@ pub struct ModuleResult {
     pub detected: bool,
     /// Une action Discord a réellement été appliquée.
     pub action_applied: bool,
-    /// Le membre a été banni ou expulsé (ou doit l'être, pour la liste
-    /// noire) : aucun module suivant ne s'exécute.
+    /// Le membre a été banni, expulsé ou mis en quarantaine (ou doit l'être,
+    /// pour la liste noire) : aucun module suivant ne s'exécute.
     pub terminal: bool,
 }
 
@@ -69,16 +72,19 @@ pub enum JoinStep {
     Blacklist,
     AntiBot,
     AntiNewAccount,
+    AntiImpersonation,
     AntiNicknameHoisting,
 }
 
 /// Ordre de la V1, restreint aux modules portés.
-pub const JOIN_ORDER: [JoinStep; 4] = [
+pub const JOIN_ORDER: [JoinStep; 5] = [
     JoinStep::Blacklist,
     // Anti-raid (rafales d'arrivées) : tranche 7.
     JoinStep::AntiBot,
     JoinStep::AntiNewAccount,
-    // Doubles comptes : tranche 7 ; usurpation d'identité : tranche 6.
+    // Doubles comptes : tranche 7, entre les nouveaux comptes et
+    // l'usurpation.
+    JoinStep::AntiImpersonation,
     JoinStep::AntiNicknameHoisting,
 ];
 
@@ -90,6 +96,7 @@ impl JoinStep {
             Self::Blacklist => None,
             Self::AntiBot => Some(ProtectionModule::AntiBot),
             Self::AntiNewAccount => Some(ProtectionModule::AntiNewAccount),
+            Self::AntiImpersonation => Some(ProtectionModule::AntiImpersonation),
             Self::AntiNicknameHoisting => Some(ProtectionModule::AntiNicknameHoisting),
         }
     }
@@ -203,4 +210,21 @@ fn member_incident(
         name: None,
     });
     incident
+}
+
+/// Rôles dangereux retirés par une quarantaine, listés pour l'équipe : ils ne
+/// sont pas rendus à la libération (V1). `None` si aucun n'a été retiré.
+fn removed_roles_evidence(
+    language: Language,
+    outcome: &QuarantineOutcome,
+) -> Option<SecurityEvidence> {
+    let removed = outcome.removed_roles();
+    (!removed.is_empty()).then(|| SecurityEvidence::Text {
+        label: text(language, TextKey::QuarantineEvidenceRemovedRoles).to_owned(),
+        value: removed
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+    })
 }

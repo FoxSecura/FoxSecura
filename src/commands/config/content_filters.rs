@@ -40,6 +40,7 @@ const BUTTONS_PER_ROW: usize = 5;
 pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[
     ProtectionModule::AntiBot,
     ProtectionModule::AntiNewAccount,
+    ProtectionModule::AntiImpersonation,
     ProtectionModule::AntiNicknameHoisting,
 ];
 
@@ -196,6 +197,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiBot => TextKey::ModuleAntiBot,
         ProtectionModule::AntiNewAccount => TextKey::ModuleAntiNewAccount,
         ProtectionModule::AntiNicknameHoisting => TextKey::ModuleAntiNicknameHoisting,
+        ProtectionModule::AntiImpersonation => TextKey::ModuleAntiImpersonation,
     }
 }
 

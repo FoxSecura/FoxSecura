@@ -368,5 +368,6 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiBot => TextKey::AntiBotSummaryUnauthorized,
         ProtectionModule::AntiNewAccount => TextKey::NewAccountSummary,
         ProtectionModule::AntiNicknameHoisting => TextKey::HoistingSummary,
+        ProtectionModule::AntiImpersonation => TextKey::ImpersonationSummary,
     }
 }

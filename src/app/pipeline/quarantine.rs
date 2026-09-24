@@ -22,10 +22,12 @@ use std::time::Duration;
 
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::quarantine::{
-    ChannelFacts, DiscordFailure, MemberLocks, MemberPresence, Overwrite, OverwriteBits,
-    OverwriteTarget, QUARANTINE_AUDIT_LABEL, QuarantineEffects, RecordedOverwrite, ReleaseEffects,
-    ReleaseFacts, ReleaseOutcome, StoreError, UNKNOWN_MEMBER, is_lockable, quarantine_role_removed,
-    release_member, role_lock_overwrite, should_resume_pending,
+    BotRoleStanding, ChannelFacts, DiscordFailure, MemberChannel, MemberLocks, MemberPresence,
+    Overwrite, OverwriteBits, OverwriteTarget, QUARANTINE_AUDIT_LABEL, QuarantineEffects,
+    QuarantineFacts, QuarantineOutcome, QuarantineRequest, QuarantineRoleLookup, RecordedOverwrite,
+    ReleaseEffects, ReleaseFacts, ReleaseOutcome, RoleFacts, StoreError, UNKNOWN_MEMBER,
+    is_lockable, lockable_channels, quarantine_member, quarantine_role_removed, release_member,
+    role_lock_overwrite, should_resume_pending,
 };
 use foxsecura::protection::shared::{SanctionKind, SanctionOutcome, audit_reason};
 use poise::serenity_prelude as serenity;
@@ -38,6 +40,152 @@ pub const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Libérations en attente reprises par passage de maintenance.
 const MAINTENANCE_BATCH: usize = 25;
+
+/// Membre à mettre en quarantaine.
+pub struct QuarantineTarget<'a> {
+    pub guild_id: u64,
+    pub user_id: u64,
+    /// Rôles du membre joints à l'événement.
+    pub member_roles: &'a [u64],
+    /// Exempté par la liste blanche (le rôle de quarantaine n'exempte
+    /// jamais).
+    pub whitelisted: bool,
+}
+
+/// Met un membre en quarantaine sous son verrou et journalise le bilan.
+///
+/// `reason` : raison d'audit log du module (`FoxSecura <module>: …`).
+pub async fn quarantine(
+    ctx: &serenity::Context,
+    data: &AppData,
+    target: &QuarantineTarget<'_>,
+    request: QuarantineRequest,
+    reason: String,
+) -> QuarantineOutcome {
+    let (guild_id, user_id) = (target.guild_id, target.user_id);
+    let _guard = data
+        .protection
+        .quarantine_locks()
+        .lock(guild_id, user_id)
+        .await;
+
+    let role_id = match run_database(&data.database, move |database| {
+        database.quarantine_role_id(guild_id)
+    })
+    .await
+    {
+        Ok(role_id) => role_id,
+        Err(error) => {
+            // Traité comme non configuré : le repli timeout s'applique s'il
+            // est autorisé.
+            eprintln!("[quarantine] rôle de quarantaine illisible ({guild_id}) : {error}");
+            None
+        }
+    };
+    let facts = quarantine_facts(ctx, target, role_id);
+
+    let mut effects = MemberEffects {
+        ctx,
+        database: &data.database,
+        guild_id,
+        user_id,
+        reason,
+    };
+    let outcome = quarantine_member(&mut effects, &facts, &request).await;
+    println!(
+        "[quarantine] quarantaine de {user_id} sur la guilde {guild_id} : rôle {:?}, salons {:?}, timeout {:?}, rôles dangereux retirés {:?}",
+        outcome.role,
+        outcome.channel_lock,
+        outcome.timeout,
+        outcome.removed_roles()
+    );
+    for error in &outcome.store_errors {
+        eprintln!("[quarantine] quarantaine de {user_id} sur la guilde {guild_id} : {error}");
+    }
+    outcome
+}
+
+/// Relève l'état du cache. Le verrou du cache est relâché avant tout
+/// `.await`.
+fn quarantine_facts(
+    ctx: &serenity::Context,
+    target: &QuarantineTarget<'_>,
+    role_id: Option<u64>,
+) -> QuarantineFacts {
+    let bot_id = ctx.cache.current_user().id.get();
+    let mut facts = QuarantineFacts {
+        guild_id: target.guild_id,
+        user_id: target.user_id,
+        bot_id,
+        owner_id: None,
+        whitelisted: target.whitelisted,
+        quarantine_role: role_id.map_or(QuarantineRoleLookup::NotConfigured, |role_id| {
+            QuarantineRoleLookup::Unknown { role_id }
+        }),
+        bot: None,
+        member_roles: Vec::new(),
+        channels: Vec::new(),
+    };
+
+    let Some(guild) = ctx.cache.guild(serenity::GuildId::new(target.guild_id)) else {
+        return facts;
+    };
+    facts.owner_id = Some(guild.owner_id.get());
+    if let Some(role_id) = role_id {
+        facts.quarantine_role = match guild.roles.get(&serenity::RoleId::new(role_id)) {
+            Some(role) => QuarantineRoleLookup::Found(role_facts(role)),
+            None => QuarantineRoleLookup::Deleted { role_id },
+        };
+    }
+    facts.bot = bot_role_standing(&guild, bot_id);
+    facts.member_roles = target
+        .member_roles
+        .iter()
+        .filter_map(|role_id| guild.roles.get(&serenity::RoleId::new(*role_id)))
+        .map(role_facts)
+        .collect();
+
+    let channels = channel_facts(&guild);
+    facts.channels = lockable_channels(&channels)
+        .into_iter()
+        .filter_map(|id| channels.iter().find(|channel| channel.id == id))
+        .map(|channel| MemberChannel {
+            channel_id: channel.id,
+            member_overwrite: channel.overwrite(OverwriteTarget::Member(target.user_id)),
+        })
+        .collect();
+    facts
+}
+
+pub(super) fn role_facts(role: &serenity::Role) -> RoleFacts {
+    RoleFacts {
+        id: role.id.get(),
+        position: role.position,
+        permissions: role.permissions,
+        managed: role.managed,
+    }
+}
+
+/// Position du rôle le plus haut du bot et `MANAGE_ROLES`, d'après le cache.
+pub(super) fn bot_role_standing(guild: &serenity::Guild, bot_id: u64) -> Option<BotRoleStanding> {
+    let member = guild.members.get(&serenity::UserId::new(bot_id))?;
+    let permissions = guild.member_permissions(member);
+    Some(BotRoleStanding {
+        top_role_position: member
+            .roles
+            .iter()
+            .filter_map(|role_id| guild.roles.get(role_id))
+            .map(|role| role.position)
+            .max()
+            .unwrap_or(0),
+        manage_roles: permissions.administrator() || permissions.manage_roles(),
+    })
+}
+
+/// Salons du serveur (les fils, absents de `guild.channels`, héritent).
+fn channel_facts(guild: &serenity::Guild) -> Vec<ChannelFacts> {
+    guild.channels.values().map(convert_channel).collect()
+}
 
 /// Salon ou catégorie créé : réapplique le verrou du rôle s'il est
 /// verrouillable (un salon créé synchronisé hérite de sa catégorie).

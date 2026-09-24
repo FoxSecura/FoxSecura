@@ -1058,9 +1058,14 @@ catalog! {
         de: "Neues Konto gebannt: Das Mitglied prüfen und den Bann aufheben, falls es ein legitimer Neuling ist (Fehlalarm)."
     },
     NewAccountRecommendationBanFailed => {
-        en: "The ban was not applied and the fallback quarantine is not available yet: the recent account is still on the server. Check the ban hierarchy (Ban Members, FoxSecura's role above the member) and review the member.",
-        fr: "Le ban n'a pas été appliqué et la quarantaine de repli n'est pas encore disponible : le compte récent est resté sur le serveur. Vérifiez la hiérarchie du ban (Bannir des membres, rôle de FoxSecura au-dessus du membre) et examinez le membre.",
-        de: "Der Bann wurde nicht angewendet und die Ersatz-Quarantäne ist noch nicht verfügbar: Das neue Konto ist noch auf dem Server. Die Bann-Hierarchie prüfen (Mitglieder bannen, Rolle von FoxSecura über dem Mitglied) und das Mitglied überprüfen."
+        en: "Neither the ban nor the fallback quarantine was applied: the recent account is still on the server without restriction. Check the ban hierarchy (Ban Members, FoxSecura's role above the member), the quarantine role (/config, Anti-Raid) and review the member.",
+        fr: "Ni le ban ni la quarantaine de repli n'ont été appliqués : le compte récent est resté sur le serveur sans restriction. Vérifiez la hiérarchie du ban (Bannir des membres, rôle de FoxSecura au-dessus du membre), le rôle de quarantaine (/config, Anti-Raid) et examinez le membre.",
+        de: "Weder der Bann noch die Ersatz-Quarantäne wurden angewendet: Das neue Konto ist ohne Einschränkung auf dem Server. Die Bann-Hierarchie prüfen (Mitglieder bannen, Rolle von FoxSecura über dem Mitglied), die Quarantäne-Rolle (/config, Anti-Raid) und das Mitglied überprüfen."
+    },
+    NewAccountRecommendationQuarantined => {
+        en: "The ban was not applied: the recent account was quarantined instead (or timed out if the quarantine role could not be assigned). Check the ban hierarchy, then ban the member or release them from /config (Anti-Raid).",
+        fr: "Le ban n'a pas été appliqué : le compte récent a été mis en quarantaine à la place (ou exclu temporairement si le rôle de quarantaine n'a pas pu être posé). Vérifiez la hiérarchie du ban, puis bannissez le membre ou libérez-le depuis /config (Anti-Raid).",
+        de: "Der Bann wurde nicht angewendet: Das neue Konto wurde stattdessen unter Quarantäne gestellt (oder getimeoutet, falls die Quarantäne-Rolle nicht vergeben werden konnte). Die Bann-Hierarchie prüfen, dann das Mitglied bannen oder über /config (Anti-Raid) freigeben."
     },
     LogsEvidenceAccountAge => {
         en: "Account age",
@@ -1101,6 +1106,41 @@ catalog! {
         en: "Check that FoxSecura has Manage Nicknames and a role above the member. The server owner can never be renamed by a bot.",
         fr: "Vérifiez que FoxSecura a Gérer les pseudos et un rôle au-dessus du membre. Le propriétaire du serveur ne peut jamais être renommé par un bot.",
         de: "Prüfen, ob FoxSecura Spitznamen verwalten und eine Rolle über dem Mitglied hat. Der Serverinhaber kann nie von einem Bot umbenannt werden."
+    },
+    ModuleAntiImpersonation => {
+        en: "Impersonation",
+        fr: "Usurpation d'identité",
+        de: "Identitätsdiebstahl"
+    },
+    ImpersonationSummary => {
+        en: "A joining member uses the name of the owner or of a privileged member.",
+        fr: "Un membre arrivé utilise le nom du propriétaire ou d'un membre privilégié.",
+        de: "Ein beigetretenes Mitglied verwendet den Namen des Inhabers oder eines privilegierten Mitglieds."
+    },
+    ImpersonationEvidenceName => {
+        en: "Member name",
+        fr: "Nom du membre",
+        de: "Name des Mitglieds"
+    },
+    ImpersonationEvidenceProtected => {
+        en: "Protected name",
+        fr: "Nom protégé",
+        de: "Geschützter Name"
+    },
+    ImpersonationRecommendationQuarantined => {
+        en: "Member quarantined. Check whether it is a real impersonation: ban them, or release them from /config (Anti-Raid) if it is a false positive.",
+        fr: "Membre mis en quarantaine. Vérifiez s'il s'agit d'une vraie usurpation : bannissez-le, ou libérez-le depuis /config (Anti-Raid) s'il s'agit d'un faux positif.",
+        de: "Mitglied unter Quarantäne gestellt. Prüfen, ob es ein echter Identitätsdiebstahl ist: bannen, oder bei einem Fehlalarm über /config (Anti-Raid) freigeben."
+    },
+    QuarantineRecommendationFailed => {
+        en: "The quarantine was not applied: the member is still on the server without restriction. Configure the quarantine role in /config (Anti-Raid), check Manage Roles and that FoxSecura's role is above it, then review the member.",
+        fr: "La quarantaine n'a pas été appliquée : le membre est resté sur le serveur sans restriction. Configurez le rôle de quarantaine dans /config (Anti-Raid), vérifiez Gérer les rôles et que le rôle de FoxSecura est au-dessus, puis examinez le membre.",
+        de: "Die Quarantäne wurde nicht angewendet: Das Mitglied ist ohne Einschränkung auf dem Server. Die Quarantäne-Rolle in /config (Anti-Raid) konfigurieren, Rollen verwalten prüfen und dass die Rolle von FoxSecura darüber liegt, dann das Mitglied überprüfen."
+    },
+    QuarantineEvidenceRemovedRoles => {
+        en: "Dangerous roles removed (not restored on release)",
+        fr: "Rôles dangereux retirés (non rendus à la libération)",
+        de: "Entfernte gefährliche Rollen (bei Freigabe nicht zurückgegeben)"
     },
     ConfigMemberProtection => {
         en: "Member arrivals",
