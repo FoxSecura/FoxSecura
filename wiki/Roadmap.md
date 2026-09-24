@@ -10,6 +10,8 @@ Chaque branchement doit conserver la séparation `snapshot → détection → d�
 
 **Fait (tranche 1)** : `AppData` porte la base SQLite et l'état des protections, l'intent `GUILD_MESSAGES` est demandé et l'événement `Message` alimente un pipeline de protection isolé des erreurs. L'anti-spam (rafales de messages) y est branché de bout en bout. Les tranches suivantes réutiliseront ce pipeline pour les autres modules.
 
+**Fait (tranche 3)** : six filtres de contenu (caractères invisibles, liens malveillants, liens adultes, invitations, `@everyone`/`@here`, mentions de masse) branchés sur les créations **et modifications** de messages, dans l'ordre de la V1 avec court-circuit, avant l'anti-spam, appliqués aussi aux auteurs exemptés (suppression sans sanction). Intent `MESSAGE_CONTENT` demandé, avec un message explicite en cas de refus 4014. Activation par module persistée dans une table générique (migration 4) et gérée depuis `/config`. **Reste** : `anti_scam` (sanctions graduées), `attachment_filter` et `bad_words` (listes configurables), seuil de mentions de masse réglable.
+
 **Fait (tranche 2)** : liste blanche (utilisateurs, rôles) et salons ignorés, persistés (migration 3), appliqués par le pipeline de messages dans l'ordre de la V1 et gérés depuis `/config` → Contrôle d'accès. **Reste** : cache par guilde pour éviter une lecture SQLite par message, prise en compte des fils de salons ignorés, et rôles attribués par FoxSecura (vérification, quarantaine, rôle limité) à exclure de l'exemption quand ces modules seront portés.
 
 ## 2. Rendre `/config` réellement persistant
@@ -18,7 +20,7 @@ Le tableau de bord expose déjà les grandes catégories produit. Les prochaines
 
 L'interface ne doit afficher un état « actif » que si la valeur est réellement persistée et utilisée par le moteur concerné.
 
-**Fait** : autorisation propriétaire / `ADMINISTRATOR` / `MANAGE_GUILD`, catégorie Anti-Spam persistée (activation, seuil, fenêtre) et catégorie Contrôle d'accès (liste blanche réservée au propriétaire et à `ADMINISTRATOR`, salons ignorés). **Reste** : les autres catégories et la configuration des salons de logs depuis `/config`.
+**Fait** : autorisation propriétaire / `ADMINISTRATOR` / `MANAGE_GUILD`, catégorie Anti-Spam persistée (activation, seuil, fenêtre, quatre filtres de contenu), catégorie AutoMod (liens adultes, invitations) et catégorie Contrôle d'accès (liste blanche réservée au propriétaire et à `ADMINISTRATOR`, salons ignorés). **Reste** : les autres catégories et la configuration des salons de logs depuis `/config`.
 
 ## 3. Finaliser la chaîne d'incidents
 
@@ -32,7 +34,7 @@ Priorités : corrélation avec les audit logs, identification fiable de l'exécu
 
 Priorités : états temporels efficaces, nettoyage des fenêtres, configuration par serveur, cohérence des exemptions et contrôle des faux positifs.
 
-L'anti-spam par rafales est branché au runtime. La liste blanche et les salons ignorés sont appliqués. Restent notamment : modules de contenu (qui nécessiteront `MESSAGE_CONTENT`), limitation du volume d'incidents pendant une rafale et, si le bot doit tourner sur plusieurs instances, un état partagé.
+L'anti-spam par rafales est branché au runtime. La liste blanche et les salons ignorés sont appliqués. Les six premiers filtres de contenu sont branchés. Restent notamment : `anti_scam`, `attachment_filter`, `bad_words`, limitation du volume d'incidents pendant une rafale et, si le bot doit tourner sur plusieurs instances, un état partagé.
 
 ## 6. AutoMod natif
 

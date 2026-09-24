@@ -6,7 +6,21 @@ Cette page décrit l'environnement minimal pour développer ou lancer FoxSecura 
 
 Vous devez disposer de Git, de Cargo et de **Rust 1.98.1**. Le dépôt contient également `rust-toolchain.toml` et `Cargo.toml` fixe `rust-version = "1.98.1"`.
 
-Côté Discord, créez une application et un bot depuis le Discord Developer Portal. Le runtime actuel demande les intents `GUILDS`, `GUILD_MODERATION`, `GUILD_MEMBERS` et `GUILD_MESSAGES` ; le **Server Members Intent** doit donc être activé pour le bot. Le **Message Content Intent** n'est pas nécessaire.
+Côté Discord, créez une application et un bot depuis le Discord Developer Portal. Le runtime actuel demande les intents `GUILDS`, `GUILD_MODERATION`, `GUILD_MEMBERS`, `GUILD_MESSAGES` et `MESSAGE_CONTENT`. Deux intents privilégiés doivent donc être activés dans **Bot → Privileged Gateway Intents** :
+
+- **Server Members Intent** ;
+- **Message Content Intent** (lecture du texte des messages par les filtres de contenu).
+
+Si l'un d'eux manque, Discord refuse la connexion (code **4014**) et FoxSecura s'arrête au démarrage avec un message qui indique quoi activer et où :
+
+```text
+Discord a refusé la connexion (code 4014) : un intent privilégié demandé par FoxSecura n'est pas activé pour ce bot.
+Ouvrez https://discord.com/developers/applications, choisissez l'application du bot, puis Bot → Privileged Gateway Intents, et activez :
+  - Server Members Intent
+  - Message Content Intent
+```
+
+Au-delà de 100 serveurs, ces intents doivent en plus être approuvés par Discord (vérification du bot).
 
 ## Cloner et vérifier le projet
 

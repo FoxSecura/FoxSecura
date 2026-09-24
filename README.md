@@ -21,7 +21,12 @@
 
 ## Démarrage rapide
 
-Prérequis : **Rust 1.98.1**, Cargo, un bot Discord et le **Server Members Intent** activé.
+Prérequis : **Rust 1.98.1**, Cargo, un bot Discord et deux intents privilégiés activés dans le [portail développeur](https://discord.com/developers/applications) (**Bot → Privileged Gateway Intents**) :
+
+- **Server Members Intent** ;
+- **Message Content Intent**, requis par les filtres de contenu (liens malveillants, invitations, caractères invisibles…).
+
+Sans eux, Discord refuse la connexion (code 4014) et FoxSecura s'arrête au démarrage en indiquant quoi activer.
 
 ```bash
 git clone https://github.com/FoxSecura/FoxSecura.git
