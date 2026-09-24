@@ -4,8 +4,9 @@
 //! Interrupteurs des filtres de contenu, dans les catégories Anti-Spam et
 //! AutoMod du tableau de bord.
 //!
-//! L'état affiché est celui lu en base (`guild_protection_modules`), que le
-//! moteur relit à chaque message : « actif » signifie réellement appliqué.
+//! L'état affiché est celui lu en base (`guild_protection_modules`). Chaque
+//! écriture invalide le cache de configuration de la guilde : le moteur
+//! l'applique dès le message suivant, « actif » signifie réellement appliqué.
 
 use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule, UnknownModuleKey};

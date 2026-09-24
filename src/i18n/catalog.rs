@@ -867,6 +867,61 @@ catalog! {
         fr: "Mentions de masse",
         de: "Massenerwähnungen"
     },
+    ConfigBadWords => {
+        en: "Forbidden words",
+        fr: "Mots interdits",
+        de: "Verbotene Wörter"
+    },
+    ConfigBadWordsLanguage => {
+        en: "Built-in list",
+        fr: "Liste intégrée",
+        de: "Integrierte Liste"
+    },
+    ConfigBadWordsCustomCount => {
+        en: "Custom words",
+        fr: "Mots personnalisés",
+        de: "Eigene Wörter"
+    },
+    ConfigBadWordsNotice => {
+        en: "Case-insensitive, whole words only (a letter, digit or _ next to it prevents a match). Deletion only, never a sanction, including for whitelisted members.",
+        fr: "Insensible à la casse, mots entiers seulement (une lettre, un chiffre ou _ accolé empêche la correspondance). Suppression seule, jamais de sanction, y compris pour les membres sur liste blanche.",
+        de: "Groß-/Kleinschreibung egal, nur ganze Wörter (ein angrenzender Buchstabe, eine Ziffer oder _ verhindert einen Treffer). Nur Löschung, nie eine Sanktion, auch für Mitglieder auf der Whitelist."
+    },
+    ConfigBadWordsFrench => {
+        en: "French",
+        fr: "Français",
+        de: "Französisch"
+    },
+    ConfigBadWordsEnglish => {
+        en: "English",
+        fr: "Anglais",
+        de: "Englisch"
+    },
+    ConfigBadWordsAll => {
+        en: "All",
+        fr: "Toutes",
+        de: "Alle"
+    },
+    ConfigBadWordsEditButton => {
+        en: "Edit custom words",
+        fr: "Modifier les mots personnalisés",
+        de: "Eigene Wörter bearbeiten"
+    },
+    ConfigBadWordsModalTitle => {
+        en: "Custom forbidden words",
+        fr: "Mots interdits personnalisés",
+        de: "Eigene verbotene Wörter"
+    },
+    ConfigBadWordsInput => {
+        en: "One word or phrase per line",
+        fr: "Un mot ou une expression par ligne",
+        de: "Ein Wort oder Ausdruck pro Zeile"
+    },
+    ConfigBadWordsInvalid => {
+        en: "Invalid list: at most 200 words, 100 characters per word and 2,000 characters in total, without control characters. Nothing was changed.",
+        fr: "Liste invalide : 200 mots au maximum, 100 caractères par mot et 2 000 caractères au total, sans caractère de contrôle. Rien n'a été modifié.",
+        de: "Ungültige Liste: höchstens 200 Wörter, 100 Zeichen pro Wort und 2.000 Zeichen insgesamt, ohne Steuerzeichen. Es wurde nichts geändert."
+    },
     ConfigAccessControlNotice => {
         en: "Whitelisted members are exempt from sanctions; the whitelist never grants access to /config. No protection runs in ignored channels. Pick an entry to add it, or pick it again to remove it.",
         fr: "Les membres sur liste blanche sont exemptés de sanction ; la liste blanche ne donne jamais accès à /config. Aucune protection ne s'applique dans les salons ignorés. Choisissez une entrée pour l'ajouter, choisissez-la à nouveau pour la retirer.",

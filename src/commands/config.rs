@@ -4,6 +4,7 @@
 mod access;
 mod access_control;
 mod anti_spam;
+mod bad_words;
 mod content_filters;
 
 use poise::serenity_prelude as serenity;
@@ -12,10 +13,12 @@ use super::Context;
 use crate::app::{AppData, Error, run_database};
 use access::{Access, Right};
 use access_control::ListTarget;
+use bad_words::BadWordsAction;
 use content_filters::ModuleToggle;
-use foxsecura::database::GuildExemptions;
+use foxsecura::database::{BadWordsSettings, GuildExemptions};
 use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
+use foxsecura::protection::automod::bad_words::parse_custom_words;
 use foxsecura::protection::shared::ModuleSet;
 
 const CATEGORY_SELECT_ID: &str = "foxsecura:config:category";
@@ -91,7 +94,10 @@ enum CategoryView {
         config: MessageFloodConfig,
         modules: ModuleSet,
     },
-    Automod(ModuleSet),
+    Automod {
+        modules: ModuleSet,
+        bad_words: BadWordsSettings,
+    },
     AccessControl {
         exemptions: GuildExemptions,
         access: Access,
@@ -139,9 +145,11 @@ pub async fn handle_component(
     let custom_id = component.data.custom_id.as_str();
     let list_target = ListTarget::from_custom_id(custom_id);
     let module_toggle = content_filters::parse_toggle(custom_id);
+    let bad_words_action = bad_words::parse_action(custom_id);
     let required = match (list_target, &module_toggle) {
         (Some(target), _) => target.required_right(),
         (None, Some(_)) => Right::Config,
+        (None, None) if bad_words_action.is_some() => Right::Config,
         (None, None)
             if [
                 CATEGORY_SELECT_ID,
@@ -232,6 +240,17 @@ pub async fn handle_component(
             return Ok(true);
         };
         save_module_toggle(ctx, data, component, language, guild_id, access, toggle).await?;
+        return Ok(true);
+    }
+
+    if let Some(action) = bad_words_action {
+        let Some(action) = action else {
+            // Identifiant forgé ou bouton d'une autre version : rien n'est écrit.
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+            return Ok(true);
+        };
+        handle_bad_words(ctx, data, component, language, guild_id, access, action).await?;
         return Ok(true);
     }
 
@@ -364,13 +383,95 @@ async fn save_module_toggle(
     Ok(())
 }
 
-/// Traite la soumission du modal des seuils Anti-Spam.
+/// Langue de la liste intégrée ou ouverture du modal des mots personnalisés.
+async fn handle_bad_words(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    action: BadWordsAction,
+) -> Result<(), Error> {
+    match action {
+        BadWordsAction::SetLanguage(list) => {
+            let saved = run_database(&data.database, move |database| {
+                database.set_bad_words_language(guild_id, list)
+            })
+            .await;
+            let view = match saved {
+                Ok(_) => {
+                    load_view(data, guild_id, content_filters::AUTOMOD_CATEGORY_ID, access).await
+                }
+                Err(error) => Err(error),
+            };
+            match view {
+                Ok(view) => {
+                    update_dashboard(
+                        ctx,
+                        component,
+                        language,
+                        content_filters::AUTOMOD_CATEGORY_ID,
+                        view.as_ref(),
+                    )
+                    .await?;
+                }
+                Err(error) => {
+                    eprintln!(
+                        "[config] enregistrement des mots interdits impossible ({guild_id}) : {error}"
+                    );
+                    respond_ephemeral_component(
+                        ctx,
+                        component,
+                        text(language, TextKey::ConfigSaveFailed),
+                    )
+                    .await?;
+                }
+            }
+        }
+        BadWordsAction::Edit => {
+            let settings = run_database(&data.database, move |database| {
+                database.bad_words_settings(guild_id)
+            })
+            .await;
+            match settings {
+                Ok(settings) => {
+                    component
+                        .create_response(
+                            &ctx.http,
+                            serenity::CreateInteractionResponse::Modal(bad_words::words_modal(
+                                language, &settings,
+                            )),
+                        )
+                        .await?;
+                }
+                Err(error) => {
+                    eprintln!(
+                        "[config] lecture des mots interdits impossible ({guild_id}) : {error}"
+                    );
+                    respond_ephemeral_component(
+                        ctx,
+                        component,
+                        text(language, TextKey::ConfigSaveFailed),
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Traite la soumission des modals du tableau de bord (seuils Anti-Spam,
+/// mots interdits personnalisés).
 pub async fn handle_modal(
     ctx: &serenity::Context,
     data: &AppData,
     modal: &serenity::ModalInteraction,
 ) -> Result<bool, Error> {
-    if modal.data.custom_id != anti_spam::LIMITS_MODAL_ID {
+    let custom_id = modal.data.custom_id.as_str();
+    if custom_id != anti_spam::LIMITS_MODAL_ID && custom_id != bad_words::MODAL_ID {
         return Ok(false);
     }
 
@@ -382,6 +483,10 @@ pub async fn handle_modal(
         return Ok(true);
     };
     let guild_id = guild_id.get();
+
+    if custom_id == bad_words::MODAL_ID {
+        return save_custom_words(ctx, data, modal, language, guild_id, access).await;
+    }
 
     let Some((threshold, window_seconds)) = anti_spam::submitted_limits(&modal.data.components)
     else {
@@ -429,6 +534,55 @@ pub async fn handle_modal(
     Ok(true)
 }
 
+/// Valide (bornes V1) et remplace la liste des mots personnalisés, puis
+/// réaffiche la catégorie AutoMod. Une saisie refusée ne modifie rien.
+async fn save_custom_words(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+) -> Result<bool, Error> {
+    let Ok(words) = parse_custom_words(&bad_words::submitted_words(&modal.data.components)) else {
+        respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigBadWordsInvalid)).await?;
+        return Ok(true);
+    };
+
+    let saved = run_database(&data.database, move |database| {
+        database.set_custom_bad_words(guild_id, words)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, content_filters::AUTOMOD_CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            let view = view.as_ref();
+            let category = Some(content_filters::AUTOMOD_CATEGORY_ID);
+            let response = serenity::CreateInteractionResponseMessage::new()
+                .embed(build_embed(language, category, view))
+                .components(build_components(language, category, view));
+            modal
+                .create_response(
+                    &ctx.http,
+                    serenity::CreateInteractionResponse::UpdateMessage(response),
+                )
+                .await?;
+        }
+        Err(error) => {
+            eprintln!(
+                "[config] enregistrement des mots interdits impossible ({guild_id}) : {error}"
+            );
+            respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+
+    Ok(true)
+}
+
 /// Lit l'état à afficher pour une catégorie ; `None` si elle n'a pas encore
 /// de réglages.
 async fn load_view(
@@ -453,12 +607,16 @@ async fn load_view(
                 modules,
             })
         }
-        content_filters::AUTOMOD_CATEGORY_ID => Some(CategoryView::Automod(
-            run_database(&data.database, move |database| {
-                database.enabled_modules(guild_id)
+        content_filters::AUTOMOD_CATEGORY_ID => {
+            let (modules, bad_words) = run_database(&data.database, move |database| {
+                Ok((
+                    database.enabled_modules(guild_id)?,
+                    database.bad_words_settings(guild_id)?,
+                ))
             })
-            .await?,
-        )),
+            .await?;
+            Some(CategoryView::Automod { modules, bad_words })
+        }
         access_control::CATEGORY_ID => {
             let exemptions = run_database(&data.database, move |database| {
                 database.guild_exemptions(guild_id)
@@ -566,13 +724,16 @@ fn build_embed(
                         content_filters::ANTI_SPAM_MODULES,
                         *modules,
                     )),
-                (content_filters::AUTOMOD_CATEGORY_ID, Some(CategoryView::Automod(modules))) => {
-                    embed.fields(content_filters::state_fields(
+                (
+                    content_filters::AUTOMOD_CATEGORY_ID,
+                    Some(CategoryView::Automod { modules, bad_words }),
+                ) => embed
+                    .fields(content_filters::state_fields(
                         language,
                         content_filters::AUTOMOD_MODULES,
                         *modules,
                     ))
-                }
+                    .fields(bad_words::state_fields(language, bad_words)),
                 (
                     access_control::CATEGORY_ID,
                     Some(CategoryView::AccessControl { exemptions, access }),
@@ -613,12 +774,16 @@ fn build_components(
                 *modules,
             ));
         }
-        (Some(content_filters::AUTOMOD_CATEGORY_ID), Some(CategoryView::Automod(modules))) => {
+        (
+            Some(content_filters::AUTOMOD_CATEGORY_ID),
+            Some(CategoryView::Automod { modules, bad_words }),
+        ) => {
             rows.extend(content_filters::buttons(
                 language,
                 content_filters::AUTOMOD_MODULES,
                 *modules,
             ));
+            rows.push(bad_words::buttons(language, bad_words));
         }
         (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
             rows.extend(access_control::selects(language, *access));
