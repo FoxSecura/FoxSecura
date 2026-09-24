@@ -671,5 +671,60 @@ catalog! {
         en: "Invalid values: the threshold must be between 2 and 50 messages and the window between 1 and 60 seconds.",
         fr: "Valeurs invalides : le seuil doit être compris entre 2 et 50 messages et la fenêtre entre 1 et 60 secondes.",
         de: "Ungültige Werte: Die Schwelle muss zwischen 2 und 50 Nachrichten und das Zeitfenster zwischen 1 und 60 Sekunden liegen."
+    },
+    ConfigAccessControlNotice => {
+        en: "Whitelisted members are exempt from sanctions; the whitelist never grants access to /config. No protection runs in ignored channels. Pick an entry to add it, or pick it again to remove it.",
+        fr: "Les membres sur liste blanche sont exemptés de sanction ; la liste blanche ne donne jamais accès à /config. Aucune protection ne s'applique dans les salons ignorés. Choisissez une entrée pour l'ajouter, choisissez-la à nouveau pour la retirer.",
+        de: "Mitglieder auf der Whitelist sind von Sanktionen ausgenommen; die Whitelist gewährt nie Zugriff auf /config. In ignorierten Kanälen greift kein Schutz. Wähle einen Eintrag, um ihn hinzuzufügen, und erneut, um ihn zu entfernen."
+    },
+    ConfigWhitelistUsers => {
+        en: "Exempt users",
+        fr: "Utilisateurs exemptés",
+        de: "Ausgenommene Benutzer"
+    },
+    ConfigWhitelistRoles => {
+        en: "Exempt roles",
+        fr: "Rôles exemptés",
+        de: "Ausgenommene Rollen"
+    },
+    ConfigIgnoredChannels => {
+        en: "Ignored channels",
+        fr: "Salons ignorés",
+        de: "Ignorierte Kanäle"
+    },
+    ConfigListEmpty => {
+        en: "None",
+        fr: "Aucun",
+        de: "Keine"
+    },
+    ConfigWhitelistUserSelect => {
+        en: "Add or remove exempt users",
+        fr: "Ajouter ou retirer des utilisateurs exemptés",
+        de: "Ausgenommene Benutzer hinzufügen oder entfernen"
+    },
+    ConfigWhitelistRoleSelect => {
+        en: "Add or remove exempt roles",
+        fr: "Ajouter ou retirer des rôles exemptés",
+        de: "Ausgenommene Rollen hinzufügen oder entfernen"
+    },
+    ConfigIgnoredChannelSelect => {
+        en: "Add or remove ignored channels",
+        fr: "Ajouter ou retirer des salons ignorés",
+        de: "Ignorierte Kanäle hinzufügen oder entfernen"
+    },
+    ConfigWhitelistReadOnly => {
+        en: "Only the server owner and administrators can edit the whitelist.",
+        fr: "Seuls le propriétaire du serveur et les administrateurs peuvent modifier la liste blanche.",
+        de: "Nur der Serverinhaber und Administratoren können die Whitelist bearbeiten."
+    },
+    ConfigWhitelistAccessDenied => {
+        en: "The whitelist is reserved for the server owner and administrators (Manage Server is not enough).",
+        fr: "La liste blanche est réservée au propriétaire du serveur et aux administrateurs (Gérer le serveur ne suffit pas).",
+        de: "Die Whitelist ist dem Serverinhaber und Administratoren vorbehalten (Server verwalten reicht nicht)."
+    },
+    ConfigWhitelistEveryoneRefused => {
+        en: "The @everyone role cannot be exempted: it would exempt the whole server. Nothing was changed.",
+        fr: "Le rôle @everyone ne peut pas être exempté : il exempterait tout le serveur. Rien n'a été modifié.",
+        de: "Die Rolle @everyone kann nicht ausgenommen werden: Sie würde den ganzen Server ausnehmen. Es wurde nichts geändert."
     }
 }
