@@ -4,6 +4,7 @@
 mod access;
 mod access_control;
 mod anti_spam;
+mod content_filters;
 
 use poise::serenity_prelude as serenity;
 
@@ -11,9 +12,11 @@ use super::Context;
 use crate::app::{AppData, Error, run_database};
 use access::{Access, Right};
 use access_control::ListTarget;
+use content_filters::ModuleToggle;
 use foxsecura::database::GuildExemptions;
 use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
+use foxsecura::protection::shared::ModuleSet;
 
 const CATEGORY_SELECT_ID: &str = "foxsecura:config:category";
 
@@ -84,7 +87,11 @@ const CATEGORIES: &[Category] = &[
 
 /// Données affichées pour la catégorie sélectionnée.
 enum CategoryView {
-    AntiSpam(MessageFloodConfig),
+    AntiSpam {
+        config: MessageFloodConfig,
+        modules: ModuleSet,
+    },
+    Automod(ModuleSet),
     AccessControl {
         exemptions: GuildExemptions,
         access: Access,
@@ -131,19 +138,22 @@ pub async fn handle_component(
 ) -> Result<bool, Error> {
     let custom_id = component.data.custom_id.as_str();
     let list_target = ListTarget::from_custom_id(custom_id);
-    let required = match list_target {
-        Some(target) => target.required_right(),
-        None if [
-            CATEGORY_SELECT_ID,
-            anti_spam::ENABLE_ID,
-            anti_spam::DISABLE_ID,
-            anti_spam::LIMITS_ID,
-        ]
-        .contains(&custom_id) =>
+    let module_toggle = content_filters::parse_toggle(custom_id);
+    let required = match (list_target, &module_toggle) {
+        (Some(target), _) => target.required_right(),
+        (None, Some(_)) => Right::Config,
+        (None, None)
+            if [
+                CATEGORY_SELECT_ID,
+                anti_spam::ENABLE_ID,
+                anti_spam::DISABLE_ID,
+                anti_spam::LIMITS_ID,
+            ]
+            .contains(&custom_id) =>
         {
             Right::Config
         }
-        None => return Ok(false),
+        (None, None) => return Ok(false),
     };
 
     let language = Language::resolve(Some(component.locale.as_str()));
@@ -214,6 +224,17 @@ pub async fn handle_component(
         return Ok(true);
     }
 
+    if let Some(toggle) = module_toggle {
+        let Ok(toggle) = toggle else {
+            // Identifiant forgé ou bouton d'une autre version : rien n'est écrit.
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+            return Ok(true);
+        };
+        save_module_toggle(ctx, data, component, language, guild_id, access, toggle).await?;
+        return Ok(true);
+    }
+
     if custom_id == CATEGORY_SELECT_ID {
         let selected = match &component.data.kind {
             serenity::ComponentInteractionDataKind::StringSelect { values } => {
@@ -279,15 +300,19 @@ pub async fn handle_component(
         database.set_anti_spam_enabled(guild_id, enabled)
     })
     .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, anti_spam::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
 
-    match saved {
-        Ok(guild_config) => {
+    match view {
+        Ok(view) => {
             update_dashboard(
                 ctx,
                 component,
                 language,
                 anti_spam::CATEGORY_ID,
-                Some(&CategoryView::AntiSpam(guild_config.anti_spam)),
+                view.as_ref(),
             )
             .await?;
         }
@@ -299,6 +324,44 @@ pub async fn handle_component(
     }
 
     Ok(true)
+}
+
+/// Enregistre un interrupteur de module puis réaffiche sa catégorie à partir
+/// de l'état relu en base.
+async fn save_module_toggle(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    toggle: ModuleToggle,
+) -> Result<(), Error> {
+    let category_id = toggle.category_id();
+    let saved = run_database(&data.database, move |database| {
+        database.set_protection_module(guild_id, toggle.module, toggle.enabled)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, category_id, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            update_dashboard(ctx, component, language, category_id, view.as_ref()).await?;
+        }
+        Err(error) => {
+            eprintln!(
+                "[config] enregistrement du module {} impossible ({guild_id}) : {error}",
+                toggle.module
+            );
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Traite la soumission du modal des seuils Anti-Spam.
@@ -335,20 +398,20 @@ pub async fn handle_modal(
         database.set_anti_spam_limits(guild_id, threshold, window_seconds)
     })
     .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, anti_spam::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
 
-    match saved {
-        Ok(guild_config) => {
-            let view = CategoryView::AntiSpam(guild_config.anti_spam);
+    match view {
+        Ok(view) => {
+            let view = view.as_ref();
             let response = serenity::CreateInteractionResponseMessage::new()
-                .embed(build_embed(
-                    language,
-                    Some(anti_spam::CATEGORY_ID),
-                    Some(&view),
-                ))
+                .embed(build_embed(language, Some(anti_spam::CATEGORY_ID), view))
                 .components(build_components(
                     language,
                     Some(anti_spam::CATEGORY_ID),
-                    Some(&view),
+                    view,
                 ));
             modal
                 .create_response(
@@ -375,8 +438,26 @@ async fn load_view(
     access: Access,
 ) -> Result<Option<CategoryView>, Error> {
     Ok(match category_id {
-        anti_spam::CATEGORY_ID => Some(CategoryView::AntiSpam(
-            load_anti_spam(data, guild_id).await?,
+        anti_spam::CATEGORY_ID => {
+            let (config, modules) = run_database(&data.database, move |database| {
+                Ok((
+                    database.find_guild_config(guild_id)?,
+                    database.enabled_modules(guild_id)?,
+                ))
+            })
+            .await?;
+            Some(CategoryView::AntiSpam {
+                config: config
+                    .map(|guild_config| guild_config.anti_spam)
+                    .unwrap_or_default(),
+                modules,
+            })
+        }
+        content_filters::AUTOMOD_CATEGORY_ID => Some(CategoryView::Automod(
+            run_database(&data.database, move |database| {
+                database.enabled_modules(guild_id)
+            })
+            .await?,
         )),
         access_control::CATEGORY_ID => {
             let exemptions = run_database(&data.database, move |database| {
@@ -478,8 +559,19 @@ fn build_embed(
                 );
 
             embed = match (category.id, view) {
-                (anti_spam::CATEGORY_ID, Some(CategoryView::AntiSpam(config))) => {
-                    embed.fields(anti_spam::state_fields(language, config))
+                (anti_spam::CATEGORY_ID, Some(CategoryView::AntiSpam { config, modules })) => embed
+                    .fields(anti_spam::state_fields(language, config))
+                    .fields(content_filters::state_fields(
+                        language,
+                        content_filters::ANTI_SPAM_MODULES,
+                        *modules,
+                    )),
+                (content_filters::AUTOMOD_CATEGORY_ID, Some(CategoryView::Automod(modules))) => {
+                    embed.fields(content_filters::state_fields(
+                        language,
+                        content_filters::AUTOMOD_MODULES,
+                        *modules,
+                    ))
                 }
                 (
                     access_control::CATEGORY_ID,
@@ -513,8 +605,20 @@ fn build_components(
     ))];
 
     match (selected, view) {
-        (Some(anti_spam::CATEGORY_ID), Some(CategoryView::AntiSpam(config))) => {
+        (Some(anti_spam::CATEGORY_ID), Some(CategoryView::AntiSpam { config, modules })) => {
             rows.push(anti_spam::buttons(language, config));
+            rows.push(content_filters::buttons(
+                language,
+                content_filters::ANTI_SPAM_MODULES,
+                *modules,
+            ));
+        }
+        (Some(content_filters::AUTOMOD_CATEGORY_ID), Some(CategoryView::Automod(modules))) => {
+            rows.push(content_filters::buttons(
+                language,
+                content_filters::AUTOMOD_MODULES,
+                *modules,
+            ));
         }
         (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
             rows.extend(access_control::selects(language, *access));

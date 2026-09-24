@@ -73,11 +73,21 @@ impl App {
             })
             .build();
 
-        let mut client = serenity::ClientBuilder::new(self.token, self.intents)
+        let intents = self.intents;
+        let mut client = serenity::ClientBuilder::new(self.token, intents)
             .framework(framework)
             .await?;
 
-        client.start().await?;
+        if let Err(error) = client.start().await {
+            // Un intent privilégié refusé (4014) est une erreur de réglage du
+            // portail développeur : on dit quoi activer et où, au lieu du
+            // message générique de serenity.
+            // `main` n'affiche ensuite que la forme courte de l'erreur.
+            if let Some(message) = intents::startup_error_message(&error, intents) {
+                eprintln!("{message}");
+            }
+            return Err(error.into());
+        }
 
         Ok(())
     }
