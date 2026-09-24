@@ -4,25 +4,37 @@
 mod data;
 mod events;
 mod intents;
+mod pipeline;
 
+use std::sync::Arc;
+
+use foxsecura::database::{DEFAULT_DATABASE_PATH, Database};
 use poise::serenity_prelude as serenity;
 
-pub use data::AppData;
+pub use data::{AppData, run_database};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub struct App {
     token: String,
     intents: serenity::GatewayIntents,
+    data: AppData,
 }
 
 impl App {
+    /// Lit `DISCORD_TOKEN`, puis ouvre la base SQLite (`DATABASE_PATH`, par
+    /// défaut [`DEFAULT_DATABASE_PATH`]) et applique ses migrations.
     pub fn from_env() -> Result<Self, Error> {
         let token = std::env::var("DISCORD_TOKEN")?;
+        let database_path =
+            std::env::var("DATABASE_PATH").unwrap_or_else(|_| DEFAULT_DATABASE_PATH.to_owned());
+        let database = Database::open(&database_path)?;
+        println!("Base de données ouverte : {database_path}");
 
         Ok(Self {
             token,
             intents: intents::default(),
+            data: AppData::new(Arc::new(database)),
         })
     }
 
@@ -33,13 +45,14 @@ impl App {
             ..Default::default()
         };
 
+        let data = self.data;
         let framework = poise::Framework::builder()
             .options(options)
             .setup(|ctx, ready, framework| {
                 Box::pin(async move {
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                     println!("FoxSecura connecté en tant que {}", ready.user.name);
-                    Ok(AppData)
+                    Ok(data)
                 })
             })
             .build();

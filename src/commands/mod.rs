@@ -15,12 +15,20 @@ pub fn all() -> Vec<poise::Command<AppData, Error>> {
     vec![config::config(), help::help(), status::status()]
 }
 
-pub async fn handle_component(
+/// Route les interactions hors slash commands (composants, modals).
+pub async fn handle_interaction(
     ctx: &serenity::Context,
-    component: &serenity::ComponentInteraction,
+    data: &AppData,
+    interaction: &serenity::Interaction,
 ) -> Result<(), Error> {
-    if config::handle_component(ctx, component).await? {
-        return Ok(());
+    match interaction {
+        serenity::Interaction::Component(component) => {
+            config::handle_component(ctx, data, component).await?;
+        }
+        serenity::Interaction::Modal(modal) => {
+            config::handle_modal(ctx, data, modal).await?;
+        }
+        _ => {}
     }
 
     Ok(())
