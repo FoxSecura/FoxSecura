@@ -8,12 +8,14 @@
 //! court-circuit) → suppression par le binaire → [`plan_follow_up`]
 //! (sanction ou revue) → [`build_incident`] et [`record_follow_up`].
 //!
-//! Ordre : caractères invisibles → liens malveillants → liens adultes →
-//! invitations → `@everyone`/`@here` → mentions de masse → pièces jointes →
-//! anti-arnaque → mots interdits. Le premier module activé qui déclenche
-//! arrête la chaîne : un message ne produit jamais deux suppressions ni deux
-//! incidents. Les filtres passent avant l'anti-spam ; un message qu'ils
-//! retiennent n'est pas compté dans la fenêtre anti-spam.
+//! Ordre de la spécification V1 : pièces jointes → caractères invisibles →
+//! anti-arnaque → liens malveillants → liens adultes → invitations →
+//! `@everyone`/`@here` → mentions de masse → mots interdits. Le premier module
+//! activé qui déclenche arrête la chaîne : un message ne produit jamais deux
+//! suppressions ni deux incidents. L'anti-arnaque passe avant les liens
+//! malveillants : c'est lui qui gradue la réponse (un lien malveillant est
+//! l'un de ses signaux). Les filtres passent avant l'anti-spam ; un message
+//! qu'ils retiennent n'est pas compté dans la fenêtre anti-spam.
 
 mod response;
 
@@ -44,14 +46,14 @@ pub use response::{
 
 /// Filtres de contenu, dans l'ordre d'évaluation.
 pub const CONTENT_FILTERS: [ProtectionModule; 9] = [
+    ProtectionModule::AttachmentFilter,
     ProtectionModule::InvisibleCharFilter,
+    ProtectionModule::AntiScam,
     ProtectionModule::MaliciousLink,
     ProtectionModule::AdultLink,
     ProtectionModule::AntiInvite,
     ProtectionModule::AntiEveryone,
     ProtectionModule::AntiMassMention,
-    ProtectionModule::AttachmentFilter,
-    ProtectionModule::AntiScam,
     ProtectionModule::BadWords,
 ];
 

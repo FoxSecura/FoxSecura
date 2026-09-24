@@ -124,14 +124,14 @@ fn every_content_filter_is_a_known_module_in_v1_order() {
     assert_eq!(
         CONTENT_FILTERS.map(ProtectionModule::key),
         [
+            "attachment_filter",
             "invisible_char_filter",
+            "anti_scam",
             "malicious_link",
             "adult_link",
             "anti_invite",
             "anti_everyone",
             "anti_mass_mention",
-            "attachment_filter",
-            "anti_scam",
             "bad_words",
         ]
     );
@@ -516,10 +516,12 @@ fn exempt_author_gets_content_corrections_but_no_anti_spam() {
         established_author(),
         None,
     );
+    // Avec tous les modules, l'anti-arnaque (avant les liens malveillants)
+    // retient le lien : c'est lui qui gradue la réponse.
     assert!(matches!(
         filtered,
         MessageRoute::Filter(ContentDetection {
-            module: ProtectionModule::MaliciousLink,
+            module: ProtectionModule::AntiScam,
             ..
         })
     ));
@@ -900,4 +902,144 @@ fn hostile_content_cannot_ping_or_inject_formatting_in_the_log_channel() {
     for forbidden in ["@everyone", "<@123>", "<@&456>", "**", "||", "https://evil"] {
         assert!(!outside_code.contains(forbidden), "{forbidden}");
     }
+}
+
+// --- Chaîne complète V1 : pièces jointes et anti-arnaque ---
+
+#[test]
+fn anti_scam_runs_before_malicious_links_and_grades_the_response() {
+    let modules: ModuleSet = [ProtectionModule::AntiScam, ProtectionModule::MaliciousLink]
+        .into_iter()
+        .collect();
+    let route = route_message(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        modules,
+        &text_message("https://grabify.link/x"),
+        established_author(),
+        None,
+    );
+    // Un seul module retenu : l'anti-arnaque, jamais les deux.
+    assert!(matches!(
+        route,
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::AntiScam,
+            ..
+        })
+    ));
+
+    // Sans l'anti-arnaque, le filtre de liens prend le relais.
+    assert!(matches!(
+        route_message(
+            MessageScope::Enforce,
+            MessageEvent::Created,
+            only(ProtectionModule::MaliciousLink),
+            &text_message("https://grabify.link/x"),
+            established_author(),
+            None,
+        ),
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::MaliciousLink,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn low_confidence_scam_falls_through_to_the_next_filters() {
+    // « urgent » seul : confiance basse, l'anti-arnaque laisse passer et le
+    // mot interdit qui suit est retenu.
+    let matcher = BadWordsMatcher::new(["zut"]);
+    let route = route_message(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        [ProtectionModule::AntiScam, ProtectionModule::BadWords]
+            .into_iter()
+            .collect(),
+        &text_message("urgent, zut"),
+        established_author(),
+        Some(&matcher),
+    );
+    assert!(matches!(
+        route,
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::BadWords,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn dangerous_attachment_comes_first_and_short_circuits_the_chain() {
+    let matcher = BadWordsMatcher::new(["zut"]);
+    let message = MessageContent {
+        content: "\u{200b} urgent verify your account https://grabify.link/x zut".to_owned(),
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        ..MessageContent::default()
+    };
+    let route = route_message(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        all_modules(),
+        &message,
+        established_author(),
+        Some(&matcher),
+    );
+    assert!(matches!(
+        route,
+        MessageRoute::Filter(ContentDetection {
+            module: ProtectionModule::AttachmentFilter,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn attachments_and_anti_scam_also_apply_to_edits() {
+    let attachment = MessageContent {
+        content: "voici la facture".to_owned(),
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        ..MessageContent::default()
+    };
+    let scam = text_message("urgent, verify your account https://grabify.link/x");
+
+    for (module, message) in [
+        (ProtectionModule::AttachmentFilter, &attachment),
+        (ProtectionModule::AntiScam, &scam),
+    ] {
+        for scope in [MessageScope::Enforce, MessageScope::ExemptAuthor] {
+            let route = route_message(
+                scope,
+                MessageEvent::Edited,
+                only(module),
+                message,
+                established_author(),
+                None,
+            );
+            assert!(
+                matches!(route, MessageRoute::Filter(ContentDetection { module: found, .. }) if found == module),
+                "{module} {scope:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn attachment_changes_make_a_new_revision() {
+    let analyzed = MessageContent {
+        content: "facture".to_owned(),
+        attachments: vec!["facture.pdf.exe".to_owned()],
+        ..MessageContent::default()
+    };
+    let mut removed = analyzed.clone();
+    removed.attachments.clear();
+
+    assert_eq!(
+        check_revision(&analyzed, Some(&analyzed.clone())),
+        RevisionCheck::Current
+    );
+    assert_eq!(
+        check_revision(&analyzed, Some(&removed)),
+        RevisionCheck::Superseded
+    );
 }
