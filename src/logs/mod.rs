@@ -5,7 +5,7 @@ mod formatter;
 mod model;
 mod structure;
 
-pub use formatter::{format_security_log, format_security_log_message};
+pub use formatter::{format_security_log, format_security_log_message, inline_literal};
 pub use model::{
     ActionCode, ActionStatus, AffectedResource, AffectedResourceType, FailureCode, LogSeverity,
     LogType, SecurityActionOutcome, SecurityActor, SecurityEvidence, SecurityIncident,

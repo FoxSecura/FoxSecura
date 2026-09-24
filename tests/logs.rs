@@ -8,7 +8,7 @@ use foxsecura::logs::{
     ActionCode, ActionStatus, LOG_CHANNEL_DEFINITIONS, LOG_STRUCTURE_CATEGORY_ALIASES,
     LOG_STRUCTURE_CATEGORY_NAME, LogSeverity, LogType, SecurityActionOutcome, SecurityActor,
     SecurityEvidence, SecurityIncident, SecurityIncidentError, SecurityLocation, ThresholdUnit,
-    format_security_log, format_security_log_message,
+    format_security_log, format_security_log_message, inline_literal,
 };
 
 fn successful_action(action: ActionCode) -> SecurityActionOutcome {
@@ -180,4 +180,37 @@ fn log_message_adds_actor_channel_evidence_and_recommendation() {
     assert!(message.contains("Salon: <#900>"));
     assert!(message.contains("Preuve: 6/5 messages en 5 s"));
     assert!(message.contains("Recommandation: Examiner le membre suspect."));
+}
+
+// --- Rendu des valeurs non fiables ---
+
+#[test]
+fn inline_literal_wraps_values_in_unbreakable_inline_code() {
+    assert_eq!(inline_literal("simple", 50), "`simple`");
+    assert_eq!(inline_literal("", 50), "` `");
+    // Un accent grave du contenu ne peut pas fermer le bloc.
+    assert_eq!(inline_literal("a`b``c", 50), "`aˋbˋˋc`");
+}
+
+#[test]
+fn inline_literal_neutralizes_line_breaks_and_hidden_characters() {
+    assert_eq!(
+        inline_literal("ligne1\nligne2\r\tfin", 50),
+        "`ligne1 ligne2  fin`"
+    );
+    assert_eq!(
+        inline_literal("a\u{200b}b\u{202e}c\u{e0041}d\u{feff}", 50),
+        "`a\u{fffd}b\u{fffd}c\u{fffd}d\u{fffd}`"
+    );
+    // Les émojis composés restent lisibles.
+    assert_eq!(inline_literal("❤️ 👍🏽 👨‍👩‍👧", 50), "`❤️ 👍🏽 👨‍👩‍👧`");
+}
+
+#[test]
+fn inline_literal_collapses_zalgo_and_truncates() {
+    let zalgo = format!("a{}b", "\u{0301}".repeat(30));
+    assert_eq!(inline_literal(&zalgo, 50), "`a\u{0301}b`");
+
+    assert_eq!(inline_literal("abcdef", 3), "`abc…`");
+    assert_eq!(inline_literal("abc", 3), "`abc`");
 }

@@ -6,6 +6,7 @@ pub mod anti_nuke;
 pub mod anti_raid;
 pub mod anti_spam;
 pub mod automod;
+pub mod content_filter;
 pub mod shared;
 
 pub use shared::ProtectionDecision;

@@ -607,6 +607,66 @@ catalog! {
         fr: "Vérifier les permissions de suppression de FoxSecura (Gérer les messages).",
         de: "Prüfen, ob FoxSecura Nachrichten löschen darf (Nachrichten verwalten)."
     },
+    ContentFilterSummaryInvisibleChar => {
+        en: "Invisible or obfuscating characters detected.",
+        fr: "Caractères invisibles ou d'obfuscation détectés.",
+        de: "Unsichtbare oder verschleiernde Zeichen erkannt."
+    },
+    ContentFilterSummaryMaliciousLink => {
+        en: "Malicious link detected.",
+        fr: "Lien malveillant détecté.",
+        de: "Schädlicher Link erkannt."
+    },
+    ContentFilterSummaryAdultLink => {
+        en: "Adult content link detected.",
+        fr: "Lien vers un contenu adulte détecté.",
+        de: "Link zu Inhalten für Erwachsene erkannt."
+    },
+    ContentFilterSummaryInvite => {
+        en: "Discord invite link detected.",
+        fr: "Lien d'invitation Discord détecté.",
+        de: "Discord-Einladungslink erkannt."
+    },
+    ContentFilterSummaryEveryone => {
+        en: "@everyone or @here mention detected.",
+        fr: "Mention @everyone ou @here détectée.",
+        de: "Erwähnung von @everyone oder @here erkannt."
+    },
+    ContentFilterSummaryMassMention => {
+        en: "Mass mention detected.",
+        fr: "Mentions de masse détectées.",
+        de: "Massenerwähnung erkannt."
+    },
+    ContentFilterEvidenceObfuscation => {
+        en: "Obfuscation",
+        fr: "Obfuscation",
+        de: "Verschleierung"
+    },
+    ContentFilterEvidenceMention => {
+        en: "Mention",
+        fr: "Mention",
+        de: "Erwähnung"
+    },
+    ContentFilterEvidenceEvent => {
+        en: "Event",
+        fr: "Événement",
+        de: "Ereignis"
+    },
+    ContentFilterEventEdited => {
+        en: "message edited",
+        fr: "message modifié",
+        de: "Nachricht bearbeitet"
+    },
+    LogsEvidenceExcerpt => {
+        en: "Excerpt",
+        fr: "Extrait",
+        de: "Auszug"
+    },
+    LogsEvidenceDomain => {
+        en: "Domain",
+        fr: "Domaine",
+        de: "Domain"
+    },
     ConfigAccessDenied => {
         en: "You need to be the server owner or have the Administrator or Manage Server permission.",
         fr: "Vous devez être propriétaire du serveur ou disposer de la permission Administrateur ou Gérer le serveur.",
@@ -671,6 +731,56 @@ catalog! {
         en: "Invalid values: the threshold must be between 2 and 50 messages and the window between 1 and 60 seconds.",
         fr: "Valeurs invalides : le seuil doit être compris entre 2 et 50 messages et la fenêtre entre 1 et 60 secondes.",
         de: "Ungültige Werte: Die Schwelle muss zwischen 2 und 50 Nachrichten und das Zeitfenster zwischen 1 und 60 Sekunden liegen."
+    },
+    ConfigContentFilters => {
+        en: "Content filters",
+        fr: "Filtres de contenu",
+        de: "Inhaltsfilter"
+    },
+    ConfigContentFiltersNotice => {
+        en: "Enabled filters delete matching messages (new or edited) and log an incident, without any sanction. They also apply to whitelisted members, but never in ignored channels. The Message Content intent is required.",
+        fr: "Les filtres actifs suppriment les messages concernés (nouveaux ou modifiés) et journalisent un incident, sans aucune sanction. Ils s'appliquent aussi aux membres sur liste blanche, jamais dans les salons ignorés. L'intent Message Content est requis.",
+        de: "Aktive Filter löschen betroffene Nachrichten (neu oder bearbeitet) und protokollieren einen Vorfall, ohne Sanktion. Sie gelten auch für Mitglieder auf der Whitelist, aber nie in ignorierten Kanälen. Der Message-Content-Intent ist erforderlich."
+    },
+    ConfigModuleEnabled => {
+        en: "enabled",
+        fr: "actif",
+        de: "aktiv"
+    },
+    ConfigModuleDisabled => {
+        en: "disabled",
+        fr: "désactivé",
+        de: "deaktiviert"
+    },
+    ModuleInvisibleCharFilter => {
+        en: "Invisible characters",
+        fr: "Caractères invisibles",
+        de: "Unsichtbare Zeichen"
+    },
+    ModuleMaliciousLink => {
+        en: "Malicious links",
+        fr: "Liens malveillants",
+        de: "Schädliche Links"
+    },
+    ModuleAdultLink => {
+        en: "Adult links",
+        fr: "Liens adultes",
+        de: "Links für Erwachsene"
+    },
+    ModuleAntiInvite => {
+        en: "Discord invites",
+        fr: "Invitations Discord",
+        de: "Discord-Einladungen"
+    },
+    ModuleAntiEveryone => {
+        en: "@everyone / @here",
+        fr: "@everyone / @here",
+        de: "@everyone / @here"
+    },
+    ModuleAntiMassMention => {
+        en: "Mass mentions",
+        fr: "Mentions de masse",
+        de: "Massenerwähnungen"
     },
     ConfigAccessControlNotice => {
         en: "Whitelisted members are exempt from sanctions; the whitelist never grants access to /config. No protection runs in ignored channels. Pick an entry to add it, or pick it again to remove it.",
