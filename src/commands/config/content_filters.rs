@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Interrupteurs des filtres de contenu, dans les catégories Anti-Spam et
-//! AutoMod du tableau de bord.
+//! Interrupteurs des modules de protection, dans les catégories Anti-Spam,
+//! AutoMod et Anti-Raid du tableau de bord.
 //!
 //! L'état affiché est celui lu en base (`guild_protection_modules`). Chaque
 //! écriture invalide le cache de configuration de la guilde : le moteur
@@ -36,7 +36,15 @@ pub const AUTOMOD_MODULES: &[ProtectionModule] = &[
 /// Boutons par rangée : limite Discord.
 const BUTTONS_PER_ROW: usize = 5;
 
+/// Modules des arrivées de membres, affichés dans la catégorie Anti-Raid.
+pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiBot,
+    ProtectionModule::AntiNewAccount,
+    ProtectionModule::AntiNicknameHoisting,
+];
+
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
+pub const ANTI_RAID_CATEGORY_ID: &str = "anti_raid";
 
 /// Demande d'activation ou de désactivation d'un module.
 ///
@@ -62,6 +70,8 @@ impl ModuleToggle {
     pub fn category_id(self) -> &'static str {
         if AUTOMOD_MODULES.contains(&self.module) {
             AUTOMOD_CATEGORY_ID
+        } else if ANTI_RAID_MODULES.contains(&self.module) {
+            ANTI_RAID_CATEGORY_ID
         } else {
             super::anti_spam::CATEGORY_ID
         }
@@ -86,14 +96,13 @@ pub fn parse_toggle(custom_id: &str) -> Option<Result<ModuleToggle, UnknownModul
     Some(ProtectionModule::from_key(key).map(|module| ModuleToggle { module, enabled }))
 }
 
-/// Champ d'état : un module par ligne, avec son état persisté, puis la portée
-/// des filtres.
-pub fn state_fields(
+/// Un module par ligne, avec son état persisté.
+pub fn module_states(
     language: Language,
     modules: &[ProtectionModule],
     enabled: ModuleSet,
-) -> Vec<(&'static str, String, bool)> {
-    let states = modules
+) -> String {
+    modules
         .iter()
         .map(|module| {
             format!(
@@ -103,7 +112,17 @@ pub fn state_fields(
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
+
+/// Champ d'état : un module par ligne, avec son état persisté, puis la portée
+/// des filtres.
+pub fn state_fields(
+    language: Language,
+    modules: &[ProtectionModule],
+    enabled: ModuleSet,
+) -> Vec<(&'static str, String, bool)> {
+    let states = module_states(language, modules, enabled);
 
     vec![(
         text(language, TextKey::ConfigContentFilters),
@@ -174,6 +193,9 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AttachmentFilter => TextKey::ModuleAttachmentFilter,
         ProtectionModule::AntiScam => TextKey::ModuleAntiScam,
         ProtectionModule::BadWords => TextKey::ModuleBadWords,
+        ProtectionModule::AntiBot => TextKey::ModuleAntiBot,
+        ProtectionModule::AntiNewAccount => TextKey::ModuleAntiNewAccount,
+        ProtectionModule::AntiNicknameHoisting => TextKey::ModuleAntiNicknameHoisting,
     }
 }
 
@@ -187,6 +209,7 @@ mod tests {
             let count = ANTI_SPAM_MODULES
                 .iter()
                 .chain(AUTOMOD_MODULES)
+                .chain(ANTI_RAID_MODULES)
                 .filter(|candidate| **candidate == module)
                 .count();
             assert_eq!(count, 1, "{module}");
@@ -195,6 +218,7 @@ mod tests {
         // sous la limite Discord de cinq rangées.
         assert!(ANTI_SPAM_MODULES.len() <= 2 * BUTTONS_PER_ROW);
         assert!(AUTOMOD_MODULES.len() <= BUTTONS_PER_ROW);
+        assert!(ANTI_RAID_MODULES.len() <= BUTTONS_PER_ROW);
     }
 
     #[test]

@@ -15,5 +15,7 @@ mod automod;
 mod content_filter;
 #[path = "protection/content_modules.rs"]
 mod content_modules;
+#[path = "protection/member_join.rs"]
+mod member_join;
 #[path = "protection/shared/mod.rs"]
 mod shared;

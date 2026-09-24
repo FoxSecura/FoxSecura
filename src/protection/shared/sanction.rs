@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Sanctions d'un membre (timeout, ban) : décision et classement des échecs,
-//! sans effet Discord.
+//! Sanctions d'un membre (timeout, expulsion, ban) et correction de son
+//! pseudo : décision et classement des échecs, sans effet Discord.
 //!
 //! Le runtime relève l'état du cache ([`SanctionContext`]), demande à
 //! [`precheck_sanction`] s'il faut appeler Discord, puis classe la réponse de
@@ -42,11 +42,13 @@ pub const MAX_TIMEOUT: Duration = Duration::from_secs(28 * 24 * 60 * 60);
 /// Purge maximale des messages lors d'un ban (7 jours).
 pub const MAX_BAN_PURGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
-/// Sanction à appliquer à l'auteur d'un message.
+/// Sanction à appliquer à un membre.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SanctionKind {
     /// Exclusion temporaire (`communication_disabled_until`).
     Timeout { duration: Duration },
+    /// Expulsion : le membre peut revenir avec une invitation.
+    Kick,
     /// Bannissement, avec purge des messages récents (7 jours au plus).
     Ban { purge: Duration },
 }
@@ -55,6 +57,7 @@ impl SanctionKind {
     pub const fn action_code(self) -> ActionCode {
         match self {
             Self::Timeout { .. } => ActionCode::TimeoutMember,
+            Self::Kick => ActionCode::KickMember,
             Self::Ban { .. } => ActionCode::BanMember,
         }
     }
@@ -63,6 +66,7 @@ impl SanctionKind {
     pub const fn required_permission(self) -> SanctionPermission {
         match self {
             Self::Timeout { .. } => SanctionPermission::ModerateMembers,
+            Self::Kick => SanctionPermission::KickMembers,
             Self::Ban { .. } => SanctionPermission::BanMembers,
         }
     }
@@ -71,7 +75,7 @@ impl SanctionKind {
     pub fn timeout_duration(self) -> Option<Duration> {
         match self {
             Self::Timeout { duration } => Some(duration.min(MAX_TIMEOUT)),
-            Self::Ban { .. } => None,
+            Self::Kick | Self::Ban { .. } => None,
         }
     }
 
@@ -81,7 +85,7 @@ impl SanctionKind {
             Self::Ban { purge } => {
                 Some((purge.min(MAX_BAN_PURGE).as_secs() / (24 * 60 * 60)) as u8)
             }
-            Self::Timeout { .. } => None,
+            Self::Timeout { .. } | Self::Kick => None,
         }
     }
 }
@@ -90,14 +94,18 @@ impl SanctionKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SanctionPermission {
     ModerateMembers,
+    KickMembers,
     BanMembers,
+    ManageNicknames,
 }
 
 impl SanctionPermission {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ModerateMembers => "MODERATE_MEMBERS",
+            Self::KickMembers => "KICK_MEMBERS",
             Self::BanMembers => "BAN_MEMBERS",
+            Self::ManageNicknames => "MANAGE_NICKNAMES",
         }
     }
 }
@@ -107,7 +115,9 @@ impl SanctionPermission {
 pub struct BotPermissions {
     pub administrator: bool,
     pub moderate_members: bool,
+    pub kick_members: bool,
     pub ban_members: bool,
+    pub manage_nicknames: bool,
 }
 
 impl BotPermissions {
@@ -115,7 +125,9 @@ impl BotPermissions {
         self.administrator
             || match permission {
                 SanctionPermission::ModerateMembers => self.moderate_members,
+                SanctionPermission::KickMembers => self.kick_members,
                 SanctionPermission::BanMembers => self.ban_members,
+                SanctionPermission::ManageNicknames => self.manage_nicknames,
             }
     }
 }
@@ -182,6 +194,8 @@ pub enum SanctionSkip {
     RoleHierarchy { target: u16, bot: u16 },
     /// Discord refuse le timeout d'un membre `ADMINISTRATOR`.
     AdministratorTimeout,
+    /// Le pseudo du propriétaire du serveur n'est modifiable par aucun bot.
+    OwnerNickname,
 }
 
 /// Résultat d'une sanction.
@@ -204,6 +218,11 @@ impl SanctionOutcome {
 
     /// Résultat d'action journalisé dans l'incident.
     pub fn action_outcome(&self, kind: SanctionKind) -> SecurityActionOutcome {
+        self.action_outcome_as(kind.action_code())
+    }
+
+    /// Résultat journalisé sous un autre code d'action (renommage).
+    pub fn action_outcome_as(&self, action: ActionCode) -> SecurityActionOutcome {
         let (status, failure_code, details) = match self {
             Self::Applied => (ActionStatus::Success, None, None),
             Self::Skipped(skip) => {
@@ -221,7 +240,7 @@ impl SanctionOutcome {
         };
 
         SecurityActionOutcome {
-            action: kind.action_code(),
+            action,
             status,
             details,
             failure_code,
@@ -251,6 +270,10 @@ fn skip_details(skip: &SanctionSkip) -> (Option<FailureCode>, String) {
         SanctionSkip::AdministratorTimeout => (
             Some(FailureCode::RoleHierarchy),
             "administrator_cannot_be_timed_out".to_owned(),
+        ),
+        SanctionSkip::OwnerNickname => (
+            Some(FailureCode::RoleHierarchy),
+            "guild_owner_nickname".to_owned(),
         ),
     }
 }
@@ -307,6 +330,57 @@ pub fn precheck_sanction(
 
     if matches!(kind, SanctionKind::Timeout { .. }) && target.administrator == Some(true) {
         return skip(SanctionSkip::AdministratorTimeout);
+    }
+
+    if let Some(position) = target.top_role_position
+        && position >= bot.top_role_position
+    {
+        return skip(SanctionSkip::RoleHierarchy {
+            target: position,
+            bot: bot.top_role_position,
+        });
+    }
+
+    Ok(())
+}
+
+/// Décide, d'après le cache, s'il faut appeler Discord pour renommer un
+/// membre.
+///
+/// Un renommage corrige un pseudo, ce n'est pas une sanction : il s'applique
+/// aussi aux membres de la liste blanche (V1). Il reprend les types du socle
+/// des sanctions pour classer ses échecs de la même façon.
+///
+/// Ordre : propriétaire (jamais modifiable, classé `role_hierarchy`) → bot
+/// lui-même → résolution du membre → `MANAGE_NICKNAMES` → hiérarchie.
+pub fn precheck_nickname_change(context: &SanctionContext) -> Result<(), SanctionOutcome> {
+    let skip = |reason| Err(SanctionOutcome::Skipped(reason));
+
+    if context.owner_id == Some(context.target_id) {
+        return skip(SanctionSkip::OwnerNickname);
+    }
+    if context.target_id == context.bot_id {
+        return skip(SanctionSkip::BotItself);
+    }
+
+    let target = match &context.target {
+        TargetLookup::Found(target) => *target,
+        TargetLookup::NotFound => return skip(SanctionSkip::MemberMissing),
+        TargetLookup::Unavailable { details } => {
+            return skip(SanctionSkip::MemberUnavailable {
+                details: details.clone(),
+            });
+        }
+    };
+
+    let Some(bot) = context.bot else {
+        return Ok(());
+    };
+
+    if !bot.permissions.allows(SanctionPermission::ManageNicknames) {
+        return skip(SanctionSkip::MissingPermission(
+            SanctionPermission::ManageNicknames,
+        ));
     }
 
     if let Some(position) = target.top_role_position

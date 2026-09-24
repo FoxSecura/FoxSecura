@@ -19,6 +19,8 @@ pub struct GuildConfig {
     pub anti_spam: MessageFloodConfig,
     /// Liste intégrée des mots interdits (migration 5).
     pub bad_words_language: BadWordsLanguage,
+    /// Âge minimal d'un compte à l'arrivée, en jours (migration 6, 1 à 365).
+    pub new_account_min_age_days: u16,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -58,6 +60,22 @@ pub struct MessageGuardContext {
     /// `bad_words` est activé. La langue de la liste intégrée est dans
     /// `guild_config`.
     pub custom_bad_words: Arc<[String]>,
+}
+
+/// Données lues en un seul passage pour une arrivée ou une mise à jour de
+/// membre.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberGuardContext {
+    /// `None` si la guilde n'a jamais été configurée : rien n'est activé.
+    pub guild_config: Option<GuildConfig>,
+    /// L'utilisateur est sur la liste noire (migration 6).
+    pub blacklisted: bool,
+    /// L'identifiant de l'utilisateur est sur la liste blanche.
+    pub user_whitelisted: bool,
+    /// Rôles de la liste blanche de la guilde.
+    pub whitelist_roles: Vec<u64>,
+    /// Modules de protection activés.
+    pub enabled_modules: ModuleSet,
 }
 
 pub(crate) fn parse_language(value: &str) -> Result<Language, DatabaseError> {

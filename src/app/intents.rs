@@ -10,7 +10,9 @@ use poise::serenity_prelude::{self as serenity, GatewayIntents};
 /// - `MESSAGE_CONTENT` (**privilégié**) : texte et mentions des messages, lus
 ///   par les filtres de contenu. Sans lui, Discord livre des messages vides et
 ///   aucun filtre ne peut déclencher.
-/// - `GUILD_MEMBERS` (**privilégié**) : événements de membres.
+/// - `GUILD_MEMBERS` (**privilégié**) : arrivées et mises à jour de membres
+///   (liste noire, anti-bot, nouveaux comptes, pseudos hoistés). Sans lui,
+///   aucune protection des arrivées ne s'exécute.
 ///
 /// Un intent privilégié non activé dans le portail développeur ferme la
 /// connexion (code 4014) : voir [`startup_error_message`].

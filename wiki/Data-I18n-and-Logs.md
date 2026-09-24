@@ -19,7 +19,7 @@ La connexion est protégée par un `Mutex`, ce qui donne une surface de synchron
 
 ## Migrations
 
-Le schéma est versionné dans `schema_migrations`. La version actuelle est `5` : la migration `1` crée `guild_configs` et `guild_log_channels`, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, la migration `3` (`whitelist_and_ignored_channels`) crée les tables de liste blanche et de salons ignorés, la migration `4` (`protection_modules`) crée `guild_protection_modules` et la migration `5` (`bad_words`) ajoute `guild_configs.bad_words_language` et crée `guild_bad_words`. Chaque migration s'applique sans perte des données existantes.
+Le schéma est versionné dans `schema_migrations`. La version actuelle est `6` : la migration `1` crée `guild_configs` et `guild_log_channels`, la migration `2` (`anti_spam_settings`) ajoute les colonnes anti-spam à `guild_configs` avec leurs valeurs par défaut, la migration `3` (`whitelist_and_ignored_channels`) crée les tables de liste blanche et de salons ignorés, la migration `4` (`protection_modules`) crée `guild_protection_modules` la migration `5` (`bad_words`) ajoute `guild_configs.bad_words_language` et crée `guild_bad_words`, et la migration `6` (`member_protection`) ajoute `guild_configs.new_account_min_age_days` et crée `guild_blacklist_users` avec ses déclencheurs d'exclusion. Chaque migration s'applique sans perte des données existantes.
 
 ### `guild_configs`
 
@@ -29,6 +29,7 @@ Le schéma est versionné dans `schema_migrations`. La version actuelle est `5` 
 - `anti_spam_message_threshold` : 2 à 50, 5 par défaut (migration 2) ;
 - `anti_spam_window_seconds` : 1 à 60, 5 par défaut (migration 2) ;
 - `bad_words_language` : `french`, `english` ou `all`, `all` par défaut (migration 5) ;
+- `new_account_min_age_days` : 1 à 365, 7 par défaut (migration 6) ;
 - `created_at` et `updated_at` : timestamps Unix.
 
 ### `guild_log_channels`
@@ -54,6 +55,12 @@ L'anti-spam par rafales reste dans les colonnes `anti_spam_*` de `guild_configs`
 ### `guild_bad_words` (migration 5)
 
 Mots interdits personnalisés : `(guild_id, word, created_at)`, clé primaire composite `(guild_id, word)`, cascade depuis `guild_configs`, `word` de 1 à 100 caractères (`CHECK`). Les mots sont stockés en minuscules (la correspondance ignore la casse), ce qui rend la clé composite suffisante pour dédoublonner. Les bornes de la V1 (200 mots par guilde, 2 000 caractères de saisie) sont validées côté Rust avant l'écriture ; `set_custom_bad_words` remplace la liste dans une transaction.
+
+### `guild_blacklist_users` (migration 6)
+
+Liste noire : `(guild_id, user_id, created_at)`, clé primaire composite `(guild_id, user_id)`, cascade depuis `guild_configs`. Deux déclencheurs `BEFORE INSERT` refusent d'inscrire sur la liste noire un utilisateur de `guild_whitelist_users`, et réciproquement ; le repository le vérifie d'abord sous le verrou d'écriture pour renvoyer une erreur typée (`UserWhitelisted`, `UserBlacklisted`).
+
+`Database::member_guard_context` fournit au pipeline des membres la configuration de la guilde, les statuts liste noire et liste blanche de l'utilisateur, les rôles exemptés et les modules activés, depuis le même cache de guilde que les messages (sept requêtes au chargement).
 
 ## Validation de domaine
 

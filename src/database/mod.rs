@@ -20,4 +20,6 @@ pub use bad_words::BadWordsSettings;
 pub use cache::{DEFAULT_GUILD_CACHE_CAPACITY, GuildCacheStats};
 pub use client::{DEFAULT_DATABASE_PATH, Database, DatabaseError};
 pub use migrations::LATEST_SCHEMA_VERSION;
-pub use models::{GuildConfig, GuildExemptions, GuildLogChannel, MessageGuardContext};
+pub use models::{
+    GuildConfig, GuildExemptions, GuildLogChannel, MemberGuardContext, MessageGuardContext,
+};

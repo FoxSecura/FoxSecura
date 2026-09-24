@@ -20,6 +20,16 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Cache mémoire de la configuration par guilde (1 024 guildes, LRU) : configuration, salons ignorés, liste blanche, modules et mots personnalisés chargés une fois (6 requêtes), puis servis depuis la mémoire ; invalidé à chaque écriture, sous le verrou de la connexion (garde `WriteConnection`), sans état périmé possible. Mono-instance. Mesure : 1 000 messages d'une guilde → 1 chargement SQLite au lieu de 4 à 6 requêtes par message.
 - Modifications partielles : un `MESSAGE_UPDATE` sans mentions ni pièces jointes n'est plus comparé sur ces champs lors de la vérification de révision ; un lien malveillant ajouté par modification est de nouveau supprimé (il était jugé `Superseded`).
 
+### Arrivées de membres
+
+- Pipeline des membres branché sur `GuildMemberAddition` et `GuildMemberUpdate` : ordre de la V1 (liste noire → anti-bot → nouveaux comptes → pseudos hoistés), arrêt au premier résultat terminal (membre banni ou expulsé), résultats non terminaux cumulés ; arrivée du bot ignorée ; une seule lecture de contexte par événement, via le cache de la guilde.
+- Liste noire : ban à l'arrivée (`FoxSecura Blacklist: …`), **terminal même si le ban échoue** ; incident `Critical`. N'agit qu'à l'arrivée.
+- Anti-bot (`anti_bot`) : expulsion d'un bot absent de la liste blanche (`FoxSecura Anti-Bot: unauthorized bot join`) ; bot autorisé : incident `Info`.
+- Nouveaux comptes (`anti_new_account`) : ban avec purge de 7 jours d'un compte plus jeune que l'âge minimal (7 jours par défaut, 1 à 365) ; propriétaire et liste blanche exemptés (`Warning`) ; un ban refusé produit un incident `Critical` qui signale l'absence de quarantaine de repli (tranche 6). **Un faux positif bannit un nouveau venu légitime** : voir le wiki Sécurité.
+- Pseudos hoistés (`anti_nickname_hoisting`) : règle V1 `^[^\p{L}\p{N}]+` (catégories Unicode exactes), pseudo nettoyé tronqué à 32, « Member » s'il est vide ; correction appliquée aussi à la liste blanche ; mise à jour de membre analysée seulement si le nom affiché a changé ; aucune boucle.
+- Nouvelles permissions selon les modules activés : `KICK_MEMBERS`, `BAN_MEMBERS`, `MANAGE_NICKNAMES` et un rôle de FoxSecura au-dessus des membres.
+- Dépendance directe `regex` `=1.13.1` (déjà présente via poise, même version, fonctionnalités `std` et `unicode-gencat`) pour les catégories Unicode de la règle de hoisting.
+
 ### Anti-Spam
 
 - Branchement de bout en bout de l'anti-spam par rafales de messages : clé `(guilde, membre)`, déclenchement quand le nombre de messages dans la fenêtre atteint le seuil, état borné à 10 000 clés.
@@ -48,6 +58,7 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Un auteur sur liste blanche n'est jamais sanctionné : suppression, action `ignore_exempt_member` (`Skipped`) et recommandation « revoir la liste blanche ».
 - Raisons d'audit log préfixées `FoxSecura` (`FoxSecura Anti-Scam: …`), pour qu'un futur anti-nuke reconnaisse les sanctions du bot.
 - Nouvelles permissions nécessaires si l'anti-arnaque est activé : `MODERATE_MEMBERS`, `BAN_MEMBERS` et un rôle de FoxSecura au-dessus des membres.
+- Socle étendu : expulsion (`SanctionKind::Kick`, `KICK_MEMBERS`) et vérification du renommage (`precheck_nickname_change` : propriétaire → `RoleHierarchy`, `MANAGE_NICKNAMES`, hiérarchie).
 
 ### Liste blanche et salons ignorés
 
@@ -71,11 +82,15 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - `/config` : un interrupteur persistant par filtre de contenu dans les catégories Anti-Spam et AutoMod.
 - Migration SQLite `5` : colonne `guild_configs.bad_words_language` (`all` par défaut, `CHECK`) et table `guild_bad_words` (clé composite, suppression en cascade avec la guilde, 100 caractères par mot).
 - `/config` : interrupteurs des pièces jointes et de l'anti-arnaque (Anti-Spam) et des mots interdits (AutoMod) ; choix de la liste intégrée et modal des mots personnalisés, validé avec les bornes de la V1 (200 mots, 100 caractères par mot, 2 000 caractères au total).
+- Migration SQLite `6` : table `guild_blacklist_users` (clé composite, suppression en cascade), colonne `guild_configs.new_account_min_age_days` (7 par défaut, `CHECK` 1 à 365) et déclencheurs qui rendent les listes blanche et noire exclusives.
+- `/config` → Anti-Raid : interrupteurs anti-bot, nouveaux comptes et pseudos hoistés, modal de l'âge minimal.
+- `/config` → Contrôle d'accès : liste noire gérée par identifiant (modal), réservée au propriétaire et à `ADMINISTRATOR` ; propriétaire, FoxSecura et membres de la liste blanche refusés avec un message explicite ; la liste blanche refuse de même un utilisateur de la liste noire.
 
 ### Logs
 
 - Ajout de `format_security_log_message` : membre, salon, preuve chiffrée et recommandation, sans ping.
 - Rendu des extraits, domaines et textes issus de messages via `inline_literal` : code en ligne neutralisé (ni formatage, ni lien cliquable, ni fausse ligne, ni caractère invisible ou bidirectionnel).
+- Rendu de la preuve d'âge de compte (`AccountAge`) : âge observé et âge minimal, en jours. Pseudos (ancien et nouveau) rendus par `inline_literal`.
 
 ## [0.1.0] - 2026-09-07
 

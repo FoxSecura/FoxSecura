@@ -15,15 +15,8 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
-use super::{anti_spam, content_filter};
+use super::{BOT_ASSIGNED_ROLES, anti_spam, content_filter, unix_duration};
 use crate::app::{AppData, run_database};
-
-/// Rôles que FoxSecura attribue lui-même et qui n'exemptent jamais.
-///
-/// Dans la V1 : rôles de vérification, de quarantaine et rôle limité. Aucun
-/// n'existe encore dans la V2 : la liste est vide tant que ces modules ne sont
-/// pas portés.
-const BOT_ASSIGNED_ROLES: &[u64] = &[];
 
 /// Message converti depuis un événement Discord, prêt pour le pipeline.
 struct InspectedMessage {
@@ -241,12 +234,6 @@ fn author_context(
             .and_then(|member| member.joined_at)
             .and_then(unix_duration),
     }
-}
-
-fn unix_duration(timestamp: serenity::Timestamp) -> Option<Duration> {
-    u64::try_from(timestamp.unix_timestamp())
-        .ok()
-        .map(Duration::from_secs)
 }
 
 /// Rôles de l'auteur, lus dans le membre partiel joint à l'événement.

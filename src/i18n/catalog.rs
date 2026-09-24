@@ -976,5 +976,215 @@ catalog! {
         en: "The @everyone role cannot be exempted: it would exempt the whole server. Nothing was changed.",
         fr: "Le rôle @everyone ne peut pas être exempté : il exempterait tout le serveur. Rien n'a été modifié.",
         de: "Die Rolle @everyone kann nicht ausgenommen werden: Sie würde den ganzen Server ausnehmen. Es wurde nichts geändert."
+    },
+    BlacklistSummary => {
+        en: "A blacklisted user joined the server.",
+        fr: "Un utilisateur de la liste noire a rejoint le serveur.",
+        de: "Ein Benutzer der Blacklist ist dem Server beigetreten."
+    },
+    BlacklistEvidenceEntry => {
+        en: "Blacklist entry",
+        fr: "Entrée de la liste noire",
+        de: "Blacklist-Eintrag"
+    },
+    BlacklistRecommendationBanned => {
+        en: "Blacklisted user banned. If this is a mistake, remove them from the blacklist, then revoke the ban.",
+        fr: "Utilisateur de la liste noire banni. En cas d'erreur, retirez-le de la liste noire, puis révoquez le ban.",
+        de: "Benutzer der Blacklist gebannt. Bei einem Fehler aus der Blacklist entfernen und dann den Bann aufheben."
+    },
+    MemberRecommendationCheckBanHierarchy => {
+        en: "Check the ban hierarchy: FoxSecura needs Ban Members and a role above the member. Ban them manually if they are still on the server.",
+        fr: "Vérifier la hiérarchie du ban : FoxSecura doit avoir Bannir des membres et un rôle au-dessus du membre. Bannissez-le manuellement s'il est encore sur le serveur.",
+        de: "Die Bann-Hierarchie prüfen: FoxSecura braucht Mitglieder bannen und eine Rolle über dem Mitglied. Manuell bannen, falls es noch auf dem Server ist."
+    },
+    ModuleAntiBot => {
+        en: "Anti-bot",
+        fr: "Anti-bot",
+        de: "Anti-Bot"
+    },
+    AntiBotSummaryUnauthorized => {
+        en: "An unauthorized bot joined the server.",
+        fr: "Un bot non autorisé a rejoint le serveur.",
+        de: "Ein nicht autorisierter Bot ist dem Server beigetreten."
+    },
+    AntiBotSummaryAuthorized => {
+        en: "Authorized bot ignored (whitelist).",
+        fr: "Bot autorisé ignoré (liste blanche).",
+        de: "Autorisierter Bot ignoriert (Whitelist)."
+    },
+    AntiBotEvidenceAccount => {
+        en: "Account type",
+        fr: "Type de compte",
+        de: "Kontotyp"
+    },
+    AntiBotRecommendationKicked => {
+        en: "Unauthorized bot kicked. If it is legitimate, add its ID to the whitelist, then invite it again.",
+        fr: "Bot non autorisé expulsé. S'il est légitime, ajoutez son identifiant à la liste blanche, puis réinvitez-le.",
+        de: "Nicht autorisierter Bot gekickt. Ist er legitim, seine ID zur Whitelist hinzufügen und ihn erneut einladen."
+    },
+    AntiBotRecommendationCheckKick => {
+        en: "Check the kick: FoxSecura needs Kick Members and a role above the bot's role. Kick it manually if it is still on the server.",
+        fr: "Vérifier l'expulsion : FoxSecura doit avoir Expulser des membres et un rôle au-dessus de celui du bot. Expulsez-le manuellement s'il est encore sur le serveur.",
+        de: "Den Kick prüfen: FoxSecura braucht Mitglieder kicken und eine Rolle über der des Bots. Manuell kicken, falls er noch auf dem Server ist."
+    },
+    ModuleAntiNewAccount => {
+        en: "New accounts",
+        fr: "Nouveaux comptes",
+        de: "Neue Konten"
+    },
+    NewAccountSummary => {
+        en: "An account younger than the minimum age joined the server.",
+        fr: "Un compte plus récent que l'âge minimal a rejoint le serveur.",
+        de: "Ein Konto unter dem Mindestalter ist dem Server beigetreten."
+    },
+    NewAccountRecommendationExempt => {
+        en: "Recent account exempted (whitelist or server owner): no action. Make sure it is a trusted member.",
+        fr: "Compte récent exempté (liste blanche ou propriétaire) : aucune action. Vérifiez qu'il s'agit bien d'un membre de confiance.",
+        de: "Neues Konto ausgenommen (Whitelist oder Serverinhaber): keine Aktion. Sicherstellen, dass es ein vertrauenswürdiges Mitglied ist."
+    },
+    NewAccountRecommendationBanned => {
+        en: "Recent account banned: check the member and revoke the ban if it is a legitimate newcomer (false positive).",
+        fr: "Compte récent banni : vérifiez le membre et révoquez le ban s'il s'agit d'un nouveau venu légitime (faux positif).",
+        de: "Neues Konto gebannt: Das Mitglied prüfen und den Bann aufheben, falls es ein legitimer Neuling ist (Fehlalarm)."
+    },
+    NewAccountRecommendationBanFailed => {
+        en: "The ban was not applied and the fallback quarantine is not available yet: the recent account is still on the server. Check the ban hierarchy (Ban Members, FoxSecura's role above the member) and review the member.",
+        fr: "Le ban n'a pas été appliqué et la quarantaine de repli n'est pas encore disponible : le compte récent est resté sur le serveur. Vérifiez la hiérarchie du ban (Bannir des membres, rôle de FoxSecura au-dessus du membre) et examinez le membre.",
+        de: "Der Bann wurde nicht angewendet und die Ersatz-Quarantäne ist noch nicht verfügbar: Das neue Konto ist noch auf dem Server. Die Bann-Hierarchie prüfen (Mitglieder bannen, Rolle von FoxSecura über dem Mitglied) und das Mitglied überprüfen."
+    },
+    LogsEvidenceAccountAge => {
+        en: "Account age",
+        fr: "Âge du compte",
+        de: "Kontoalter"
+    },
+    LogsEvidenceMinimum => {
+        en: "minimum",
+        fr: "minimum",
+        de: "Minimum"
+    },
+    LogsUnitDays => {
+        en: "days",
+        fr: "jours",
+        de: "Tage"
+    },
+    ModuleAntiNicknameHoisting => {
+        en: "Hoisted nicknames",
+        fr: "Pseudos hoistés",
+        de: "Gehoistete Spitznamen"
+    },
+    HoistingSummary => {
+        en: "Hoisted display name detected.",
+        fr: "Nom affiché hoisté détecté.",
+        de: "Gehoisteter Anzeigename erkannt."
+    },
+    HoistingEvidenceOldName => {
+        en: "Previous name",
+        fr: "Ancien nom",
+        de: "Vorheriger Name"
+    },
+    HoistingEvidenceNewName => {
+        en: "New nickname",
+        fr: "Nouveau pseudo",
+        de: "Neuer Spitzname"
+    },
+    HoistingRecommendationCheckPermissions => {
+        en: "Check that FoxSecura has Manage Nicknames and a role above the member. The server owner can never be renamed by a bot.",
+        fr: "Vérifiez que FoxSecura a Gérer les pseudos et un rôle au-dessus du membre. Le propriétaire du serveur ne peut jamais être renommé par un bot.",
+        de: "Prüfen, ob FoxSecura Spitznamen verwalten und eine Rolle über dem Mitglied hat. Der Serverinhaber kann nie von einem Bot umbenannt werden."
+    },
+    ConfigMemberProtection => {
+        en: "Member arrivals",
+        fr: "Arrivées de membres",
+        de: "Beitritte von Mitgliedern"
+    },
+    ConfigMemberProtectionNotice => {
+        en: "Applied when a member joins, in this order: blacklist (always active, see Access control), anti-bot (kicks bots missing from the whitelist, Kick Members), new accounts (bans accounts younger than the minimum age and purges 7 days of messages, Ban Members), hoisted nicknames (renames names starting with a symbol, also on name changes, Manage Nicknames). A ban or kick stops the chain. FoxSecura's role must be above members. A false positive bans a legitimate newcomer: review every incident. Whitelisted members and the owner are never banned as new accounts; nicknames are corrected for everyone except the owner. The Server Members intent is required.",
+        fr: "Appliqué à l'arrivée d'un membre, dans cet ordre : liste noire (toujours active, voir Contrôle d'accès), anti-bot (expulse les bots absents de la liste blanche, Expulser des membres), nouveaux comptes (bannit les comptes plus récents que l'âge minimal et purge 7 jours de messages, Bannir des membres), pseudos hoistés (renomme les noms qui commencent par un symbole, aussi lors d'un changement de nom, Gérer les pseudos). Un ban ou une expulsion arrête la chaîne. Le rôle de FoxSecura doit être au-dessus des membres. Un faux positif bannit un nouveau venu légitime : examinez chaque incident. Les membres de la liste blanche et le propriétaire ne sont jamais bannis comme nouveaux comptes ; les pseudos sont corrigés pour tous, sauf le propriétaire. L'intent Server Members est requis.",
+        de: "Wird beim Beitritt eines Mitglieds in dieser Reihenfolge angewendet: Blacklist (immer aktiv, siehe Zugriffskontrolle), Anti-Bot (kickt Bots, die nicht auf der Whitelist stehen, Mitglieder kicken), neue Konten (bannt Konten unter dem Mindestalter und löscht 7 Tage Nachrichten, Mitglieder bannen), gehoistete Spitznamen (benennt Namen um, die mit einem Symbol beginnen, auch bei Namensänderungen, Spitznamen verwalten). Ein Bann oder Kick beendet die Kette. Die Rolle von FoxSecura muss über den Mitgliedern liegen. Ein Fehlalarm bannt einen legitimen Neuling: Jeden Vorfall prüfen. Mitglieder auf der Whitelist und der Inhaber werden nie als neue Konten gebannt; Spitznamen werden für alle außer dem Inhaber korrigiert. Der Server-Members-Intent ist erforderlich."
+    },
+    ConfigNewAccountMinAge => {
+        en: "Minimum account age (days)",
+        fr: "Âge minimal des comptes (jours)",
+        de: "Mindestalter der Konten (Tage)"
+    },
+    ConfigNewAccountMinAgeButton => {
+        en: "Edit minimum age",
+        fr: "Modifier l'âge minimal",
+        de: "Mindestalter ändern"
+    },
+    ConfigNewAccountMinAgeModalTitle => {
+        en: "Minimum account age",
+        fr: "Âge minimal des comptes",
+        de: "Mindestalter der Konten"
+    },
+    ConfigNewAccountMinAgeInput => {
+        en: "Days (1 to 365)",
+        fr: "Jours (1 à 365)",
+        de: "Tage (1 bis 365)"
+    },
+    ConfigNewAccountMinAgeInvalid => {
+        en: "Invalid value: the minimum age must be between 1 and 365 days. Nothing was changed.",
+        fr: "Valeur invalide : l'âge minimal doit être compris entre 1 et 365 jours. Rien n'a été modifié.",
+        de: "Ungültiger Wert: Das Mindestalter muss zwischen 1 und 365 Tagen liegen. Es wurde nichts geändert."
+    },
+    ConfigBlacklistUsers => {
+        en: "Blacklist",
+        fr: "Liste noire",
+        de: "Blacklist"
+    },
+    ConfigBlacklistNotice => {
+        en: "Blacklisted users are banned when they join (Ban Members and a role above them required). Adding a member who is already on the server does not ban them. The whitelist and the blacklist exclude each other; the owner and FoxSecura itself are refused.",
+        fr: "Les utilisateurs de la liste noire sont bannis à leur arrivée (Bannir des membres et un rôle au-dessus d'eux requis). Inscrire un membre déjà présent ne le bannit pas. Les listes blanche et noire s'excluent ; le propriétaire et FoxSecura lui-même sont refusés.",
+        de: "Benutzer auf der Blacklist werden beim Beitritt gebannt (Mitglieder bannen und eine Rolle über ihnen erforderlich). Ein bereits anwesendes Mitglied einzutragen bannt es nicht. Whitelist und Blacklist schließen sich aus; der Inhaber und FoxSecura selbst werden abgelehnt."
+    },
+    ConfigBlacklistAddButton => {
+        en: "Add to blacklist",
+        fr: "Ajouter à la liste noire",
+        de: "Zur Blacklist hinzufügen"
+    },
+    ConfigBlacklistRemoveButton => {
+        en: "Remove from blacklist",
+        fr: "Retirer de la liste noire",
+        de: "Aus der Blacklist entfernen"
+    },
+    ConfigBlacklistInput => {
+        en: "User ID (or mention)",
+        fr: "Identifiant de l'utilisateur (ou mention)",
+        de: "Benutzer-ID (oder Erwähnung)"
+    },
+    ConfigBlacklistInvalidId => {
+        en: "Invalid user ID: enter the 17 to 20 digit ID (Developer Mode → Copy User ID). Nothing was changed.",
+        fr: "Identifiant invalide : saisissez l'identifiant de 17 à 20 chiffres (mode développeur → Copier l'identifiant). Rien n'a été modifié.",
+        de: "Ungültige Benutzer-ID: die 17- bis 20-stellige ID eingeben (Entwicklermodus → ID kopieren). Es wurde nichts geändert."
+    },
+    ConfigBlacklistOwnerRefused => {
+        en: "The server owner cannot be blacklisted. Nothing was changed.",
+        fr: "Le propriétaire du serveur ne peut pas être mis sur la liste noire. Rien n'a été modifié.",
+        de: "Der Serverinhaber kann nicht auf die Blacklist gesetzt werden. Es wurde nichts geändert."
+    },
+    ConfigBlacklistBotRefused => {
+        en: "FoxSecura cannot blacklist itself. Nothing was changed.",
+        fr: "FoxSecura ne peut pas se mettre lui-même sur la liste noire. Rien n'a été modifié.",
+        de: "FoxSecura kann sich nicht selbst auf die Blacklist setzen. Es wurde nichts geändert."
+    },
+    ConfigBlacklistWhitelistedRefused => {
+        en: "This user is on the whitelist: the whitelist and the blacklist exclude each other. Remove them from the whitelist first. Nothing was changed.",
+        fr: "Cet utilisateur est sur la liste blanche : les listes blanche et noire s'excluent. Retirez-le d'abord de la liste blanche. Rien n'a été modifié.",
+        de: "Dieser Benutzer steht auf der Whitelist: Whitelist und Blacklist schließen sich aus. Zuerst aus der Whitelist entfernen. Es wurde nichts geändert."
+    },
+    ConfigWhitelistBlacklistedRefused => {
+        en: "A selected user is on the blacklist: the whitelist and the blacklist exclude each other. Remove them from the blacklist first. Nothing was changed.",
+        fr: "Un utilisateur choisi est sur la liste noire : les listes blanche et noire s'excluent. Retirez-le d'abord de la liste noire. Rien n'a été modifié.",
+        de: "Ein ausgewählter Benutzer steht auf der Blacklist: Whitelist und Blacklist schließen sich aus. Zuerst aus der Blacklist entfernen. Es wurde nichts geändert."
+    },
+    ConfigBlacklistAccessDenied => {
+        en: "The blacklist is reserved for the server owner and administrators (Manage Server is not enough).",
+        fr: "La liste noire est réservée au propriétaire du serveur et aux administrateurs (Gérer le serveur ne suffit pas).",
+        de: "Die Blacklist ist dem Serverinhaber und Administratoren vorbehalten (Server verwalten reicht nicht)."
+    },
+    ConfigBlacklistScope => {
+        en: "Blacklist scope",
+        fr: "Portée de la liste noire",
+        de: "Geltungsbereich der Blacklist"
     }
 }

@@ -3,6 +3,7 @@
 
 mod access;
 mod access_control;
+mod anti_raid;
 mod anti_spam;
 mod bad_words;
 mod content_filters;
@@ -12,11 +13,12 @@ use poise::serenity_prelude as serenity;
 use super::Context;
 use crate::app::{AppData, Error, run_database};
 use access::{Access, Right};
-use access_control::ListTarget;
+use access_control::{BlacklistEdit, BlacklistRefusal, ListTarget};
 use bad_words::BadWordsAction;
 use content_filters::ModuleToggle;
-use foxsecura::database::{BadWordsSettings, GuildExemptions};
+use foxsecura::database::{BadWordsSettings, DatabaseError, GuildExemptions};
 use foxsecura::i18n::{Language, TextKey, text};
+use foxsecura::protection::anti_raid::anti_new_account::DEFAULT_MIN_ACCOUNT_AGE_DAYS;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
 use foxsecura::protection::automod::bad_words::parse_custom_words;
 use foxsecura::protection::shared::ModuleSet;
@@ -100,7 +102,12 @@ enum CategoryView {
     },
     AccessControl {
         exemptions: GuildExemptions,
+        blacklist: Vec<u64>,
         access: Access,
+    },
+    AntiRaid {
+        modules: ModuleSet,
+        min_age_days: u16,
     },
 }
 
@@ -134,9 +141,9 @@ pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
 /// Traite les composants du tableau de bord. Retourne `false` si le composant
 /// ne lui appartient pas.
 ///
-/// Le droit exigé par le composant est revérifié à chaque interaction : la
-/// liste blanche exige le propriétaire ou `ADMINISTRATOR`, le reste l'accès
-/// normal à `/config`.
+/// Le droit exigé par le composant est revérifié à chaque interaction : les
+/// listes blanche et noire exigent le propriétaire ou `ADMINISTRATOR`, le
+/// reste l'accès normal à `/config`.
 pub async fn handle_component(
     ctx: &serenity::Context,
     data: &AppData,
@@ -146,9 +153,11 @@ pub async fn handle_component(
     let list_target = ListTarget::from_custom_id(custom_id);
     let module_toggle = content_filters::parse_toggle(custom_id);
     let bad_words_action = bad_words::parse_action(custom_id);
+    let blacklist_edit = BlacklistEdit::from_button(custom_id);
     let required = match (list_target, &module_toggle) {
         (Some(target), _) => target.required_right(),
         (None, Some(_)) => Right::Config,
+        (None, None) if blacklist_edit.is_some() => Right::Blacklist,
         (None, None) if bad_words_action.is_some() => Right::Config,
         (None, None)
             if [
@@ -156,6 +165,7 @@ pub async fn handle_component(
                 anti_spam::ENABLE_ID,
                 anti_spam::DISABLE_ID,
                 anti_spam::LIMITS_ID,
+                anti_raid::MIN_AGE_ID,
             ]
             .contains(&custom_id) =>
         {
@@ -172,12 +182,8 @@ pub async fn handle_component(
         component.user.id,
     );
     let Some(guild_id) = component.guild_id.filter(|_| access.allows(required)) else {
-        let denied = if required == Right::Whitelist && access.config {
-            TextKey::ConfigWhitelistAccessDenied
-        } else {
-            TextKey::ConfigAccessDenied
-        };
-        respond_ephemeral_component(ctx, component, text(language, denied)).await?;
+        respond_ephemeral_component(ctx, component, text(language, denied_key(required, access)))
+            .await?;
         return Ok(true);
     };
     let guild_id = guild_id.get();
@@ -204,16 +210,31 @@ pub async fn handle_component(
             access_control::toggle(database, guild_id, target, &ids)
         })
         .await;
+        let view = match saved {
+            Ok(_) => load_view(data, guild_id, access_control::CATEGORY_ID, access).await,
+            Err(error) => Err(error),
+        };
 
-        match saved {
-            Ok(exemptions) => {
-                let view = CategoryView::AccessControl { exemptions, access };
+        match view {
+            Ok(view) => {
                 update_dashboard(
                     ctx,
                     component,
                     language,
                     access_control::CATEGORY_ID,
-                    Some(&view),
+                    view.as_ref(),
+                )
+                .await?;
+            }
+            Err(error)
+                if is_database_error(&error, |error| {
+                    matches!(error, DatabaseError::UserBlacklisted(_))
+                }) =>
+            {
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigWhitelistBlacklistedRefused),
                 )
                 .await?;
             }
@@ -240,6 +261,52 @@ pub async fn handle_component(
             return Ok(true);
         };
         save_module_toggle(ctx, data, component, language, guild_id, access, toggle).await?;
+        return Ok(true);
+    }
+
+    if let Some(edit) = blacklist_edit {
+        component
+            .create_response(
+                &ctx.http,
+                serenity::CreateInteractionResponse::Modal(access_control::blacklist_modal(
+                    language, edit,
+                )),
+            )
+            .await?;
+        return Ok(true);
+    }
+
+    if custom_id == anti_raid::MIN_AGE_ID {
+        match load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await {
+            Ok(Some(CategoryView::AntiRaid { min_age_days, .. })) => {
+                component
+                    .create_response(
+                        &ctx.http,
+                        serenity::CreateInteractionResponse::Modal(anti_raid::min_age_modal(
+                            language,
+                            min_age_days,
+                        )),
+                    )
+                    .await?;
+            }
+            Ok(_) => {
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+            Err(error) => {
+                eprintln!("[config] lecture de l'âge minimal impossible ({guild_id}) : {error}");
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+        }
         return Ok(true);
     }
 
@@ -464,28 +531,48 @@ async fn handle_bad_words(
 }
 
 /// Traite la soumission des modals du tableau de bord (seuils Anti-Spam,
-/// mots interdits personnalisés).
+/// mots interdits personnalisés, âge minimal des comptes, liste noire).
+///
+/// Le droit est revérifié à la soumission : la liste noire exige le
+/// propriétaire ou `ADMINISTRATOR`.
 pub async fn handle_modal(
     ctx: &serenity::Context,
     data: &AppData,
     modal: &serenity::ModalInteraction,
 ) -> Result<bool, Error> {
     let custom_id = modal.data.custom_id.as_str();
-    if custom_id != anti_spam::LIMITS_MODAL_ID && custom_id != bad_words::MODAL_ID {
+    let blacklist_edit = BlacklistEdit::from_modal(custom_id);
+    let required = if blacklist_edit.is_some() {
+        Right::Blacklist
+    } else if [
+        anti_spam::LIMITS_MODAL_ID,
+        bad_words::MODAL_ID,
+        anti_raid::MIN_AGE_MODAL_ID,
+    ]
+    .contains(&custom_id)
+    {
+        Right::Config
+    } else {
         return Ok(false);
-    }
+    };
 
     let language = Language::resolve(Some(modal.locale.as_str()));
     let access =
         access::interaction_access(ctx, modal.guild_id, modal.member.as_ref(), modal.user.id);
-    let Some(guild_id) = modal.guild_id.filter(|_| access.allows(Right::Config)) else {
-        respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigAccessDenied)).await?;
+    let Some(guild_id) = modal.guild_id.filter(|_| access.allows(required)) else {
+        respond_ephemeral_modal(ctx, modal, text(language, denied_key(required, access))).await?;
         return Ok(true);
     };
     let guild_id = guild_id.get();
 
+    if let Some(edit) = blacklist_edit {
+        return save_blacklist(ctx, data, modal, language, guild_id, access, edit).await;
+    }
     if custom_id == bad_words::MODAL_ID {
         return save_custom_words(ctx, data, modal, language, guild_id, access).await;
+    }
+    if custom_id == anti_raid::MIN_AGE_MODAL_ID {
+        return save_min_age(ctx, data, modal, language, guild_id, access).await;
     }
 
     let Some((threshold, window_seconds)) = anti_spam::submitted_limits(&modal.data.components)
@@ -532,6 +619,170 @@ pub async fn handle_modal(
     }
 
     Ok(true)
+}
+
+/// Ajoute ou retire un utilisateur de la liste noire, puis réaffiche le
+/// contrôle d'accès. Le propriétaire, le bot et un membre de la liste blanche
+/// sont refusés sans rien écrire.
+async fn save_blacklist(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    edit: BlacklistEdit,
+) -> Result<bool, Error> {
+    let Some(user_id) = access_control::submitted_user_id(&modal.data.components) else {
+        respond_ephemeral_modal(
+            ctx,
+            modal,
+            text(language, TextKey::ConfigBlacklistInvalidId),
+        )
+        .await?;
+        return Ok(true);
+    };
+
+    if edit == BlacklistEdit::Add {
+        let owner_id = ctx
+            .cache
+            .guild(serenity::GuildId::new(guild_id))
+            .map(|guild| guild.owner_id.get());
+        let bot_id = ctx.cache.current_user().id.get();
+        if let Some(refusal) = access_control::blacklist_refusal(user_id, owner_id, bot_id) {
+            let key = match refusal {
+                BlacklistRefusal::GuildOwner => TextKey::ConfigBlacklistOwnerRefused,
+                BlacklistRefusal::BotItself => TextKey::ConfigBlacklistBotRefused,
+            };
+            respond_ephemeral_modal(ctx, modal, text(language, key)).await?;
+            return Ok(true);
+        }
+    }
+
+    let saved = run_database(&data.database, move |database| match edit {
+        BlacklistEdit::Add => database.add_blacklist_user(guild_id, user_id),
+        BlacklistEdit::Remove => database.remove_blacklist_user(guild_id, user_id),
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, access_control::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            update_dashboard_from_modal(
+                ctx,
+                modal,
+                language,
+                access_control::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error)
+            if is_database_error(&error, |error| {
+                matches!(error, DatabaseError::UserWhitelisted(_))
+            }) =>
+        {
+            respond_ephemeral_modal(
+                ctx,
+                modal,
+                text(language, TextKey::ConfigBlacklistWhitelistedRefused),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!(
+                "[config] enregistrement de la liste noire impossible ({guild_id}) : {error}"
+            );
+            respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+
+    Ok(true)
+}
+
+/// Valide (1 à 365 jours) et enregistre l'âge minimal des comptes, puis
+/// réaffiche la catégorie Anti-Raid. Une valeur refusée ne modifie rien.
+async fn save_min_age(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+) -> Result<bool, Error> {
+    let Some(days) = anti_raid::submitted_min_age(&modal.data.components) else {
+        respond_ephemeral_modal(
+            ctx,
+            modal,
+            text(language, TextKey::ConfigNewAccountMinAgeInvalid),
+        )
+        .await?;
+        return Ok(true);
+    };
+
+    let saved = run_database(&data.database, move |database| {
+        database.set_new_account_min_age(guild_id, days)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            update_dashboard_from_modal(
+                ctx,
+                modal,
+                language,
+                anti_raid::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!("[config] enregistrement de l'âge minimal impossible ({guild_id}) : {error}");
+            respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+
+    Ok(true)
+}
+
+/// Message de refus selon le droit manquant.
+fn denied_key(required: Right, access: Access) -> TextKey {
+    match required {
+        Right::Whitelist if access.config => TextKey::ConfigWhitelistAccessDenied,
+        Right::Blacklist if access.config => TextKey::ConfigBlacklistAccessDenied,
+        _ => TextKey::ConfigAccessDenied,
+    }
+}
+
+/// L'erreur vient de la base et correspond au cas attendu.
+fn is_database_error(error: &Error, expected: impl FnOnce(&DatabaseError) -> bool) -> bool {
+    error.downcast_ref::<DatabaseError>().is_some_and(expected)
+}
+
+async fn update_dashboard_from_modal(
+    ctx: &serenity::Context,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    category_id: &str,
+    view: Option<&CategoryView>,
+) -> Result<(), Error> {
+    let response = serenity::CreateInteractionResponseMessage::new()
+        .embed(build_embed(language, Some(category_id), view))
+        .components(build_components(language, Some(category_id), view));
+    modal
+        .create_response(
+            &ctx.http,
+            serenity::CreateInteractionResponse::UpdateMessage(response),
+        )
+        .await?;
+    Ok(())
 }
 
 /// Valide (bornes V1) et remplace la liste des mots personnalisés, puis
@@ -618,11 +869,33 @@ async fn load_view(
             Some(CategoryView::Automod { modules, bad_words })
         }
         access_control::CATEGORY_ID => {
-            let exemptions = run_database(&data.database, move |database| {
-                database.guild_exemptions(guild_id)
+            let (exemptions, blacklist) = run_database(&data.database, move |database| {
+                Ok((
+                    database.guild_exemptions(guild_id)?,
+                    database.blacklist_users(guild_id)?,
+                ))
             })
             .await?;
-            Some(CategoryView::AccessControl { exemptions, access })
+            Some(CategoryView::AccessControl {
+                exemptions,
+                blacklist,
+                access,
+            })
+        }
+        anti_raid::CATEGORY_ID => {
+            let (config, modules) = run_database(&data.database, move |database| {
+                Ok((
+                    database.find_guild_config(guild_id)?,
+                    database.enabled_modules(guild_id)?,
+                ))
+            })
+            .await?;
+            Some(CategoryView::AntiRaid {
+                modules,
+                min_age_days: config.map_or(DEFAULT_MIN_ACCOUNT_AGE_DAYS, |guild_config| {
+                    guild_config.new_account_min_age_days
+                }),
+            })
         }
         _ => None,
     })
@@ -736,8 +1009,21 @@ fn build_embed(
                     .fields(bad_words::state_fields(language, bad_words)),
                 (
                     access_control::CATEGORY_ID,
-                    Some(CategoryView::AccessControl { exemptions, access }),
-                ) => embed.fields(access_control::state_fields(language, exemptions, *access)),
+                    Some(CategoryView::AccessControl {
+                        exemptions,
+                        blacklist,
+                        access,
+                    }),
+                ) => embed.fields(access_control::state_fields(
+                    language, exemptions, blacklist, *access,
+                )),
+                (
+                    anti_raid::CATEGORY_ID,
+                    Some(CategoryView::AntiRaid {
+                        modules,
+                        min_age_days,
+                    }),
+                ) => embed.fields(anti_raid::state_fields(language, *modules, *min_age_days)),
                 _ => embed.field(
                     text(language, TextKey::ConfigFieldState),
                     text(language, TextKey::ConfigStatePlaceholder),
@@ -787,6 +1073,9 @@ fn build_components(
         }
         (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
             rows.extend(access_control::selects(language, *access));
+        }
+        (Some(anti_raid::CATEGORY_ID), Some(CategoryView::AntiRaid { modules, .. })) => {
+            rows.extend(anti_raid::buttons(language, *modules));
         }
         _ => {}
     }

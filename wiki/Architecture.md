@@ -22,6 +22,8 @@ src/lib.rs
        ├── anti_raid
        ├── anti_spam
        ├── automod
+       ├── content_filter   (chaîne des filtres de messages)
+       ├── member_join      (chaîne des arrivées de membres)
        └── ai_moderation
 ```
 
@@ -29,7 +31,7 @@ src/lib.rs
 
 `App` possède le token Discord, les `GatewayIntents` et l'`AppData`. `App::from_env()` récupère `DISCORD_TOKEN` et ouvre la base SQLite ; `App::run()` construit Poise puis Serenity. Les commandes sont fournies par `crate::commands::all()`.
 
-L'event handler central (`events.rs`) ne fait que répartir : `Message` et `MessageUpdate` vers le pipeline de protection des messages (filtres de contenu puis anti-spam), `InteractionCreate` vers les composants et modals des commandes. Les erreurs sont journalisées sur place et jamais propagées, pour qu'une protection défaillante n'arrête pas le client.
+L'event handler central (`events.rs`) ne fait que répartir : `Message` et `MessageUpdate` vers le pipeline de protection des messages (filtres de contenu puis anti-spam), `GuildMemberAddition` et `GuildMemberUpdate` vers le pipeline des membres (liste noire, anti-bot, nouveaux comptes, pseudos hoistés), `InteractionCreate` vers les composants et modals des commandes. Les erreurs sont journalisées sur place et jamais propagées, pour qu'une protection défaillante n'arrête pas le client.
 
 `AppData` porte un `Arc<Database>` et l'état en mémoire des protections (`ProtectionState`). Les accès SQLite passent par `run_database` (`spawn_blocking`) et les verrous `std::sync::Mutex` ne sont jamais conservés à travers un `.await`.
 

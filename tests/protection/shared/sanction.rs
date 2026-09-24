@@ -11,7 +11,7 @@ use foxsecura::protection::shared::{
     AUDIT_REASON_MAX_CHARS, BotPermissions, BotStanding, SanctionContext, SanctionKind,
     SanctionOutcome, SanctionPermission, SanctionSkip, TargetLookup, TargetStanding, audit_reason,
     classify_sanction_http_failure, exempt_member_action, is_foxsecura_audit_reason,
-    precheck_sanction,
+    precheck_nickname_change, precheck_sanction,
 };
 
 const OWNER: u64 = 1;
@@ -21,6 +21,7 @@ const MEMBER: u64 = 3;
 const TIMEOUT: SanctionKind = SanctionKind::Timeout {
     duration: Duration::from_secs(3600),
 };
+const KICK: SanctionKind = SanctionKind::Kick;
 const BAN: SanctionKind = SanctionKind::Ban {
     purge: Duration::from_secs(7 * 24 * 60 * 60),
 };
@@ -29,7 +30,9 @@ fn all_permissions() -> BotPermissions {
     BotPermissions {
         administrator: false,
         moderate_members: true,
+        kick_members: true,
         ban_members: true,
+        manage_nicknames: true,
     }
 }
 
@@ -172,7 +175,9 @@ fn missing_permission_is_specific_to_the_sanction() {
     let admin_bot = without(BotPermissions {
         administrator: true,
         moderate_members: false,
+        kick_members: false,
         ban_members: false,
+        manage_nicknames: false,
     });
     assert_eq!(precheck_sanction(TIMEOUT, &admin_bot), Ok(()));
     assert_eq!(precheck_sanction(BAN, &admin_bot), Ok(()));
@@ -302,4 +307,122 @@ fn audit_reasons_start_with_foxsecura_and_are_bounded() {
     let long = audit_reason("Anti-Scam", &"x\n".repeat(600));
     assert_eq!(long.chars().count(), AUDIT_REASON_MAX_CHARS);
     assert!(!long.contains('\n'));
+}
+
+#[test]
+fn kick_is_classified_like_the_other_sanctions() {
+    assert_eq!(precheck_sanction(KICK, &context()), Ok(()));
+    assert_eq!(KICK.action_code(), ActionCode::KickMember);
+    assert_eq!(KICK.timeout_duration(), None);
+    assert_eq!(KICK.ban_purge_days(), None);
+
+    // Sans `KICK_MEMBERS` : permission manquante, propre à l'expulsion.
+    let no_kick = SanctionContext {
+        bot: Some(BotStanding {
+            top_role_position: 10,
+            permissions: BotPermissions {
+                kick_members: false,
+                ..all_permissions()
+            },
+        }),
+        ..context()
+    };
+    let skip = skipped(KICK, &no_kick);
+    assert_eq!(
+        skip,
+        SanctionSkip::MissingPermission(SanctionPermission::KickMembers)
+    );
+    let action = SanctionOutcome::Skipped(skip).action_outcome(KICK);
+    assert_eq!(action.action, ActionCode::KickMember);
+    assert_eq!(action.status, ActionStatus::Skipped);
+    assert_eq!(action.failure_code, Some(FailureCode::MissingPermission));
+    assert_eq!(action.details.as_deref(), Some("KICK_MEMBERS"));
+    assert_eq!(precheck_sanction(BAN, &no_kick), Ok(()));
+
+    // Membre au niveau du bot ou au-dessus : hiérarchie.
+    let above = SanctionContext {
+        target: member(10, false),
+        ..context()
+    };
+    let action = SanctionOutcome::Skipped(skipped(KICK, &above)).action_outcome(KICK);
+    assert_eq!(action.failure_code, Some(FailureCode::RoleHierarchy));
+
+    // Un administrateur peut être expulsé s'il est sous le bot (contrairement
+    // au timeout).
+    let admin = SanctionContext {
+        target: member(1, true),
+        ..context()
+    };
+    assert_eq!(precheck_sanction(KICK, &admin), Ok(()));
+
+    // Gardes : propriétaire et bot lui-même.
+    let owner = SanctionContext {
+        target_id: OWNER,
+        ..context()
+    };
+    assert_eq!(skipped(KICK, &owner), SanctionSkip::GuildOwner);
+
+    // Refus de Discord : même classement que les autres sanctions.
+    assert!(matches!(
+        classify_sanction_http_failure(Some(403), "Missing Permissions"),
+        SanctionOutcome::Failed {
+            failure_code: FailureCode::MissingPermission,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn nickname_change_is_classified_like_a_sanction_but_owner_is_hierarchy() {
+    assert_eq!(precheck_nickname_change(&context()), Ok(()));
+
+    // Le propriétaire n'est jamais modifiable : hiérarchie.
+    let owner = SanctionContext {
+        target_id: OWNER,
+        ..context()
+    };
+    let Err(outcome) = precheck_nickname_change(&owner) else {
+        panic!("le propriétaire ne doit pas être renommé");
+    };
+    let action = outcome.action_outcome_as(ActionCode::NormalizeNickname);
+    assert_eq!(action.action, ActionCode::NormalizeNickname);
+    assert_eq!(action.status, ActionStatus::Skipped);
+    assert_eq!(action.failure_code, Some(FailureCode::RoleHierarchy));
+
+    // Sans `MANAGE_NICKNAMES`.
+    let no_nicknames = SanctionContext {
+        bot: Some(BotStanding {
+            top_role_position: 10,
+            permissions: BotPermissions {
+                manage_nicknames: false,
+                ..all_permissions()
+            },
+        }),
+        ..context()
+    };
+    assert_eq!(
+        precheck_nickname_change(&no_nicknames),
+        Err(SanctionOutcome::Skipped(SanctionSkip::MissingPermission(
+            SanctionPermission::ManageNicknames
+        )))
+    );
+
+    // Membre au-dessus du bot : hiérarchie, même administrateur ou non.
+    let above = SanctionContext {
+        target: member(11, false),
+        ..context()
+    };
+    assert!(matches!(
+        precheck_nickname_change(&above),
+        Err(SanctionOutcome::Skipped(SanctionSkip::RoleHierarchy {
+            target: 11,
+            bot: 10
+        }))
+    ));
+    // Un administrateur sous le bot peut être renommé.
+    let admin = SanctionContext {
+        target: member(1, true),
+        ..context()
+    };
+    assert_eq!(precheck_nickname_change(&admin), Ok(()));
 }

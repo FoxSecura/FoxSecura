@@ -19,6 +19,10 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Anti-arnaque gradué (`anti_scam`), **avec sanctions** | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → Anti-Spam, désactivé par défaut |
 | Mots interdits (`bad_words`) | **oui**, `MESSAGE_CREATE` et `MESSAGE_UPDATE` | `/config` → AutoMod, désactivé par défaut |
 | Liste blanche et salons ignorés (`shared::exemption`) | **oui**, gardes du pipeline de messages | `/config` → Contrôle d'accès, vides par défaut |
+| Liste noire (`member_join::blacklist`), **ban à l'arrivée** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Contrôle d'accès, vide par défaut (toujours active) |
+| Anti-bot (`anti_bot`), **expulsion** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut |
+| Nouveaux comptes (`anti_new_account`), **ban** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut, âge minimal 7 jours |
+| Pseudos hoistés (`anti_nickname_hoisting`), renommage | **oui**, `GUILD_MEMBER_ADD` et `GUILD_MEMBER_UPDATE` | `/config` → Anti-Raid, désactivé par défaut |
 | Tous les autres modules | non (moteurs testés isolément) | — |
 
 ## Anti-Nuke
@@ -62,6 +66,36 @@ Les détecteurs présents comprennent :
 - surveillance de webhooks.
 
 `join_burst` possède une configuration séparée et un détecteur, ce qui permet de faire varier les seuils sans mêler les paramètres au calcul.
+
+### Arrivées de membres (branchées au runtime)
+
+Chaîne pure dans `protection::member_join`, détecteurs dans `anti_raid::*`, effets Discord dans `src/app/pipeline/member.rs` (avec le socle des sanctions). Une seule lecture de contexte par événement (configuration, listes noire et blanche, modules), servie par le cache de la guilde. L'arrivée de FoxSecura lui-même est ignorée. Intent requis : `GUILD_MEMBERS` (Server Members Intent).
+
+Ordre de la V1 à l'arrivée :
+
+```text
+liste noire → (anti-raid : tranche 7) → anti-bot → nouveaux comptes
+  → (doubles comptes : tranche 7) → (usurpation : tranche 6) → pseudos hoistés
+```
+
+Chaque module renvoie `{ detected, action_applied, terminal }`. Un résultat **terminal** (membre banni ou expulsé) arrête la chaîne ; les résultats non terminaux se cumulent (par exemple un bot autorisé puis un pseudo corrigé). Chaque module qui relève quelque chose publie un incident de type `member` (salon de logs `member`).
+
+| Module | Déclenche si | Action | Terminal | Sévérité |
+| --- | --- | --- | --- | --- |
+| Liste noire | l'identifiant est sur la liste noire | ban (`FoxSecura Blacklist: user on the guild blacklist`), sans purge | **toujours**, même si le ban échoue | `Critical` ; échec → « vérifier la hiérarchie du ban » |
+| Anti-bot | un **bot** dont l'identifiant n'est pas sur la liste blanche | expulsion (`FoxSecura Anti-Bot: unauthorized bot join`) | si expulsé | `Warning` si expulsé, `Critical` sinon ; bot autorisé : `Info`, aucune action |
+| Nouveaux comptes | âge du compte < âge minimal (7 jours par défaut, 1 à 365) | ban avec purge de 7 jours (`FoxSecura Anti-New-Account: account age below threshold`) | si banni | `Warning` si banni, `Critical` sinon ; propriétaire ou liste blanche : `Warning` + `ignore_exempt_member`, aucune action |
+| Pseudos hoistés | nom affiché qui commence par un caractère ni lettre ni chiffre Unicode | renommage (`FoxSecura Anti-Nickname Hoisting`) | jamais | `Warning` si renommé, `Critical` sinon |
+
+Détails :
+
+- **Liste noire** : la liste reste la référence (V1) ; si le ban n'est pas appliqué (permission, hiérarchie), aucun autre module ne s'exécute pour ce membre et l'incident demande de vérifier la hiérarchie. Elle n'est appliquée **qu'à l'arrivée** : inscrire un membre déjà présent ne le bannit pas. Les listes blanche et noire des utilisateurs s'excluent (base de données, `/config`).
+- **Anti-bot** : seule l'exemption **par identifiant** compte. Échecs classés comme toute sanction : pas de `KICK_MEMBERS` → `MissingPermission` ; rôle du bot au-dessus de celui de FoxSecura → `RoleHierarchy`.
+- **Nouveaux comptes** : âge = date d'arrivée − date de création déduite du snowflake, en jours entiers (un compte d'exactement 7 jours passe un minimum de 7). Les bots sont laissés à l'anti-bot. Preuve : âge observé et âge minimal. Dans la V1, un ban refusé déclenche une **quarantaine de repli** ; elle arrivera avec la tranche 6 : en attendant, l'incident `Critical` porte l'action `quarantine_member` = `Skipped` (`fallback_not_available`) et le dit dans sa recommandation.
+- **Pseudos hoistés** : règle V1 `^[^\p{L}\p{N}]+` après suppression des espaces aux extrémités (catégories Unicode exactes, via `regex` : `Ⓐ` est un symbole, donc hoisté ; `É`, `И`, `李`, `٣` ne le sont pas). Nouveau pseudo : le nom nettoyé, tronqué à 32 (unités UTF-16, sans couper un caractère) ; « Member » s'il ne reste rien. C'est une **correction**, pas une sanction : elle s'applique aussi à la liste blanche. Le propriétaire (jamais modifiable par un bot) et les membres au-dessus du bot sont classés `RoleHierarchy` ; `MANAGE_NICKNAMES` requis. Ancien et nouveau nom sont rendus par `inline_literal`.
+- **Aucune boucle** : le pseudo posé commence par une lettre ou un chiffre, il n'est plus hoisté. `GUILD_MEMBER_UPDATE` n'exécute que l'anti-hoisting, et seulement si le nom affiché a changé (ancien nom inconnu : analysé, l'opération étant idempotente) et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là.
+
+> ⚠️ **Faux positif = ban d'un nouveau venu légitime.** L'âge d'un compte ne prouve pas un abus : un vrai nouvel utilisateur de Discord est banni (avec purge de 7 jours) s'il rejoint dans ses premiers jours. Le ban n'est jamais levé automatiquement. Choisissez l'âge minimal avec soin, suivez le salon de logs `member` et révoquez le ban (Paramètres du serveur → Bannissements) si nécessaire. Ajoutez à la liste blanche, avant leur arrivée, les comptes récents de confiance.
 
 ## Anti-Spam
 
@@ -162,10 +196,12 @@ Cœur pur, testé sans Discord, partagé par tout module qui sanctionnera un mem
 
 - **jamais** le propriétaire du serveur ni le bot lui-même ;
 - **jamais** un auteur de la liste blanche : son message est supprimé, l'incident porte l'action `ignore_exempt_member` = `Skipped` et la recommandation « revoir la liste blanche » (un compte de confiance qui publie une arnaque est peut-être compromis) ;
-- vérifications d'après le cache **avant** l'appel, pour éviter des `403` en rafale : permission du bot (`MODERATE_MEMBERS` pour un timeout, `BAN_MEMBERS` pour un ban, ou `ADMINISTRATOR`) → `MissingPermission` ; membre au-dessus ou au niveau du rôle le plus haut du bot → `RoleHierarchy` ; membre `ADMINISTRATOR` (Discord refuse de le timeout) → `RoleHierarchy`, détail `administrator_cannot_be_timed_out`. Ces cas sont `Skipped` : rien n'est appelé ;
+- vérifications d'après le cache **avant** l'appel, pour éviter des `403` en rafale : permission du bot (`MODERATE_MEMBERS` pour un timeout, `KICK_MEMBERS` pour une expulsion, `BAN_MEMBERS` pour un ban, ou `ADMINISTRATOR`) → `MissingPermission` ; membre au-dessus ou au niveau du rôle le plus haut du bot → `RoleHierarchy` ; membre `ADMINISTRATOR` (Discord refuse de le timeout) → `RoleHierarchy`, détail `administrator_cannot_be_timed_out`. Ces cas sont `Skipped` : rien n'est appelé ;
 - auteur : le membre joint à l'événement, sinon lecture du membre (cache puis API) ; membre introuvable → `Skipped` + `ResourceMissing` ; autre échec de lecture → `Skipped` + `DiscordUnavailable`, sans bloquer la suppression ;
 - réponse de l'API : `403` → `MissingPermission`, `404` → `Skipped` + `ResourceMissing`, `429`/`5xx` ou pas de réponse → `DiscordUnavailable` ; l'action est alors `Failed` ;
 - état du cache inconnu (serveur ou bot absent du cache) : l'appel est tenté et Discord tranche (il refuse de toute façon de sanctionner le propriétaire).
+
+**Renommage** (`precheck_nickname_change`) : ce n'est pas une sanction, mais il reprend les mêmes types pour classer ses échecs : propriétaire → `Skipped` + `RoleHierarchy` (`guild_owner_nickname`) ; bot lui-même → `Skipped` ; pas de `MANAGE_NICKNAMES` → `MissingPermission` ; membre au niveau ou au-dessus du bot → `RoleHierarchy`. Il ne consulte pas la liste blanche.
 
 **Raison d'audit log** : toutes les sanctions de FoxSecura portent une raison qui commence par `FoxSecura` (`FoxSecura Anti-Scam: critical confidence scam (score 9)`). Un futur anti-nuke pourra ainsi reconnaître les sanctions du bot (`is_foxsecura_audit_reason`), **en combinaison avec l'exécuteur** de l'entrée d'audit log : n'importe quel modérateur peut écrire la même raison. La raison ne contient que des valeurs produites par FoxSecura, jamais le contenu du message.
 

@@ -36,12 +36,13 @@ Le composant utilise l'identifiant interne `foxsecura:config:category`. Lorsqu'u
 
 La commande `/config` et tous ses composants (menu, boutons, sélecteurs, modal) sont réservés au **propriétaire du serveur** et aux membres disposant de `ADMINISTRATOR` ou `MANAGE_GUILD`. Les permissions sont vérifiées côté bot à chaque interaction, pas seulement à l'ouverture du tableau de bord ; les autres membres reçoivent un refus éphémère.
 
-La **liste blanche** exige un droit plus fort : propriétaire du serveur ou `ADMINISTRATOR` uniquement ; `MANAGE_GUILD` ne suffit pas. Figurer sur la liste blanche ne donne jamais accès à `/config`.
+Les **listes blanche et noire** exigent un droit plus fort : propriétaire du serveur ou `ADMINISTRATOR` uniquement ; `MANAGE_GUILD` ne suffit pas. Figurer sur la liste blanche ne donne jamais accès à `/config`.
 
 | Action | Propriétaire | `ADMINISTRATOR` | `MANAGE_GUILD` seul | Autre membre |
 | --- | --- | --- | --- | --- |
-| Ouvrir `/config`, Anti-Spam, filtres de contenu, salons ignorés | oui | oui | oui | non |
+| Ouvrir `/config`, Anti-Spam, Anti-Raid, filtres de contenu, salons ignorés | oui | oui | oui | non |
 | Modifier la liste blanche | oui | oui | non | non |
+| Modifier la liste noire | oui | oui | non | non |
 
 ### Catégorie Anti-Spam
 
@@ -91,26 +92,53 @@ Identifiants internes : `foxsecura:config:bad_words:language:<french|english|all
 
 **Coexistence avec l'anti-spam** : l'anti-spam par rafales garde ses colonnes `anti_spam_*` dans `guild_configs` (interrupteur et seuils, migration 2) ; il n'est pas déplacé dans `guild_protection_modules`, réservée aux modules activables par clé. Les deux sources sont chargées ensemble dans le cache de la guilde.
 
+### Catégorie Anti-Raid
+
+Protections des arrivées de membres (voir [Modules de protection](Protection-Modules#arrivées-de-membres-branchées-au-runtime)) :
+
+| Réglage | Stockage | Défaut | Bornes |
+| --- | --- | --- | --- |
+| Anti-bot (`anti_bot`) | `guild_protection_modules` | désactivé | on/off |
+| Nouveaux comptes (`anti_new_account`) | `guild_protection_modules` | désactivé | on/off |
+| Pseudos hoistés (`anti_nickname_hoisting`) | `guild_protection_modules` | désactivé | on/off |
+| Âge minimal des comptes (jours) | `guild_configs.new_account_min_age_days` (migration 6) | 7 | 1 à 365 |
+
+- Interrupteurs identiques à ceux des filtres de contenu (`foxsecura:config:module:<clé>:on|off`, état cible porté par le bouton), droit `Right::Config`.
+- **Modifier l'âge minimal** ouvre un modal prérempli ; une valeur hors bornes ou non numérique est refusée sans écriture. Bornes validées côté Rust et par une contrainte `CHECK`.
+- L'état affiché est relu depuis la base ; chaque écriture invalide le cache de la guilde : le réglage s'applique dès l'arrivée suivante.
+
+> ⚠️ **Nouveaux comptes** : ban avec purge de 7 jours. Un faux positif bannit un nouveau venu légitime ; activez-le si l'équipe suit le salon de logs `member`. Permissions ci-dessous : `KICK_MEMBERS` (anti-bot), `BAN_MEMBERS` (nouveaux comptes, liste noire), `MANAGE_NICKNAMES` (pseudos), rôle de FoxSecura au-dessus des membres.
+
+Identifiants internes : `foxsecura:config:anti_raid:min_age` et le modal `foxsecura:config:anti_raid:min_age_modal`.
+
 ### Catégorie Contrôle d'accès
 
-Liste blanche (utilisateurs, rôles) et salons ignorés, persistés par la migration 3 et lus par le pipeline de messages (voir [Modules de protection](Protection-Modules#liste-blanche-et-salons-ignorés)).
+Liste blanche (utilisateurs, rôles) et salons ignorés, persistés par la migration 3 et lus par le pipeline de messages (voir [Modules de protection](Protection-Modules#liste-blanche-et-salons-ignorés)) ; liste noire, persistée par la migration 6 et lue par le pipeline des membres.
 
 | Liste | Table SQLite | Droit requis |
 | --- | --- | --- |
 | Utilisateurs exemptés | `guild_whitelist_users` | propriétaire ou `ADMINISTRATOR` |
 | Rôles exemptés | `guild_whitelist_roles` | propriétaire ou `ADMINISTRATOR` |
 | Salons ignorés | `guild_ignored_channels` | accès normal à `/config` |
+| Liste noire | `guild_blacklist_users` | propriétaire ou `ADMINISTRATOR` |
 
 - Chaque liste se modifie avec un sélecteur natif Discord (utilisateurs, rôles, salons), jusqu'à 25 entrées par soumission. Le sélecteur fonctionne **en bascule** : une entrée absente est ajoutée, une entrée présente est retirée.
 - Les sélecteurs de la liste blanche ne sont affichés qu'aux membres autorisés ; le droit est de toute façon revérifié à chaque soumission.
 - `@everyone` est refusé comme rôle exempté ; la sélection entière est alors rejetée sans écriture.
 - L'état affiché (mentions, tronquées si la liste dépasse la taille d'un champ d'embed) est relu depuis la base après chaque écriture.
 
-Identifiants internes : `foxsecura:config:access_control:whitelist_users`, `foxsecura:config:access_control:whitelist_roles` et `foxsecura:config:access_control:ignored_channels`.
+**Liste noire** :
+
+- Boutons **Ajouter à la liste noire** / **Retirer de la liste noire**, qui ouvrent un modal : identifiant d'utilisateur de 17 à 20 chiffres, ou mention `<@id>`. Un utilisateur à refuser n'est en général pas membre : un sélecteur natif ne le proposerait pas.
+- Refusés sans écriture, avec un message explicite : le propriétaire du serveur, FoxSecura lui-même, et un utilisateur de la **liste blanche** (les deux listes s'excluent : retirez-le d'abord de l'autre). Réciproquement, le sélecteur de la liste blanche refuse toute la sélection si elle ajouterait un utilisateur de la liste noire.
+- Appliquée **uniquement à l'arrivée** : ajouter un membre déjà présent ne le bannit pas (bannissez-le manuellement si nécessaire).
+- Droit `Right::Blacklist` (propriétaire ou `ADMINISTRATOR`), revérifié au clic et à la soumission du modal.
+
+Identifiants internes : `foxsecura:config:access_control:whitelist_users`, `foxsecura:config:access_control:whitelist_roles`, `foxsecura:config:access_control:ignored_channels`, `foxsecura:config:access_control:blacklist_add`, `foxsecura:config:access_control:blacklist_remove` et les modals `…:blacklist_add_modal`, `…:blacklist_remove_modal`.
 
 ## Important : interface et configuration persistée
 
-Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 5 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, les salons ignorés, l'activation des filtres de contenu et les mots interdits (liste intégrée, mots personnalisés). Les autres catégories affichent encore un état de substitution.
+Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 6 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, la liste noire, les salons ignorés, l'activation des filtres de contenu et des modules d'arrivée, l'âge minimal des comptes et les mots interdits (liste intégrée, mots personnalisés). Les autres catégories affichent encore un état de substitution.
 
 Cela signifie qu'une catégorie visible dans `/config` peut représenter une **surface d'interface prévue** avant que son stockage et son exécution soient entièrement branchés. Les futures PR doivent éviter de présenter un réglage comme actif tant que les trois couches suivantes ne sont pas reliées :
 
@@ -144,7 +172,7 @@ La configuration par défaut active :
 
 - `GUILDS` ;
 - `GUILD_MODERATION` ;
-- `GUILD_MEMBERS` (privilégié : **Server Members Intent**) ;
+- `GUILD_MEMBERS` (privilégié : **Server Members Intent**) : arrivées et mises à jour de membres (liste noire, anti-bot, nouveaux comptes, pseudos hoistés) ;
 - `GUILD_MESSAGES` : créations et modifications de messages (anti-spam, filtres de contenu) ;
 - `MESSAGE_CONTENT` (privilégié : **Message Content Intent**) : texte et mentions des messages, lus par les filtres de contenu. Sans lui, Discord livre des messages vides.
 
@@ -167,8 +195,15 @@ Permissions nécessaires aux fonctionnalités branchées :
 | Envoi des incidents | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `message` |
 | Anti-arnaque, confiance haute (timeout d'une heure) | `MODERATE_MEMBERS` | serveur |
 | Anti-arnaque, confiance critique (ban, purge de 7 jours) | `BAN_MEMBERS` | serveur |
-| Toute sanction | **rôle de FoxSecura au-dessus** du rôle le plus haut du membre visé | Paramètres du serveur → Rôles |
+| Liste noire (ban à l'arrivée) | `BAN_MEMBERS` | serveur |
+| Anti-bot (expulsion) | `KICK_MEMBERS` | serveur |
+| Nouveaux comptes (ban, purge de 7 jours) | `BAN_MEMBERS` | serveur |
+| Pseudos hoistés (renommage) | `MANAGE_NICKNAMES` | serveur |
+| Envoi des incidents des arrivées | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `member` |
+| Toute sanction ou tout renommage | **rôle de FoxSecura au-dessus** du rôle le plus haut du membre visé | Paramètres du serveur → Rôles |
 
 Sans `MANAGE_MESSAGES`, l'anti-spam et les filtres produisent un incident `Critical` avec l'action `Skipped` et le code `MissingPermission`. Sans `READ_MESSAGE_HISTORY`, un message modifié n'est pas supprimé à l'aveugle : l'incident est `Critical` avec l'action `Failed`.
 
 Sanctions : sans `MODERATE_MEMBERS` / `BAN_MEMBERS`, ou si le membre est au-dessus ou au niveau du rôle le plus haut du bot, la sanction n'est pas tentée (vérification d'après le cache) ; l'action est `Skipped` avec `MissingPermission` ou `RoleHierarchy`, et la recommandation « vérifier la hiérarchie du ban ». Discord refuse le timeout d'un membre `ADMINISTRATOR` (classé `RoleHierarchy`). Le propriétaire du serveur, le bot lui-même et les membres sur liste blanche ne sont jamais sanctionnés.
+
+Arrivées : sans `KICK_MEMBERS`, un bot non autorisé reste sur le serveur (incident `Critical`, `MissingPermission`) ; un bot ajouté avec un rôle plus haut que celui de FoxSecura ne peut pas être expulsé (`RoleHierarchy`). Sans `BAN_MEMBERS`, la liste noire et les nouveaux comptes produisent un incident `Critical`. Sans `MANAGE_NICKNAMES`, ou pour un membre au-dessus de FoxSecura, le pseudo n'est pas corrigé (`Critical`) ; le pseudo du propriétaire n'est jamais modifiable par un bot.

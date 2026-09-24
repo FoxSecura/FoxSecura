@@ -5,6 +5,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_raid::anti_new_account::is_valid_min_account_age_days;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 use crate::protection::automod::bad_words::BadWordsLanguage;
 
@@ -81,6 +82,32 @@ ON CONFLICT(guild_id) DO UPDATE SET
     updated_at = unixepoch()
 "#,
             params![guild_id.to_string(), message_threshold, window_seconds],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
+    /// Enregistre l'âge minimal des comptes (1 à 365 jours). Une valeur hors
+    /// bornes ne modifie rien.
+    pub fn set_new_account_min_age(
+        &self,
+        guild_id: u64,
+        days: u16,
+    ) -> Result<GuildConfig, DatabaseError> {
+        if !is_valid_min_account_age_days(days) {
+            return Err(DatabaseError::InvalidNewAccountMinAge(days));
+        }
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, new_account_min_age_days)
+VALUES (?1, ?2)
+ON CONFLICT(guild_id) DO UPDATE SET
+    new_account_min_age_days = excluded.new_account_min_age_days,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), days],
         )?;
 
         read_guild_config(&connection, guild_id)
@@ -208,7 +235,7 @@ pub(super) fn read_guild_config(
         r#"
 SELECT guild_id, language, created_at, updated_at,
     anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
-    bad_words_language
+    bad_words_language, new_account_min_age_days
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -223,6 +250,7 @@ WHERE guild_id = ?1
                 row.get::<_, u32>(5)?,
                 row.get::<_, u32>(6)?,
                 row.get::<_, String>(7)?,
+                row.get::<_, u16>(8)?,
             ))
         },
     )?;
@@ -233,6 +261,9 @@ WHERE guild_id = ?1
         anti_spam: MessageFloodConfig::validated(row.4, row.5, row.6)?,
         bad_words_language: BadWordsLanguage::from_key(&row.7)
             .ok_or_else(|| DatabaseError::InvalidBadWordsLanguage(row.7.clone()))?,
+        new_account_min_age_days: Some(row.8)
+            .filter(|days| is_valid_min_account_age_days(*days))
+            .ok_or(DatabaseError::InvalidNewAccountMinAge(row.8))?,
         created_at: row.2,
         updated_at: row.3,
     })

@@ -122,6 +122,17 @@ fn format_evidence(language: Language, evidence: &SecurityEvidence) -> Option<St
             }
             Some(value)
         }
+        SecurityEvidence::AccountAge {
+            age_seconds,
+            minimum_age_seconds,
+        } => Some(format!(
+            "{} = {} {days} ({} {} {days})",
+            text(language, TextKey::LogsEvidenceAccountAge),
+            age_seconds / DAY_SECONDS,
+            text(language, TextKey::LogsEvidenceMinimum),
+            minimum_age_seconds / DAY_SECONDS,
+            days = text(language, TextKey::LogsUnitDays),
+        )),
         SecurityEvidence::Text { label, value } => Some(format!(
             "{label} = {}",
             inline_literal(value, LITERAL_MAX_CHARS)
@@ -147,6 +158,8 @@ fn format_evidence(language: Language, evidence: &SecurityEvidence) -> Option<St
         _ => None,
     }
 }
+
+const DAY_SECONDS: u64 = 24 * 60 * 60;
 
 /// Longueur maximale d'une valeur rendue dans un log, en caractères.
 const LITERAL_MAX_CHARS: usize = 150;

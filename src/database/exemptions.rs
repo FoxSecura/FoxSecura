@@ -1,10 +1,15 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Liste blanche (utilisateurs, rôles) et salons ignorés, par guilde.
+//! Liste blanche (utilisateurs, rôles), liste noire (utilisateurs) et salons
+//! ignorés, par guilde.
 //!
 //! Ajouts et retraits idempotents : ils retournent `true` seulement si l'état
 //! a changé.
+//!
+//! Les listes blanche et noire des utilisateurs s'excluent (migration 6) :
+//! l'ajout sur l'une est refusé si l'utilisateur figure sur l'autre, sous le
+//! même verrou que l'écriture.
 
 use std::sync::Arc;
 
@@ -17,7 +22,7 @@ use super::cache::GuildSnapshot;
 use super::models::parse_snowflake;
 use super::modules::enabled_modules;
 use super::repository::{ensure_guild_config, read_guild_config};
-use super::{Database, DatabaseError, GuildExemptions, MessageGuardContext};
+use super::{Database, DatabaseError, GuildExemptions, MemberGuardContext, MessageGuardContext};
 
 /// Table d'identifiants rattachée à une guilde.
 ///
@@ -28,6 +33,7 @@ enum IdList {
     WhitelistUsers,
     WhitelistRoles,
     IgnoredChannels,
+    BlacklistUsers,
 }
 
 impl IdList {
@@ -36,12 +42,13 @@ impl IdList {
             Self::WhitelistUsers => "guild_whitelist_users",
             Self::WhitelistRoles => "guild_whitelist_roles",
             Self::IgnoredChannels => "guild_ignored_channels",
+            Self::BlacklistUsers => "guild_blacklist_users",
         }
     }
 
     const fn column(self) -> &'static str {
         match self {
-            Self::WhitelistUsers => "user_id",
+            Self::WhitelistUsers | Self::BlacklistUsers => "user_id",
             Self::WhitelistRoles => "role_id",
             Self::IgnoredChannels => "channel_id",
         }
@@ -49,8 +56,9 @@ impl IdList {
 }
 
 impl Database {
+    /// Ajoute un utilisateur exempté ; refusé s'il est sur la liste noire.
     pub fn add_whitelist_user(&self, guild_id: u64, user_id: u64) -> Result<bool, DatabaseError> {
-        self.add_id(IdList::WhitelistUsers, guild_id, user_id)
+        self.add_exclusive_id(IdList::WhitelistUsers, guild_id, user_id)
     }
 
     pub fn remove_whitelist_user(
@@ -121,6 +129,31 @@ impl Database {
         self.list_ids(IdList::IgnoredChannels, guild_id)
     }
 
+    /// Ajoute un utilisateur à la liste noire ; refusé s'il est sur la liste
+    /// blanche.
+    ///
+    /// La liste noire n'est appliquée qu'à l'arrivée : ajouter un membre déjà
+    /// présent ne le bannit pas.
+    pub fn add_blacklist_user(&self, guild_id: u64, user_id: u64) -> Result<bool, DatabaseError> {
+        self.add_exclusive_id(IdList::BlacklistUsers, guild_id, user_id)
+    }
+
+    pub fn remove_blacklist_user(
+        &self,
+        guild_id: u64,
+        user_id: u64,
+    ) -> Result<bool, DatabaseError> {
+        self.remove_id(IdList::BlacklistUsers, guild_id, user_id)
+    }
+
+    pub fn is_blacklisted_user(&self, guild_id: u64, user_id: u64) -> Result<bool, DatabaseError> {
+        self.contains_id(IdList::BlacklistUsers, guild_id, user_id)
+    }
+
+    pub fn blacklist_users(&self, guild_id: u64) -> Result<Vec<u64>, DatabaseError> {
+        self.list_ids(IdList::BlacklistUsers, guild_id)
+    }
+
     /// Les trois listes d'une guilde, lues sous un seul verrou.
     pub fn guild_exemptions(&self, guild_id: u64) -> Result<GuildExemptions, DatabaseError> {
         let connection = self.connection()?;
@@ -149,6 +182,18 @@ impl Database {
             .guard_context(channel_id, author_id))
     }
 
+    /// Tout ce que le pipeline de membres lit pour une arrivée ou une mise à
+    /// jour : configuration, liste noire, liste blanche et modules activés.
+    ///
+    /// Servi par le même cache de guilde que les messages ; aucune écriture.
+    pub fn member_guard_context(
+        &self,
+        guild_id: u64,
+        user_id: u64,
+    ) -> Result<MemberGuardContext, DatabaseError> {
+        Ok(self.guild_snapshot(guild_id)?.member_context(user_id))
+    }
+
     /// Instantané de la guilde, depuis le cache ou chargé sous le verrou de
     /// la connexion (jamais entre une écriture et son invalidation).
     fn guild_snapshot(&self, guild_id: u64) -> Result<Arc<GuildSnapshot>, DatabaseError> {
@@ -175,16 +220,31 @@ impl Database {
 
     fn add_id(&self, list: IdList, guild_id: u64, id: u64) -> Result<bool, DatabaseError> {
         let connection = self.write_connection(guild_id)?;
-        ensure_guild_config(&connection, guild_id)?;
-        let affected = connection.execute(
-            &format!(
-                "INSERT INTO {} (guild_id, {}) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
-                list.table(),
-                list.column()
-            ),
-            params![guild_id.to_string(), id.to_string()],
-        )?;
-        Ok(affected > 0)
+        insert_id(&connection, list, guild_id, id)
+    }
+
+    /// Ajout sur une des deux listes d'utilisateurs, refusé si l'utilisateur
+    /// est sur l'autre. La vérification et l'écriture se font sous le même
+    /// verrou : aucune écriture concurrente ne peut s'intercaler.
+    fn add_exclusive_id(
+        &self,
+        list: IdList,
+        guild_id: u64,
+        user_id: u64,
+    ) -> Result<bool, DatabaseError> {
+        let (other, conflict): (_, fn(u64) -> DatabaseError) = match list {
+            IdList::WhitelistUsers => (IdList::BlacklistUsers, DatabaseError::UserBlacklisted),
+            IdList::BlacklistUsers => (IdList::WhitelistUsers, DatabaseError::UserWhitelisted),
+            IdList::WhitelistRoles | IdList::IgnoredChannels => {
+                return self.add_id(list, guild_id, user_id);
+            }
+        };
+
+        let connection = self.write_connection(guild_id)?;
+        if contains_id(&connection, other, guild_id, user_id)? {
+            return Err(conflict(user_id));
+        }
+        insert_id(&connection, list, guild_id, user_id)
     }
 
     fn remove_id(&self, list: IdList, guild_id: u64, id: u64) -> Result<bool, DatabaseError> {
@@ -201,7 +261,8 @@ impl Database {
     }
 }
 
-/// Charge tout ce que le pipeline lit pour une guilde (six requêtes au plus).
+/// Charge tout ce que les pipelines lisent pour une guilde (sept requêtes au
+/// plus).
 ///
 /// Une guilde sans configuration n'a, par clé étrangère, ni liste, ni module,
 /// ni mot : une seule requête suffit.
@@ -214,6 +275,7 @@ fn load_snapshot(connection: &Connection, guild_id: u64) -> Result<GuildSnapshot
                 ignored_channels: Vec::new(),
                 whitelist_users: Vec::new(),
                 whitelist_roles: Vec::new(),
+                blacklist_users: Vec::new(),
                 enabled_modules: ModuleSet::empty(),
                 custom_bad_words: Arc::from([]),
             });
@@ -226,12 +288,25 @@ fn load_snapshot(connection: &Connection, guild_id: u64) -> Result<GuildSnapshot
         ignored_channels: list_ids(connection, IdList::IgnoredChannels, guild_id)?,
         whitelist_users: list_ids(connection, IdList::WhitelistUsers, guild_id)?,
         whitelist_roles: list_ids(connection, IdList::WhitelistRoles, guild_id)?,
+        blacklist_users: list_ids(connection, IdList::BlacklistUsers, guild_id)?,
         enabled_modules: enabled_modules(connection, guild_id)?,
         custom_bad_words: read_custom_words(connection, guild_id)?.into(),
     })
 }
 
 impl GuildSnapshot {
+    /// Contexte d'un membre, sans accès à SQLite. Les salons ignorés ne
+    /// concernent pas les arrivées.
+    fn member_context(&self, user_id: u64) -> MemberGuardContext {
+        MemberGuardContext {
+            guild_config: self.guild_config.clone(),
+            blacklisted: self.blacklist_users.binary_search(&user_id).is_ok(),
+            user_whitelisted: self.whitelist_users.binary_search(&user_id).is_ok(),
+            whitelist_roles: self.whitelist_roles.clone(),
+            enabled_modules: self.enabled_modules,
+        }
+    }
+
     /// Contexte d'un message, sans accès à SQLite.
     ///
     /// Une guilde non configurée ou un salon ignoré : rien ne s'applique, la
@@ -265,6 +340,24 @@ impl GuildSnapshot {
 
         context
     }
+}
+
+fn insert_id(
+    connection: &Connection,
+    list: IdList,
+    guild_id: u64,
+    id: u64,
+) -> Result<bool, DatabaseError> {
+    ensure_guild_config(connection, guild_id)?;
+    let affected = connection.execute(
+        &format!(
+            "INSERT INTO {} (guild_id, {}) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+            list.table(),
+            list.column()
+        ),
+        params![guild_id.to_string(), id.to_string()],
+    )?;
+    Ok(affected > 0)
 }
 
 fn contains_id(

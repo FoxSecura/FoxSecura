@@ -50,9 +50,20 @@ Permissions : `MODERATE_MEMBERS` et `BAN_MEMBERS` ne sont nécessaires que si l'
 
 Les preuves d'arnaque ne contiennent **jamais** l'URL complète, ses paramètres de requête ni ses identifiants (`user:motdepasse@`), qui peuvent porter un jeton de la victime : seul le nom d'hôte est conservé, et aucun extrait du message.
 
+## Protections des arrivées
+
+Quatre modules agissent sur un membre à son arrivée, sans intervention humaine (voir [Modules de protection](Protection-Modules#arrivées-de-membres-branchées-au-runtime)).
+
+- **Nouveaux comptes : faux positif = ban d'un nouveau venu légitime**, avec purge de 7 jours de messages. L'âge d'un compte n'est qu'un indice : un vrai nouvel utilisateur de Discord est banni s'il rejoint pendant ses premiers jours. Module désactivé par défaut ; propriétaire et liste blanche exemptés (incident `Warning`) ; ban jamais levé automatiquement. Choisissez l'âge minimal (1 à 365 jours) selon votre communauté et suivez le salon de logs `member`.
+- **Liste noire** : un ban à l'arrivée, **terminal même s'il échoue** (aucun autre module ne s'exécute). La gérer est aussi sensible que la liste blanche : propriétaire ou `ADMINISTRATOR` uniquement, `MANAGE_GUILD` ne suffit pas. Garde-fous : le propriétaire et FoxSecura lui-même sont refusés, et les listes blanche et noire s'excluent (vérifié sous le verrou d'écriture et par des déclencheurs SQLite). La liste n'agit qu'à l'arrivée : elle ne bannit jamais un membre déjà présent.
+- **Anti-bot** : un bot non autorisé est expulsé ; un bot légitime doit être ajouté à la liste blanche **par identifiant** avant son invitation. Un bot invité avec un rôle plus haut que celui de FoxSecura ne peut pas être expulsé : l'incident `Critical` le signale.
+- **Pseudos hoistés** : une correction, appliquée à tous sauf au propriétaire. Le nom d'origine, non fiable, n'est rendu dans les logs que par `inline_literal`. Le pseudo posé n'est jamais hoisté : aucune boucle de renommage.
+
+Permissions : `KICK_MEMBERS`, `BAN_MEMBERS` et `MANAGE_NICKNAMES` ne sont nécessaires que si les modules correspondants sont activés (ou la liste noire remplie). Comme pour l'anti-arnaque, placez le rôle de FoxSecura au-dessus des membres ordinaires, **pas** au-dessus des rôles du staff.
+
 ## Cache de configuration
 
-Le pipeline de messages lit la configuration de la guilde depuis un cache mémoire borné (1 024 guildes, la moins récemment utilisée est oubliée). Toute écriture passe par un garde (`WriteConnection`) qui invalide la guilde **sous le verrou de la connexion SQLite**, même en cas d'échec ; un chargement se fait sous ce même verrou. Un état périmé ne peut donc pas être remis en cache après une modification depuis `/config`.
+Les pipelines de messages et de membres lisent la configuration de la guilde depuis un cache mémoire borné (1 024 guildes, la moins récemment utilisée est oubliée). Toute écriture passe par un garde (`WriteConnection`) qui invalide la guilde **sous le verrou de la connexion SQLite**, même en cas d'échec ; un chargement se fait sous ce même verrou. Un état périmé ne peut donc pas être remis en cache après une modification depuis `/config`.
 
 Limite : **mono-instance**. Une écriture faite hors du processus (deuxième instance du bot sur la même base, édition manuelle avec un outil SQLite) n'est vue qu'au redémarrage ou après l'éviction de la guilde. Pour plusieurs instances, il faudra une invalidation partagée.
 
