@@ -10,9 +10,15 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 
 - `AppData` porte désormais la base SQLite (`Arc<Database>`) et l'état en mémoire des protections.
 - Ouverture de la base au démarrage via `DATABASE_PATH` (défaut : `data/foxsecura.sqlite3`), migrations appliquées automatiquement.
-- Ajout de l'intent `GUILD_MESSAGES` ; `MESSAGE_CONTENT` volontairement non demandé.
+- Ajout de l'intent `GUILD_MESSAGES`.
+- Ajout de l'intent privilégié `MESSAGE_CONTENT`, nécessaire aux filtres de contenu ; un refus de Discord (code 4014) affiche au démarrage quoi activer et où dans le portail développeur.
+- Dispatch de `MessageUpdate` : les modifications de messages passent par les filtres de contenu (jamais par l'anti-spam).
 - Dispatch de `Message` vers un pipeline de protection des messages ; les erreurs des modules sont journalisées et ne sont jamais propagées au client.
 - Gardes du pipeline : messages hors guilde, de webhook ou d'auteur bot ignorés.
+- Ordre des gardes aligné sur la V1 : hors guilde, salon ignoré, webhook, bot, puis auteur sur liste blanche (aucune sanction).
+- Configuration de la guilde, salon ignoré, liste blanche de l'auteur et modules activés lus en un seul passage `spawn_blocking` par message.
+- Cache mémoire de la configuration par guilde (1 024 guildes, LRU) : configuration, salons ignorés, liste blanche, modules et mots personnalisés chargés une fois (6 requêtes), puis servis depuis la mémoire ; invalidé à chaque écriture, sous le verrou de la connexion (garde `WriteConnection`), sans état périmé possible. Mono-instance. Mesure : 1 000 messages d'une guilde → 1 chargement SQLite au lieu de 4 à 6 requêtes par message.
+- Modifications partielles : un `MESSAGE_UPDATE` sans mentions ni pièces jointes n'est plus comparé sur ces champs lors de la vérification de révision ; un lien malveillant ajouté par modification est de nouveau supprimé (il était jugé `Superseded`).
 
 ### Anti-Spam
 
@@ -22,16 +28,54 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Alignement de `message_flood::evaluate` sur la sémantique `count >= seuil` (auparavant `count > limite`).
 - Cœur pur testable sans Discord : `MessageSnapshot`, `screen_message`, `MessageFloodTracker`, `plan_response`, `build_incident`.
 
+### Filtres de contenu
+
+- Six filtres branchés de bout en bout : caractères invisibles, liens malveillants, liens adultes, invitations Discord, `@everyone`/`@here`, mentions de masse (seuil 5).
+- Ordre de la V1 avec court-circuit : le premier filtre qui déclenche arrête la chaîne (une seule suppression, un seul incident par message) ; filtres évalués avant l'anti-spam.
+- Un message retenu par un filtre n'est pas compté par l'anti-spam.
+- Les auteurs sur liste blanche subissent la suppression (correction de contenu) mais aucune sanction ; rien ne s'applique dans un salon ignoré.
+- Messages modifiés analysés avec les mêmes filtres ; la version courante est relue avant suppression pour ne jamais effacer une version déjà corrigée.
+- Incident par module (preuve : hôte, invitation, motif, nombre de mentions, type d'obfuscation ; extrait du message), sévérité `Warning` si supprimé, `Critical` sinon.
+- Plan, résultat de suppression et squelette d'incident mutualisés avec l'anti-spam (`protection::shared`).
+- Trois nouveaux filtres : pièces jointes dangereuses (`attachment_filter`, extension finale, doubles extensions comprises), anti-arnaque gradué (`anti_scam`) et mots interdits (`bad_words`).
+- Ordre complet de la V1 : pièces jointes → invisibles → anti-arnaque → liens malveillants → liens adultes → invitations → `@everyone` → mentions de masse → mots interdits, puis anti-spam. Les pièces jointes et l'anti-arnaque s'appliquent aussi aux modifications.
+- Anti-arnaque : confiance moyenne → suppression et `request_staff_review` ; haute → suppression et timeout d'une heure ; critique → suppression et ban avec purge de 7 jours. Sévérité `Critical` dès la confiance haute. Preuves limitées à l'hôte défangué, au score, aux signaux (6 au plus) et à la confiance, sans URL complète, requête, identifiants ni extrait. **Un faux positif bannit un membre légitime** : voir le wiki Sécurité.
+- Mots interdits : liste intégrée (`french`, `english`, `all`) et mots personnalisés, insensibles à la casse avec frontières Unicode ; matcher compilé une fois par liste (cache borné de 256 listes). Suppression seule, y compris pour les auteurs exemptés.
+
+### Sanctions
+
+- Socle partagé `protection::shared::sanction` (cœur pur) : jamais le propriétaire du serveur ni le bot ; vérification d'après le cache de `MODERATE_MEMBERS` / `BAN_MEMBERS` et de la hiérarchie des rôles avant l'appel ; membre `ADMINISTRATOR` non timeoutable ; membre introuvable → `Skipped` + `ResourceMissing` ; `429`/`5xx` → `DiscordUnavailable`.
+- Un auteur sur liste blanche n'est jamais sanctionné : suppression, action `ignore_exempt_member` (`Skipped`) et recommandation « revoir la liste blanche ».
+- Raisons d'audit log préfixées `FoxSecura` (`FoxSecura Anti-Scam: …`), pour qu'un futur anti-nuke reconnaisse les sanctions du bot.
+- Nouvelles permissions nécessaires si l'anti-arnaque est activé : `MODERATE_MEMBERS`, `BAN_MEMBERS` et un rôle de FoxSecura au-dessus des membres.
+
+### Liste blanche et salons ignorés
+
+- La liste blanche est une exemption de sanction de l'auteur, jamais un droit d'administration : elle ne donne pas accès à `/config`.
+- Exemption si l'identifiant de l'auteur ou l'un de ses rôles est listé ; rôles absents de l'événement → pas d'exemption par rôle.
+- Paramètre des rôles attribués par FoxSecura (qui n'exemptent jamais), vide tant que vérification, quarantaine et rôle limité ne sont pas portés.
+- Un auteur exempté saute l'anti-spam (les filtres de contenu s'appliquent encore) ; un salon ignoré court-circuite toutes les protections.
+- `@everyone` refusé comme rôle exempté.
+
 ### Configuration
 
 - Migration SQLite `2` : colonnes `anti_spam_enabled`, `anti_spam_message_threshold` (2 à 50) et `anti_spam_window_seconds` (1 à 60) dans `guild_configs`.
 - Repository : lecture sans écriture (`find_guild_config`), `set_anti_spam_enabled` et `set_anti_spam_limits` validés.
 - `/config` réservé au propriétaire du serveur et aux membres `ADMINISTRATOR` ou `MANAGE_GUILD`, vérifié à chaque interaction.
 - Catégorie Anti-Spam de `/config` : interrupteur et modal des seuils, persistés et relus par le moteur.
+- Migration SQLite `3` : tables `guild_whitelist_users`, `guild_whitelist_roles` et `guild_ignored_channels` (clé composite, suppression en cascade avec la guilde, `CHECK` contre `@everyone`).
+- Repository : ajout et retrait idempotents, test d'appartenance et listes pour la liste blanche et les salons ignorés.
+- Catégorie Contrôle d'accès de `/config` : sélecteurs natifs en bascule pour les utilisateurs, rôles et salons.
+- Liste blanche réservée au propriétaire du serveur et à `ADMINISTRATOR` (`MANAGE_GUILD` ne suffit pas) ; salons ignorés avec l'accès normal à `/config`.
+- Migration SQLite `4` : table générique `guild_protection_modules` (clé composite, suppression en cascade, modules désactivés par défaut) ; clés validées par l'énumération `ProtectionModule`. L'anti-spam garde ses colonnes.
+- `/config` : un interrupteur persistant par filtre de contenu dans les catégories Anti-Spam et AutoMod.
+- Migration SQLite `5` : colonne `guild_configs.bad_words_language` (`all` par défaut, `CHECK`) et table `guild_bad_words` (clé composite, suppression en cascade avec la guilde, 100 caractères par mot).
+- `/config` : interrupteurs des pièces jointes et de l'anti-arnaque (Anti-Spam) et des mots interdits (AutoMod) ; choix de la liste intégrée et modal des mots personnalisés, validé avec les bornes de la V1 (200 mots, 100 caractères par mot, 2 000 caractères au total).
 
 ### Logs
 
 - Ajout de `format_security_log_message` : membre, salon, preuve chiffrée et recommandation, sans ping.
+- Rendu des extraits, domaines et textes issus de messages via `inline_literal` : code en ligne neutralisé (ni formatage, ni lien cliquable, ni fausse ligne, ni caractère invisible ou bidirectionnel).
 
 ## [0.1.0] - 2026-09-07
 

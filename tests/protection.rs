@@ -11,5 +11,9 @@ mod anti_raid;
 mod anti_spam;
 #[path = "protection/automod/mod.rs"]
 mod automod;
+#[path = "protection/content_filter.rs"]
+mod content_filter;
+#[path = "protection/content_modules.rs"]
+mod content_modules;
 #[path = "protection/shared/mod.rs"]
 mod shared;

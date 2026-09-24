@@ -3,15 +3,30 @@
 
 mod action_burst;
 mod decision;
+mod exemption;
 mod message;
+mod message_deletion;
+mod module;
+mod sanction;
 mod url_signal;
 
 pub use action_burst::{
     ActionBurstDetector, ActionBurstDetectorConfig, ActionBurstInput, ActionBurstResult,
 };
 pub use decision::ProtectionDecision;
+pub use exemption::{
+    AuthorWhitelist, MessageScope, is_author_exempt, is_everyone_role, message_scope,
+};
 pub use message::{
     DISCORD_EPOCH_MILLIS, GuildMessage, MessageIgnoreReason, MessageSnapshot, screen_message,
     snowflake_timestamp,
+};
+pub use message_deletion::{DeleteMessageOutcome, DeleteMessagePlan, message_incident};
+pub use module::{ModuleSet, ProtectionModule, UnknownModuleKey};
+pub use sanction::{
+    AUDIT_REASON_MAX_CHARS, AUDIT_REASON_PREFIX, BotPermissions, BotStanding, MAX_BAN_PURGE,
+    MAX_TIMEOUT, SanctionContext, SanctionKind, SanctionOutcome, SanctionPermission, SanctionSkip,
+    TargetLookup, TargetStanding, audit_reason, classify_sanction_http_failure,
+    exempt_member_action, is_foxsecura_audit_reason, precheck_sanction,
 };
 pub use url_signal::{UrlSignal, extract_url_signals, host_matches};
