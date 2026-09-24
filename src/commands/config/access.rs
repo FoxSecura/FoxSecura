@@ -12,6 +12,10 @@ pub enum Right {
     /// uniquement (V1). `MANAGE_GUILD` ne suffit pas : exempter un membre des
     /// sanctions est plus sensible que régler les protections.
     Whitelist,
+    /// Gestion de la liste noire : même règle que la liste blanche
+    /// (propriétaire ou `ADMINISTRATOR`). Faire bannir un utilisateur à son
+    /// arrivée est aussi sensible que d'en exempter un.
+    Blacklist,
 }
 
 /// Droits d'un membre sur le tableau de bord.
@@ -21,6 +25,8 @@ pub enum Right {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Access {
     pub config: bool,
+    /// Listes blanche et noire des utilisateurs (propriétaire ou
+    /// `ADMINISTRATOR`).
     pub whitelist: bool,
 }
 
@@ -35,7 +41,7 @@ impl Access {
     pub const fn allows(self, right: Right) -> bool {
         match right {
             Right::Config => self.config,
-            Right::Whitelist => self.whitelist,
+            Right::Whitelist | Right::Blacklist => self.whitelist,
         }
     }
 }
@@ -123,7 +129,25 @@ mod tests {
         ] {
             assert!(access.allows(Right::Config));
             assert!(access.allows(Right::Whitelist));
+            assert!(access.allows(Right::Blacklist));
         }
+    }
+
+    #[test]
+    fn blacklist_is_reserved_to_owner_and_administrator() {
+        assert!(Access::new(true, None).allows(Right::Blacklist));
+        assert!(
+            Access::new(false, Some(serenity::Permissions::ADMINISTRATOR)).allows(Right::Blacklist)
+        );
+        for permissions in [
+            serenity::Permissions::MANAGE_GUILD,
+            serenity::Permissions::BAN_MEMBERS | serenity::Permissions::KICK_MEMBERS,
+            serenity::Permissions::MANAGE_GUILD | serenity::Permissions::MANAGE_ROLES,
+        ] {
+            let access = Access::new(false, Some(permissions));
+            assert!(!access.allows(Right::Blacklist), "{permissions:?}");
+        }
+        assert!(!Access::default().allows(Right::Blacklist));
     }
 
     #[test]
@@ -133,6 +157,7 @@ mod tests {
         // Salons ignorés : accès normal à `/config`.
         assert!(access.allows(Right::Config));
         assert!(!access.allows(Right::Whitelist));
+        assert!(!access.allows(Right::Blacklist));
     }
 
     #[test]

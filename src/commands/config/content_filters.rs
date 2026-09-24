@@ -96,14 +96,13 @@ pub fn parse_toggle(custom_id: &str) -> Option<Result<ModuleToggle, UnknownModul
     Some(ProtectionModule::from_key(key).map(|module| ModuleToggle { module, enabled }))
 }
 
-/// Champ d'état : un module par ligne, avec son état persisté, puis la portée
-/// des filtres.
-pub fn state_fields(
+/// Un module par ligne, avec son état persisté.
+pub fn module_states(
     language: Language,
     modules: &[ProtectionModule],
     enabled: ModuleSet,
-) -> Vec<(&'static str, String, bool)> {
-    let states = modules
+) -> String {
+    modules
         .iter()
         .map(|module| {
             format!(
@@ -113,7 +112,17 @@ pub fn state_fields(
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
+
+/// Champ d'état : un module par ligne, avec son état persisté, puis la portée
+/// des filtres.
+pub fn state_fields(
+    language: Language,
+    modules: &[ProtectionModule],
+    enabled: ModuleSet,
+) -> Vec<(&'static str, String, bool)> {
+    let states = module_states(language, modules, enabled);
 
     vec![(
         text(language, TextKey::ConfigContentFilters),
