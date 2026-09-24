@@ -9,6 +9,7 @@
 //! - [`channels`] : salons verrouillés et verrou du rôle ;
 //! - [`overwrite`] : verrou au niveau du membre, état d'origine à trois états ;
 //! - [`engine`] : mise en quarantaine, étape par étape ;
+//! - [`release`] : libération et restauration exacte ;
 //! - [`locks`] : sérialisation des opérations par membre ;
 //! - [`failure`] : échecs des appels Discord.
 
@@ -17,6 +18,7 @@ pub mod engine;
 pub mod failure;
 pub mod locks;
 pub mod overwrite;
+pub mod release;
 pub mod role;
 
 pub use channels::{
@@ -35,6 +37,10 @@ pub use locks::{MemberLockGuard, MemberLocks};
 pub use overwrite::{
     MEMBER_LOCK_DENY, MemberLockPlan, PermissionState, RecordedOverwrite, RestorePlan,
     plan_member_lock, plan_restore,
+};
+pub use release::{
+    MemberPresence, ReleaseEffects, ReleaseFacts, ReleaseOutcome, RoleRelease,
+    quarantine_role_removed, release_member, should_resume_pending,
 };
 pub use role::{
     BotRoleStanding, DANGEROUS_PERMISSIONS, QUARANTINE_AUDIT_LABEL, QUARANTINE_ROLE_NAME,

@@ -9,12 +9,14 @@ use foxsecura::logs::{ActionCode, ActionStatus, FailureCode};
 use foxsecura::protection::quarantine::{
     BotRoleStanding, ChannelFacts, ChannelLockResult, DANGEROUS_PERMISSIONS,
     DEFAULT_QUARANTINE_TIMEOUT, DiscordFailure, MEMBER_LOCK_DENY, MemberChannel, MemberLockPlan,
-    MemberLocks, Overwrite, OverwriteBits, OverwriteTarget, PermissionState, QUARANTINE_ROLE_NAME,
-    QuarantineEffects, QuarantineFacts, QuarantineOutcome, QuarantineRequest, QuarantineRoleLookup,
-    QuarantineRoleRefusal, QuarantineSkip, ROLE_LOCK_DENY, RecordedOverwrite, RoleBlock, RoleFacts,
-    RoleStatus, StoreError, UNKNOWN_MEMBER, UNKNOWN_ROLE, bot_assigned_roles, is_lockable,
-    is_synced_with, lock_member_channel, lockable_channels, plan_member_lock, quarantine_member,
-    quarantine_role_position, role_lock_overwrite, validate_quarantine_role,
+    MemberLocks, MemberPresence, Overwrite, OverwriteBits, OverwriteTarget, PermissionState,
+    QUARANTINE_ROLE_NAME, QuarantineEffects, QuarantineFacts, QuarantineOutcome, QuarantineRequest,
+    QuarantineRoleLookup, QuarantineRoleRefusal, QuarantineSkip, ROLE_LOCK_DENY, RecordedOverwrite,
+    ReleaseEffects, ReleaseFacts, ReleaseOutcome, RestorePlan, RoleBlock, RoleFacts, RoleRelease,
+    RoleStatus, StoreError, UNKNOWN_CHANNEL, UNKNOWN_MEMBER, UNKNOWN_ROLE, bot_assigned_roles,
+    is_lockable, is_synced_with, lock_member_channel, lockable_channels, plan_member_lock,
+    plan_restore, quarantine_member, quarantine_role_position, quarantine_role_removed,
+    release_member, role_lock_overwrite, should_resume_pending, validate_quarantine_role,
 };
 use foxsecura::protection::shared::{
     AuthorWhitelist, SanctionOutcome, SanctionSkip, is_author_exempt,
@@ -309,6 +311,7 @@ struct Fake {
     fail_remove_role: HashSet<u64>,
     fail_write: HashSet<u64>,
     fail_record: bool,
+    fail_restore: HashSet<u64>,
     timeout: Option<SanctionOutcome>,
 }
 
@@ -341,7 +344,7 @@ impl QuarantineEffects for Fake {
         overwrite: OverwriteBits,
     ) -> Result<(), DiscordFailure> {
         self.calls.push(format!("write {channel_id}"));
-        if self.fail_write.contains(&channel_id) {
+        if self.fail_write.contains(&channel_id) || self.fail_restore.contains(&channel_id) {
             return Err(DiscordFailure::new(
                 Some(403),
                 Some(50013),
@@ -389,6 +392,32 @@ impl QuarantineEffects for Fake {
     async fn set_pending_release(&mut self, pending: bool) -> Result<(), StoreError> {
         self.calls.push(format!("pending {pending}"));
         self.pending = pending;
+        Ok(())
+    }
+}
+
+impl ReleaseEffects for Fake {
+    async fn recorded_overwrites(&mut self) -> Result<Vec<(u64, RecordedOverwrite)>, StoreError> {
+        Ok(self
+            .rows
+            .iter()
+            .map(|(&channel, &row)| (channel, row))
+            .collect())
+    }
+
+    async fn delete_member_overwrite(&mut self, channel_id: u64) -> Result<(), DiscordFailure> {
+        self.calls.push(format!("delete {channel_id}"));
+        if self.fail_restore.contains(&channel_id) {
+            return Err(DiscordFailure::new(Some(503), None, "Service Unavailable"));
+        }
+        if !self.overwrites.contains_key(&channel_id) {
+            return Err(DiscordFailure::new(
+                Some(404),
+                Some(UNKNOWN_CHANNEL),
+                "Unknown Channel",
+            ));
+        }
+        self.overwrites.insert(channel_id, None);
         Ok(())
     }
 }
@@ -936,4 +965,274 @@ async fn different_members_are_not_serialized() {
     assert_eq!(locks.len(), 3);
     drop((first, second, third));
     assert!(locks.is_empty());
+}
+
+// --- Libération ---
+
+impl Fake {
+    fn release_facts(&self) -> ReleaseFacts {
+        ReleaseFacts {
+            quarantine_role_id: Some(QUARANTINE_ROLE),
+            member: MemberPresence::Present {
+                has_quarantine_role: self.roles.contains(&QUARANTINE_ROLE),
+            },
+            channels: Some(self.overwrites.clone()),
+        }
+    }
+}
+
+fn release_own(fake: &mut Fake) -> ReleaseOutcome {
+    let facts = fake.release_facts();
+    run(release_member(fake, &facts))
+}
+
+#[test]
+fn restore_plan_rewrites_exactly_the_three_states() {
+    let other = Permissions::ATTACH_FILES;
+    let locked = bits(other, MEMBER_LOCK_DENY | Permissions::EMBED_LINKS);
+    let restore = |view, connect| plan_restore(Some(locked), RecordedOverwrite { view, connect });
+
+    assert_eq!(
+        restore(PermissionState::Allow, PermissionState::Deny),
+        RestorePlan::Write(bits(
+            other | Permissions::VIEW_CHANNEL,
+            Permissions::CONNECT | Permissions::EMBED_LINKS
+        ))
+    );
+    assert_eq!(
+        restore(PermissionState::Unset, PermissionState::Allow),
+        RestorePlan::Write(bits(other | Permissions::CONNECT, Permissions::EMBED_LINKS))
+    );
+    // Absent redevient absent : overwrite vide supprimé.
+    assert_eq!(
+        plan_restore(
+            Some(bits(Permissions::empty(), MEMBER_LOCK_DENY)),
+            RecordedOverwrite {
+                view: PermissionState::Unset,
+                connect: PermissionState::Unset,
+            }
+        ),
+        RestorePlan::Delete
+    );
+    // Déjà dans l'état d'origine : aucun appel.
+    assert_eq!(
+        plan_restore(
+            Some(bits(Permissions::VIEW_CHANNEL, Permissions::empty())),
+            RecordedOverwrite {
+                view: PermissionState::Allow,
+                connect: PermissionState::Unset,
+            }
+        ),
+        RestorePlan::Unchanged
+    );
+    assert_eq!(
+        plan_restore(
+            None,
+            RecordedOverwrite {
+                view: PermissionState::Unset,
+                connect: PermissionState::Unset,
+            }
+        ),
+        RestorePlan::Unchanged
+    );
+}
+
+#[test]
+fn quarantine_then_release_restores_every_original_overwrite() {
+    let originals = [
+        (100, None),
+        (
+            200,
+            Some(bits(
+                Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES,
+                Permissions::empty(),
+            )),
+        ),
+        (
+            300,
+            Some(bits(
+                Permissions::CONNECT,
+                Permissions::VIEW_CHANNEL | Permissions::EMBED_LINKS,
+            )),
+        ),
+        (400, Some(bits(Permissions::empty(), Permissions::CONNECT))),
+        // Double refus préexistant : jamais touché, survit à la libération.
+        (500, Some(bits(Permissions::empty(), MEMBER_LOCK_DENY))),
+    ];
+    let mut fake = Fake::with_channels(&originals);
+    let outcome = quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    let lock = outcome.channel_lock.unwrap();
+    assert_eq!((lock.locked, lock.preexisting_deny), (4, 1));
+    assert_eq!(fake.rows.len(), 4);
+    for (channel, _) in &originals {
+        assert!(
+            fake.overwrites[channel]
+                .unwrap()
+                .deny
+                .contains(MEMBER_LOCK_DENY)
+        );
+    }
+
+    let released = release_own(&mut fake);
+    assert_eq!(released.role, RoleRelease::Removed);
+    assert_eq!((released.restored, released.failed), (4, 0));
+    assert!(released.is_complete() && !fake.pending);
+    assert!(fake.rows.is_empty());
+    assert!(!fake.roles.contains(&QUARANTINE_ROLE));
+    assert_eq!(
+        fake.overwrites,
+        originals.into_iter().collect::<BTreeMap<_, _>>()
+    );
+    // Aucun overwrite n'existait sur 100 : il est supprimé, pas vidé.
+    assert!(fake.calls.contains(&"delete 100".to_owned()));
+}
+
+#[test]
+fn release_is_idempotent() {
+    let mut fake = Fake::with_channels(&[(100, None), (200, None)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    release_own(&mut fake);
+
+    fake.calls.clear();
+    let again = release_own(&mut fake);
+    assert!(again.nothing_to_do() && again.is_complete());
+    // Aucune modification Discord : seule la libération en attente est
+    // effacée en base.
+    assert_eq!(fake.calls, vec!["pending false"]);
+}
+
+#[test]
+fn a_vanished_channel_has_nothing_left_to_restore() {
+    let mut fake = Fake::with_channels(&[(100, None), (200, None)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    // Salon supprimé depuis la quarantaine.
+    fake.overwrites.remove(&200);
+
+    let outcome = release_own(&mut fake);
+    assert_eq!((outcome.restored, outcome.missing_channels), (1, 1));
+    assert!(outcome.is_complete());
+    assert!(fake.rows.is_empty());
+    assert!(!fake.calls.contains(&"delete 200".to_owned()));
+}
+
+#[test]
+fn an_unfinished_release_stays_pending_then_resumes() {
+    let mut fake = Fake::with_channels(&[(100, None), (200, None)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    fake.fail_restore.insert(200);
+
+    let outcome = release_own(&mut fake);
+    assert_eq!((outcome.restored, outcome.failed), (1, 1));
+    assert!(outcome.pending && fake.pending);
+    // La ligne en échec est conservée, la ligne restaurée supprimée.
+    assert_eq!(fake.rows.keys().copied().collect::<Vec<_>>(), vec![200]);
+
+    // Reprise (maintenance ou libération suivante) : le membre est présent.
+    assert!(should_resume_pending(&fake.release_facts().member));
+    fake.fail_restore.clear();
+    fake.calls.clear();
+    let resumed = release_own(&mut fake);
+    assert_eq!((resumed.restored, resumed.failed), (1, 0));
+    assert_eq!(resumed.role, RoleRelease::NotNeeded);
+    assert!(resumed.is_complete() && !fake.pending);
+    assert!(fake.rows.is_empty());
+    assert_eq!(fake.overwrites[&200], None);
+    assert!(!fake.calls.iter().any(|call| call.contains(" 100")));
+}
+
+#[test]
+fn a_pending_release_is_obsolete_after_a_new_quarantine() {
+    let original = Some(bits(Permissions::VIEW_CHANNEL, Permissions::empty()));
+    let mut fake = Fake::with_channels(&[(100, original)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    fake.fail_restore.insert(100);
+    release_own(&mut fake);
+    assert!(fake.pending);
+
+    // Remis en quarantaine avant la reprise : la libération en attente est
+    // effacée (la maintenance ne la reprendra pas), la ligne d'origine gardée.
+    fake.fail_restore.clear();
+    let outcome = quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    assert!(outcome.role_applied());
+    assert!(!fake.pending);
+    assert_eq!(
+        fake.rows[&100],
+        RecordedOverwrite {
+            view: PermissionState::Allow,
+            connect: PermissionState::Unset,
+        }
+    );
+
+    // La libération suivante restaure toujours l'état d'avant la première
+    // quarantaine.
+    release_own(&mut fake);
+    assert_eq!(fake.overwrites[&100], original);
+}
+
+#[test]
+fn an_absent_member_keeps_its_denies_until_released() {
+    // Discord conserve les overwrites d'un membre parti : la maintenance ne
+    // reprend pas sa libération, les lignes restent en place.
+    assert!(!should_resume_pending(&MemberPresence::Absent));
+    assert!(should_resume_pending(&MemberPresence::Unknown));
+
+    // Libération explicite d'un membre parti : les salons sont restaurés,
+    // aucun rôle n'est retiré.
+    let mut fake = Fake::with_channels(&[(100, None)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    let facts = ReleaseFacts {
+        member: MemberPresence::Absent,
+        ..fake.release_facts()
+    };
+    let outcome = run(release_member(&mut fake, &facts));
+    assert_eq!(outcome.role, RoleRelease::NotNeeded);
+    assert!(outcome.is_complete());
+}
+
+#[test]
+fn unknown_state_keeps_every_row_and_stays_pending() {
+    let mut fake = Fake::with_channels(&[(100, None)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    fake.calls.clear();
+
+    // Serveur absent du cache, membre illisible : rien n'est supprimé.
+    let facts = ReleaseFacts {
+        member: MemberPresence::Unknown,
+        channels: None,
+        ..fake.release_facts()
+    };
+    let outcome = run(release_member(&mut fake, &facts));
+    assert_eq!(outcome.role, RoleRelease::MemberUnknown);
+    assert_eq!(outcome.failed, 1);
+    assert!(outcome.pending);
+    assert_eq!(fake.rows.len(), 1);
+    assert_eq!(fake.calls, vec!["pending true"]);
+}
+
+#[test]
+fn removing_the_role_by_hand_triggers_the_restoration() {
+    let role = QUARANTINE_ROLE;
+    assert!(quarantine_role_removed(Some(&[1, role]), &[1], role));
+    // Rôle toujours présent, jamais présent, ou ancien état inconnu (membre
+    // revenu sans le rôle) : rien.
+    assert!(!quarantine_role_removed(Some(&[1, role]), &[role], role));
+    assert!(!quarantine_role_removed(Some(&[1]), &[], role));
+    assert!(!quarantine_role_removed(None, &[], role));
+
+    // L'équipe retire le rôle : la restauration n'a plus de rôle à retirer.
+    let original = Some(bits(Permissions::CONNECT, Permissions::empty()));
+    let mut fake = Fake::with_channels(&[(100, original)]);
+    quarantine_own(&mut fake, QuarantineRequest::ROLE_ONLY);
+    fake.roles.retain(|role| *role != QUARANTINE_ROLE);
+
+    let outcome = release_own(&mut fake);
+    assert_eq!(outcome.role, RoleRelease::NotNeeded);
+    assert!(outcome.is_complete());
+    assert!(
+        !fake
+            .calls
+            .iter()
+            .any(|call| call.starts_with("remove_role"))
+    );
+    assert_eq!(fake.overwrites[&100], original);
 }

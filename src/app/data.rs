@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
+use foxsecura::protection::quarantine::MemberLocks;
 
 use super::Error;
 
@@ -29,10 +30,13 @@ impl AppData {
 /// Mono-instance : perdu au redémarrage et non partagé entre plusieurs
 /// processus. Les verrous sont des `std::sync::Mutex` : ils ne doivent être
 /// pris que dans du code synchrone, jamais conservés à travers un `.await`.
+/// Seule exception, les verrous de quarantaine par membre, asynchrones et
+/// conçus pour être tenus pendant toute une opération.
 #[derive(Default)]
 pub struct ProtectionState {
     message_flood: Mutex<MessageFloodTracker>,
     bad_words: Mutex<BadWordsMatcherCache>,
+    quarantine_locks: Arc<MemberLocks>,
 }
 
 impl ProtectionState {
@@ -54,6 +58,12 @@ impl ProtectionState {
         self.bad_words
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Verrous par membre des quarantaines et libérations, partagés avec la
+    /// maintenance périodique.
+    pub fn quarantine_locks(&self) -> &Arc<MemberLocks> {
+        &self.quarantine_locks
     }
 }
 

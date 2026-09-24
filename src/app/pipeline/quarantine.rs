@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Quarantaine au runtime : verrou du rôle sur les salons.
+//! Quarantaine au runtime : verrou du rôle sur les salons, libération et
+//! maintenance des libérations en attente.
 //!
 //! Les décisions sont dans `foxsecura::protection::quarantine` ; ce module
 //! relève l'état du cache (verrou du cache relâché avant tout `.await`) et
@@ -15,14 +16,28 @@
 //! de débit (`429`), serenity attend la fin de la fenêtre avant de reprendre,
 //! l'opération est plus lente mais n'est pas abandonnée.
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::quarantine::{
-    ChannelFacts, DiscordFailure, Overwrite, OverwriteBits, OverwriteTarget,
-    QUARANTINE_AUDIT_LABEL, is_lockable, role_lock_overwrite,
+    ChannelFacts, DiscordFailure, MemberLocks, MemberPresence, Overwrite, OverwriteBits,
+    OverwriteTarget, QUARANTINE_AUDIT_LABEL, QuarantineEffects, RecordedOverwrite, ReleaseEffects,
+    ReleaseFacts, ReleaseOutcome, StoreError, UNKNOWN_MEMBER, is_lockable, quarantine_role_removed,
+    release_member, role_lock_overwrite, should_resume_pending,
 };
-use foxsecura::protection::shared::audit_reason;
+use foxsecura::protection::shared::{SanctionKind, SanctionOutcome, audit_reason};
 use poise::serenity_prelude as serenity;
 
+use super::sanction::{self, SanctionRequest};
 use crate::app::{AppData, run_database};
+
+/// Intervalle de la maintenance des libérations en attente.
+pub const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Libérations en attente reprises par passage de maintenance.
+const MAINTENANCE_BATCH: usize = 25;
 
 /// Salon ou catégorie créé : réapplique le verrou du rôle s'il est
 /// verrouillable (un salon créé synchronisé hérite de sa catégorie).
@@ -151,5 +166,365 @@ fn convert_channel(channel: &serenity::GuildChannel) -> ChannelFacts {
                 })
             })
             .collect(),
+    }
+}
+
+/// Origine d'une libération.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseTrigger {
+    /// Rôle de quarantaine retiré à la main par l'équipe.
+    RoleRemovedByHand,
+    /// Reprise d'une libération en attente.
+    Maintenance,
+}
+
+/// Libère un membre sous son verrou.
+///
+/// `None` : rien n'a été tenté (libération en attente devenue obsolète, ou
+/// membre parti, pour la maintenance).
+pub async fn release(
+    ctx: &serenity::Context,
+    database: &Arc<Database>,
+    locks: &MemberLocks,
+    guild_id: u64,
+    user_id: u64,
+    trigger: ReleaseTrigger,
+) -> Result<Option<ReleaseOutcome>, crate::app::Error> {
+    let _guard = locks.lock(guild_id, user_id).await;
+
+    if trigger == ReleaseTrigger::Maintenance
+        && !run_database(database, move |database| {
+            database.is_pending_release(guild_id, user_id)
+        })
+        .await?
+    {
+        // Effacée entre la lecture de la file et le verrou (remise en
+        // quarantaine ou libération achevée).
+        return Ok(None);
+    }
+
+    let role_id = run_database(database, move |database| {
+        database.quarantine_role_id(guild_id)
+    })
+    .await?;
+    let facts = release_facts(ctx, guild_id, user_id, role_id).await;
+    if trigger == ReleaseTrigger::Maintenance && !should_resume_pending(&facts.member) {
+        return Ok(None);
+    }
+
+    let mut effects = MemberEffects {
+        ctx,
+        database,
+        guild_id,
+        user_id,
+        reason: audit_reason(QUARANTINE_AUDIT_LABEL, "member released"),
+    };
+    let outcome = release_member(&mut effects, &facts).await;
+    if !outcome.nothing_to_do() {
+        println!(
+            "[quarantine] libération de {user_id} sur la guilde {guild_id} ({trigger:?}) : rôle {:?}, {} restaurés, {} inchangés, {} salons disparus, {} échecs{}",
+            outcome.role,
+            outcome.restored,
+            outcome.unchanged,
+            outcome.missing_channels,
+            outcome.failed,
+            if outcome.pending {
+                ", libération en attente"
+            } else {
+                ""
+            }
+        );
+    }
+    for error in &outcome.store_errors {
+        eprintln!("[quarantine] libération de {user_id} sur la guilde {guild_id} : {error}");
+    }
+    Ok(Some(outcome))
+}
+
+/// Mise à jour d'un membre : si l'équipe a retiré le rôle de quarantaine à
+/// la main, ses overwrites sont restaurés pour ne pas laisser de refus
+/// orphelins.
+///
+/// Seulement si l'ancien état est connu (cache) : un membre revenu sans le
+/// rôle garde ses refus au niveau du membre (V1).
+pub async fn handle_member_update(
+    ctx: &serenity::Context,
+    data: &AppData,
+    old: Option<&serenity::Member>,
+    event: &serenity::GuildMemberUpdateEvent,
+) {
+    let Some(old) = old else {
+        return;
+    };
+    let old_roles: Vec<u64> = old.roles.iter().map(|role| role.get()).collect();
+    let new_roles: Vec<u64> = event.roles.iter().map(|role| role.get()).collect();
+    // Aucun rôle retiré (cas courant) : aucune lecture de la configuration.
+    if old_roles.iter().all(|role| new_roles.contains(role)) {
+        return;
+    }
+
+    let guild_id = event.guild_id.get();
+    let user_id = event.user.id.get();
+    let role_id = match run_database(&data.database, move |database| {
+        database.quarantine_role_id(guild_id)
+    })
+    .await
+    {
+        Ok(Some(role_id)) => role_id,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("[quarantine] rôle de quarantaine illisible ({guild_id}) : {error}");
+            return;
+        }
+    };
+    if !quarantine_role_removed(Some(&old_roles), &new_roles, role_id) {
+        return;
+    }
+
+    if let Err(error) = release(
+        ctx,
+        &data.database,
+        data.protection.quarantine_locks(),
+        guild_id,
+        user_id,
+        ReleaseTrigger::RoleRemovedByHand,
+    )
+    .await
+    {
+        eprintln!(
+            "[quarantine] restauration de {user_id} sur la guilde {guild_id} impossible : {error}"
+        );
+    }
+}
+
+/// Reprend les libérations en attente toutes les [`MAINTENANCE_INTERVAL`].
+pub fn spawn_maintenance(ctx: serenity::Context, database: Arc<Database>, locks: Arc<MemberLocks>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(MAINTENANCE_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            resume_pending_releases(&ctx, &database, &locks).await;
+        }
+    });
+}
+
+async fn resume_pending_releases(
+    ctx: &serenity::Context,
+    database: &Arc<Database>,
+    locks: &MemberLocks,
+) {
+    let pending = match run_database(database, |database| {
+        database.pending_releases(MAINTENANCE_BATCH)
+    })
+    .await
+    {
+        Ok(pending) => pending,
+        Err(error) => {
+            eprintln!("[quarantine] libérations en attente illisibles : {error}");
+            return;
+        }
+    };
+
+    for (guild_id, user_id) in pending {
+        if let Err(error) = release(
+            ctx,
+            database,
+            locks,
+            guild_id,
+            user_id,
+            ReleaseTrigger::Maintenance,
+        )
+        .await
+        {
+            eprintln!(
+                "[quarantine] reprise de la libération de {user_id} sur la guilde {guild_id} impossible : {error}"
+            );
+        }
+    }
+}
+
+/// Présence du membre (cache, puis API) et overwrites actuels du membre
+/// dans chaque salon du cache.
+async fn release_facts(
+    ctx: &serenity::Context,
+    guild_id: u64,
+    user_id: u64,
+    role_id: Option<u64>,
+) -> ReleaseFacts {
+    let member = match serenity::GuildId::new(guild_id)
+        .member(ctx, serenity::UserId::new(user_id))
+        .await
+    {
+        Ok(member) => MemberPresence::Present {
+            has_quarantine_role: role_id
+                .is_some_and(|role_id| member.roles.contains(&serenity::RoleId::new(role_id))),
+        },
+        Err(error) => {
+            let failure = discord_failure(error);
+            if failure.is_unknown(UNKNOWN_MEMBER) {
+                MemberPresence::Absent
+            } else {
+                MemberPresence::Unknown
+            }
+        }
+    };
+
+    let channels = ctx
+        .cache
+        .guild(serenity::GuildId::new(guild_id))
+        .map(|guild| {
+            guild
+                .channels
+                .values()
+                .map(|channel| {
+                    (
+                        channel.id.get(),
+                        convert_channel(channel).overwrite(OverwriteTarget::Member(user_id)),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        });
+
+    ReleaseFacts {
+        quarantine_role_id: role_id,
+        member,
+        channels,
+    }
+}
+
+/// Effets Discord et SQLite d'une opération sur un membre, avec la raison
+/// d'audit log de l'opération.
+struct MemberEffects<'a> {
+    ctx: &'a serenity::Context,
+    database: &'a Arc<Database>,
+    guild_id: u64,
+    user_id: u64,
+    reason: String,
+}
+
+impl MemberEffects<'_> {
+    async fn store<T, F>(&self, operation: F) -> Result<T, StoreError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Database) -> Result<T, DatabaseError> + Send + 'static,
+    {
+        run_database(self.database, operation)
+            .await
+            .map_err(|error| StoreError(error.to_string()))
+    }
+}
+
+impl QuarantineEffects for MemberEffects<'_> {
+    async fn remove_role(&mut self, role_id: u64) -> Result<(), DiscordFailure> {
+        self.ctx
+            .http
+            .remove_member_role(
+                serenity::GuildId::new(self.guild_id),
+                serenity::UserId::new(self.user_id),
+                serenity::RoleId::new(role_id),
+                Some(&self.reason),
+            )
+            .await
+            .map_err(discord_failure)
+    }
+
+    async fn add_role(&mut self, role_id: u64) -> Result<(), DiscordFailure> {
+        self.ctx
+            .http
+            .add_member_role(
+                serenity::GuildId::new(self.guild_id),
+                serenity::UserId::new(self.user_id),
+                serenity::RoleId::new(role_id),
+                Some(&self.reason),
+            )
+            .await
+            .map_err(discord_failure)
+    }
+
+    async fn write_member_overwrite(
+        &mut self,
+        channel_id: u64,
+        overwrite: OverwriteBits,
+    ) -> Result<(), DiscordFailure> {
+        put_overwrite(
+            self.ctx,
+            channel_id,
+            OverwriteTarget::Member(self.user_id),
+            overwrite,
+            &self.reason,
+        )
+        .await
+    }
+
+    async fn timeout(&mut self, duration: Duration) -> SanctionOutcome {
+        sanction::execute(
+            self.ctx,
+            &SanctionRequest {
+                guild_id: self.guild_id,
+                user_id: self.user_id,
+                member_roles: None,
+                kind: SanctionKind::Timeout { duration },
+                reason: &self.reason,
+            },
+        )
+        .await
+    }
+
+    async fn recorded_overwrite(
+        &mut self,
+        channel_id: u64,
+    ) -> Result<Option<RecordedOverwrite>, StoreError> {
+        let (guild_id, user_id) = (self.guild_id, self.user_id);
+        self.store(move |database| database.quarantine_overwrite(guild_id, user_id, channel_id))
+            .await
+    }
+
+    async fn record_overwrite(
+        &mut self,
+        channel_id: u64,
+        state: RecordedOverwrite,
+    ) -> Result<bool, StoreError> {
+        let (guild_id, user_id) = (self.guild_id, self.user_id);
+        self.store(move |database| {
+            database.record_quarantine_overwrite(guild_id, user_id, channel_id, state)
+        })
+        .await
+    }
+
+    async fn forget_overwrite(&mut self, channel_id: u64) -> Result<(), StoreError> {
+        let (guild_id, user_id) = (self.guild_id, self.user_id);
+        self.store(move |database| {
+            database
+                .forget_quarantine_overwrite(guild_id, user_id, channel_id)
+                .map(|_| ())
+        })
+        .await
+    }
+
+    async fn set_pending_release(&mut self, pending: bool) -> Result<(), StoreError> {
+        let (guild_id, user_id) = (self.guild_id, self.user_id);
+        self.store(move |database| database.set_pending_release(guild_id, user_id, pending))
+            .await
+    }
+}
+
+impl ReleaseEffects for MemberEffects<'_> {
+    async fn recorded_overwrites(&mut self) -> Result<Vec<(u64, RecordedOverwrite)>, StoreError> {
+        let (guild_id, user_id) = (self.guild_id, self.user_id);
+        self.store(move |database| database.quarantine_overwrites(guild_id, user_id))
+            .await
+    }
+
+    async fn delete_member_overwrite(&mut self, channel_id: u64) -> Result<(), DiscordFailure> {
+        self.ctx
+            .http
+            .delete_permission(
+                serenity::ChannelId::new(channel_id),
+                serenity::TargetId::new(self.user_id),
+                Some(&self.reason),
+            )
+            .await
+            .map_err(discord_failure)
     }
 }

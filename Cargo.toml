@@ -17,6 +17,6 @@ regex = { version = "=1.13.1", default-features = false, features = ["std", "uni
 rusqlite = { version = "=0.40.2", features = ["bundled"] }
 serde_json = "=1.0.145"
 serenity = { version = "=0.12.5", default-features = false, features = ["builder", "cache", "client", "gateway", "http", "model", "rustls_backend"] }
-# `sync` (déjà activé par serenity) : verrou asynchrone par membre de la
-# quarantaine, qui peut être tenu à travers un `.await`.
-tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+# `sync` et `time` (déjà activés par serenity) : verrou asynchrone par membre
+# de la quarantaine, tenu à travers un `.await`, et maintenance périodique.
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

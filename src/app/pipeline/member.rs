@@ -10,7 +10,9 @@
 //! (membre banni ou expulsé, liste noire) arrête la chaîne.
 //!
 //! Mise à jour : seul l'anti-pseudo hoisté s'exécute, si le nom affiché a
-//! changé et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là.
+//! changé et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là. Un
+//! rôle de quarantaine retiré à la main déclenche la restauration des
+//! overwrites du membre (`quarantine::handle_member_update`).
 //!
 //! Les erreurs sont journalisées et jamais propagées ; l'arrivée du bot
 //! lui-même est ignorée.
@@ -45,6 +47,7 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
+use super::quarantine;
 use super::sanction::{self, NicknameRequest, SanctionRequest};
 use super::{bot_assigned_roles, incident_log, unix_duration};
 use crate::app::{AppData, run_database};
@@ -110,6 +113,9 @@ pub async fn handle_update(
     if event.user.id == ctx.cache.current_user().id {
         return;
     }
+
+    // Rôle de quarantaine retiré à la main : restauration des overwrites.
+    quarantine::handle_member_update(ctx, data, old, event).await;
 
     let current = event
         .nick
