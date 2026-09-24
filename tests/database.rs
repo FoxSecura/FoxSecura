@@ -274,8 +274,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_five() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 5);
+fn latest_schema_version_is_six() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 6);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -1080,7 +1080,7 @@ VALUES ('123', 'anti_invite', 1);
     }
 
     let database = Database::open(&path).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 5);
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
 
     let config = database.find_guild_config(123).unwrap().unwrap();
     assert_eq!(config.language, Language::German);
@@ -1121,7 +1121,7 @@ VALUES ('123', 'anti_invite', 1);
     database.set_custom_bad_words(123, ["spoiler"]).unwrap();
     drop(database);
     let reopened = Database::open(&path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 5);
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
     assert_eq!(
         reopened.bad_words_settings(123).unwrap(),
         BadWordsSettings {
@@ -1476,4 +1476,267 @@ fn temporary_directory(label: &str) -> PathBuf {
     ));
     fs::create_dir_all(&path).unwrap();
     path
+}
+
+// --- Liste noire et âge minimal des comptes (migration 6) ---
+
+#[test]
+fn blacklist_add_and_remove_are_idempotent_and_scoped_by_guild() {
+    let database = Database::open_in_memory().unwrap();
+
+    assert!(database.add_blacklist_user(1, 30).unwrap());
+    assert!(!database.add_blacklist_user(1, 30).unwrap());
+    assert!(database.add_blacklist_user(1, 4).unwrap());
+    assert!(database.add_blacklist_user(2, 30).unwrap());
+
+    assert!(database.is_blacklisted_user(1, 30).unwrap());
+    assert!(!database.is_blacklisted_user(3, 30).unwrap());
+    // Tri numérique, malgré le stockage textuel.
+    assert_eq!(database.blacklist_users(1).unwrap(), vec![4, 30]);
+
+    assert!(database.remove_blacklist_user(1, 30).unwrap());
+    assert!(!database.remove_blacklist_user(1, 30).unwrap());
+    assert_eq!(database.blacklist_users(1).unwrap(), vec![4]);
+    assert_eq!(database.blacklist_users(2).unwrap(), vec![30]);
+    // La liste noire n'est pas une exemption.
+    assert_eq!(
+        database.guild_exemptions(1).unwrap(),
+        GuildExemptions::default()
+    );
+}
+
+#[test]
+fn whitelist_and_blacklist_users_are_mutually_exclusive() {
+    let database = Database::open_in_memory().unwrap();
+    database.add_whitelist_user(1, 10).unwrap();
+    database.add_blacklist_user(1, 20).unwrap();
+
+    assert!(matches!(
+        database.add_blacklist_user(1, 10),
+        Err(DatabaseError::UserWhitelisted(10))
+    ));
+    assert!(matches!(
+        database.add_whitelist_user(1, 20),
+        Err(DatabaseError::UserBlacklisted(20))
+    ));
+    assert!(database.blacklist_users(1).unwrap() == vec![20]);
+    assert!(database.whitelist_users(1).unwrap() == vec![10]);
+
+    // L'exclusion est par guilde.
+    assert!(database.add_blacklist_user(2, 10).unwrap());
+    assert!(database.add_whitelist_user(2, 20).unwrap());
+
+    // Retiré d'une liste, l'utilisateur peut rejoindre l'autre.
+    database.remove_whitelist_user(1, 10).unwrap();
+    assert!(database.add_blacklist_user(1, 10).unwrap());
+}
+
+#[test]
+fn schema_enforces_list_exclusion_outside_foxsecura() {
+    let directory = temporary_directory("blacklist-trigger");
+    let path = directory.join("foxsecura.sqlite3");
+    {
+        let database = Database::open(&path).unwrap();
+        database.add_whitelist_user(1, 10).unwrap();
+        database.add_blacklist_user(1, 20).unwrap();
+    }
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO guild_blacklist_users (guild_id, user_id) VALUES ('1', '10')",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO guild_whitelist_users (guild_id, user_id) VALUES ('1', '20')",
+                [],
+            )
+            .is_err()
+    );
+    drop(connection);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn blacklist_cascades_when_guild_config_is_deleted() {
+    let directory = temporary_directory("blacklist-cascade");
+    let path = directory.join("foxsecura.sqlite3");
+    {
+        let database = Database::open(&path).unwrap();
+        database.add_blacklist_user(1, 100).unwrap();
+        database.add_blacklist_user(2, 100).unwrap();
+    }
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .unwrap();
+    connection
+        .execute("DELETE FROM guild_configs WHERE guild_id = '1'", [])
+        .unwrap();
+    drop(connection);
+
+    let database = Database::open(&path).unwrap();
+    assert!(database.blacklist_users(1).unwrap().is_empty());
+    assert_eq!(database.blacklist_users(2).unwrap(), vec![100]);
+    drop(database);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn migrates_version_five_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v5");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        // Schéma v5 figé, tel que publié avant la liste noire.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_configs (
+    guild_id TEXT PRIMARY KEY NOT NULL,
+    language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'de')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_log_channels (
+    guild_id TEXT NOT NULL,
+    log_type TEXT NOT NULL CHECK (
+        log_type IN ('message', 'server', 'member', 'channel', 'role', 'moderation')
+    ),
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, log_type),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_enabled INTEGER NOT NULL DEFAULT 0
+    CHECK (anti_spam_enabled IN (0, 1));
+ALTER TABLE guild_configs ADD COLUMN anti_spam_message_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_message_threshold BETWEEN 2 AND 50);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_window_seconds INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_window_seconds BETWEEN 1 AND 60);
+CREATE TABLE guild_whitelist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_whitelist_roles (
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL CHECK (role_id <> guild_id),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, role_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_ignored_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_protection_modules (
+    guild_id TEXT NOT NULL,
+    module_key TEXT NOT NULL CHECK (length(module_key) BETWEEN 1 AND 64),
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, module_key),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN bad_words_language TEXT NOT NULL DEFAULT 'all'
+    CHECK (bad_words_language IN ('french', 'english', 'all'));
+CREATE TABLE guild_bad_words (
+    guild_id TEXT NOT NULL,
+    word TEXT NOT NULL CHECK (length(word) BETWEEN 1 AND 100),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, word),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+INSERT INTO schema_migrations (version, name) VALUES (1, 'initial');
+INSERT INTO schema_migrations (version, name) VALUES (2, 'anti_spam_settings');
+INSERT INTO schema_migrations (version, name) VALUES (3, 'whitelist_and_ignored_channels');
+INSERT INTO schema_migrations (version, name) VALUES (4, 'protection_modules');
+INSERT INTO schema_migrations (version, name) VALUES (5, 'bad_words');
+INSERT INTO guild_configs (
+    guild_id, language, created_at, updated_at,
+    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
+    bad_words_language
+)
+VALUES ('123', 'de', 1000, 2000, 1, 9, 20, 'french');
+INSERT INTO guild_log_channels (guild_id, log_type, channel_id)
+VALUES ('123', 'member', '456');
+INSERT INTO guild_whitelist_users (guild_id, user_id) VALUES ('123', '7');
+INSERT INTO guild_whitelist_roles (guild_id, role_id) VALUES ('123', '70');
+INSERT INTO guild_ignored_channels (guild_id, channel_id) VALUES ('123', '8');
+INSERT INTO guild_protection_modules (guild_id, module_key, enabled)
+VALUES ('123', 'anti_invite', 1);
+INSERT INTO guild_bad_words (guild_id, word) VALUES ('123', 'spoiler');
+"#,
+            )
+            .unwrap();
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 6);
+
+    let config = database.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(config.language, Language::German);
+    assert_eq!((config.created_at, config.updated_at), (1000, 2000));
+    assert_eq!(config.anti_spam, MessageFloodConfig::new(true, 9, 20));
+    assert_eq!(
+        database.bad_words_settings(123).unwrap(),
+        BadWordsSettings {
+            language: BadWordsLanguage::French,
+            custom_words: vec!["spoiler".to_owned()],
+        }
+    );
+    assert_eq!(
+        database
+            .log_channel(123, LogType::Member)
+            .unwrap()
+            .map(|channel| channel.channel_id),
+        Some(456)
+    );
+    assert_eq!(
+        database.guild_exemptions(123).unwrap(),
+        GuildExemptions {
+            whitelist_users: vec![7],
+            whitelist_roles: vec![70],
+            ignored_channels: vec![8],
+        }
+    );
+    assert_eq!(
+        database.enabled_modules(123).unwrap(),
+        [ProtectionModule::AntiInvite]
+            .into_iter()
+            .collect::<ModuleSet>()
+    );
+    // Liste noire vide ; l'exclusion s'applique aux données migrées.
+    assert!(database.blacklist_users(123).unwrap().is_empty());
+    assert!(matches!(
+        database.add_blacklist_user(123, 7),
+        Err(DatabaseError::UserWhitelisted(7))
+    ));
+
+    database.add_blacklist_user(123, 99).unwrap();
+    drop(database);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), 6);
+    assert_eq!(reopened.blacklist_users(123).unwrap(), vec![99]);
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
 }

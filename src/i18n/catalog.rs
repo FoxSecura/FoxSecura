@@ -976,5 +976,25 @@ catalog! {
         en: "The @everyone role cannot be exempted: it would exempt the whole server. Nothing was changed.",
         fr: "Le rôle @everyone ne peut pas être exempté : il exempterait tout le serveur. Rien n'a été modifié.",
         de: "Die Rolle @everyone kann nicht ausgenommen werden: Sie würde den ganzen Server ausnehmen. Es wurde nichts geändert."
+    },
+    BlacklistSummary => {
+        en: "A blacklisted user joined the server.",
+        fr: "Un utilisateur de la liste noire a rejoint le serveur.",
+        de: "Ein Benutzer der Blacklist ist dem Server beigetreten."
+    },
+    BlacklistEvidenceEntry => {
+        en: "Blacklist entry",
+        fr: "Entrée de la liste noire",
+        de: "Blacklist-Eintrag"
+    },
+    BlacklistRecommendationBanned => {
+        en: "Blacklisted user banned. If this is a mistake, remove them from the blacklist, then revoke the ban.",
+        fr: "Utilisateur de la liste noire banni. En cas d'erreur, retirez-le de la liste noire, puis révoquez le ban.",
+        de: "Benutzer der Blacklist gebannt. Bei einem Fehler aus der Blacklist entfernen und dann den Bann aufheben."
+    },
+    MemberRecommendationCheckBanHierarchy => {
+        en: "Check the ban hierarchy: FoxSecura needs Ban Members and a role above the member. Ban them manually if they are still on the server.",
+        fr: "Vérifier la hiérarchie du ban : FoxSecura doit avoir Bannir des membres et un rôle au-dessus du membre. Bannissez-le manuellement s'il est encore sur le serveur.",
+        de: "Die Bann-Hierarchie prüfen: FoxSecura braucht Mitglieder bannen und eine Rolle über dem Mitglied. Manuell bannen, falls es noch auf dem Server ist."
     }
 }

@@ -144,6 +144,12 @@ pub enum DatabaseError {
     EveryoneRoleNotExemptable,
     InvalidBadWordsLanguage(String),
     InvalidCustomWords(CustomWordsError),
+    /// Un utilisateur de la liste blanche ne peut pas être mis sur la liste
+    /// noire : les deux listes s'excluent.
+    UserWhitelisted(u64),
+    /// Un utilisateur de la liste noire ne peut pas être mis sur la liste
+    /// blanche : les deux listes s'excluent.
+    UserBlacklisted(u64),
 }
 
 impl fmt::Display for DatabaseError {
@@ -177,6 +183,14 @@ impl fmt::Display for DatabaseError {
                 )
             }
             Self::InvalidCustomWords(error) => error.fmt(formatter),
+            Self::UserWhitelisted(user_id) => write!(
+                formatter,
+                "l'utilisateur {user_id} est sur la liste blanche : il ne peut pas être mis sur la liste noire"
+            ),
+            Self::UserBlacklisted(user_id) => write!(
+                formatter,
+                "l'utilisateur {user_id} est sur la liste noire : il ne peut pas être mis sur la liste blanche"
+            ),
         }
     }
 }
@@ -193,7 +207,9 @@ impl Error for DatabaseError {
             | Self::InvalidLogType(_)
             | Self::InvalidSnowflake(_)
             | Self::EveryoneRoleNotExemptable
-            | Self::InvalidBadWordsLanguage(_) => None,
+            | Self::InvalidBadWordsLanguage(_)
+            | Self::UserWhitelisted(_)
+            | Self::UserBlacklisted(_) => None,
         }
     }
 }

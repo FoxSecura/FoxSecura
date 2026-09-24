@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 5;
+pub const LATEST_SCHEMA_VERSION: i64 = 6;
 
 struct Migration {
     version: i64,
@@ -126,6 +126,50 @@ CREATE TABLE guild_bad_words (
     PRIMARY KEY (guild_id, word),
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
 );
+"#,
+    },
+    Migration {
+        version: 6,
+        name: "member_protection",
+        // Liste noire des utilisateurs (bannis à leur arrivée) et âge minimal
+        // des comptes (7 jours par défaut, 1 à 365, comme la V1).
+        //
+        // Les listes blanche et noire des utilisateurs s'excluent : les
+        // déclencheurs refusent d'inscrire sur l'une un utilisateur présent
+        // sur l'autre. Le code Rust le vérifie avant d'écrire pour renvoyer
+        // une erreur typée ; ces déclencheurs protègent aussi une écriture
+        // faite hors de FoxSecura.
+        sql: r#"
+ALTER TABLE guild_configs ADD COLUMN new_account_min_age_days INTEGER NOT NULL DEFAULT 7
+    CHECK (new_account_min_age_days BETWEEN 1 AND 365);
+
+CREATE TABLE guild_blacklist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TRIGGER guild_blacklist_users_exclusive
+BEFORE INSERT ON guild_blacklist_users
+WHEN EXISTS (
+    SELECT 1 FROM guild_whitelist_users
+    WHERE guild_id = NEW.guild_id AND user_id = NEW.user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'user is on the whitelist');
+END;
+
+CREATE TRIGGER guild_whitelist_users_exclusive
+BEFORE INSERT ON guild_whitelist_users
+WHEN EXISTS (
+    SELECT 1 FROM guild_blacklist_users
+    WHERE guild_id = NEW.guild_id AND user_id = NEW.user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'user is on the blacklist');
+END;
 "#,
     },
 ];
