@@ -46,7 +46,10 @@ pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[
 ];
 
 /// Modules de la catégorie « Doubles comptes et salon piège ».
-pub const ALT_ACCOUNT_MODULES: &[ProtectionModule] = &[ProtectionModule::Honeypot];
+pub const ALT_ACCOUNT_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiDoubleAccount,
+    ProtectionModule::Honeypot,
+];
 
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
 pub const ALT_ACCOUNT_CATEGORY_ID: &str = "anti_double_account";
@@ -207,6 +210,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiImpersonation => TextKey::ModuleAntiImpersonation,
         ProtectionModule::AntiRaid => TextKey::ModuleAntiRaid,
         ProtectionModule::Honeypot => TextKey::ModuleHoneypot,
+        ProtectionModule::AntiDoubleAccount => TextKey::ModuleAntiDoubleAccount,
     }
 }
 

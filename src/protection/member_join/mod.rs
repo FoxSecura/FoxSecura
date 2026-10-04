@@ -13,7 +13,6 @@
 //!
 //! Ordre de la V1 ([`JOIN_ORDER`]) : liste noire → anti-raid → anti-bot →
 //! nouveaux comptes → doubles comptes → usurpation → pseudos hoistés.
-//! Les doubles comptes ne sont pas encore portés.
 //!
 //! Un résultat `terminal` (membre banni, expulsé ou mis en quarantaine, ou
 //! liste noire) arrête la chaîne ; les résultats non terminaux se cumulent
@@ -25,6 +24,7 @@
 pub mod anti_bot;
 pub mod anti_raid;
 pub mod blacklist;
+pub mod double_account;
 pub mod hoisting;
 pub mod impersonation;
 pub mod new_account;
@@ -74,18 +74,18 @@ pub enum JoinStep {
     AntiRaid,
     AntiBot,
     AntiNewAccount,
+    AntiDoubleAccount,
     AntiImpersonation,
     AntiNicknameHoisting,
 }
 
 /// Ordre de la V1, restreint aux modules portés.
-pub const JOIN_ORDER: [JoinStep; 6] = [
+pub const JOIN_ORDER: [JoinStep; 7] = [
     JoinStep::Blacklist,
     JoinStep::AntiRaid,
     JoinStep::AntiBot,
     JoinStep::AntiNewAccount,
-    // Doubles comptes : tranche 7, entre les nouveaux comptes et
-    // l'usurpation.
+    JoinStep::AntiDoubleAccount,
     JoinStep::AntiImpersonation,
     JoinStep::AntiNicknameHoisting,
 ];
@@ -99,6 +99,7 @@ impl JoinStep {
             Self::AntiRaid => Some(ProtectionModule::AntiRaid),
             Self::AntiBot => Some(ProtectionModule::AntiBot),
             Self::AntiNewAccount => Some(ProtectionModule::AntiNewAccount),
+            Self::AntiDoubleAccount => Some(ProtectionModule::AntiDoubleAccount),
             Self::AntiImpersonation => Some(ProtectionModule::AntiImpersonation),
             Self::AntiNicknameHoisting => Some(ProtectionModule::AntiNicknameHoisting),
         }

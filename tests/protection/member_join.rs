@@ -7,6 +7,7 @@ use foxsecura::i18n::Language;
 use foxsecura::logs::{
     ActionCode, ActionStatus, FailureCode, LogSeverity, LogType, SecurityEvidence,
 };
+use foxsecura::protection::anti_raid::anti_double_account::AccountIdentity;
 use foxsecura::protection::anti_raid::anti_new_account::{
     AntiNewAccountInput, DEFAULT_MIN_ACCOUNT_AGE_DAYS, MIN_ACCOUNT_AGE_DAYS_RANGE,
     is_valid_min_account_age_days,
@@ -24,6 +25,10 @@ use foxsecura::protection::member_join::anti_raid::{
 };
 use foxsecura::protection::member_join::blacklist::{
     BLACKLIST_BAN, BLACKLIST_MODULE, blacklist_audit_reason, blacklist_response,
+};
+use foxsecura::protection::member_join::double_account::{
+    DOUBLE_ACCOUNT_QUARANTINE, double_account_audit_reason, double_account_response, identity_name,
+    needs_member_prewarm, plan_double_account,
 };
 use foxsecura::protection::member_join::hoisting::{
     FALLBACK_NICKNAME, MAX_NICKNAME_LENGTH, NicknameFix, anti_hoisting_audit_reason,
@@ -809,6 +814,7 @@ fn all_join_modules() -> ModuleSet {
         ProtectionModule::AntiRaid,
         ProtectionModule::AntiBot,
         ProtectionModule::AntiNewAccount,
+        ProtectionModule::AntiDoubleAccount,
         ProtectionModule::AntiImpersonation,
         ProtectionModule::AntiNicknameHoisting,
     ]
@@ -851,6 +857,7 @@ fn join_chain_follows_the_v1_order() {
             JoinStep::AntiRaid,
             JoinStep::AntiBot,
             JoinStep::AntiNewAccount,
+            JoinStep::AntiDoubleAccount,
             JoinStep::AntiImpersonation,
             JoinStep::AntiNicknameHoisting,
         ]
@@ -920,6 +927,7 @@ fn impersonation_runs_after_new_accounts_and_its_quarantine_stops_the_chain() {
             JoinStep::AntiRaid,
             JoinStep::AntiBot,
             JoinStep::AntiNewAccount,
+            JoinStep::AntiDoubleAccount,
             JoinStep::AntiImpersonation,
         ]
     );
@@ -1260,4 +1268,140 @@ fn anti_raid_runs_right_after_the_blacklist() {
         _ => ModuleResult::NOT_DETECTED,
     });
     assert_eq!(steps(&chain), [JoinStep::Blacklist, JoinStep::AntiRaid]);
+}
+
+// --- Doubles comptes ---
+
+fn identity<'a>(user_id: u64, name: &'a str, avatar: &'a str) -> AccountIdentity<'a> {
+    AccountIdentity::new(user_id, Some(name), Some(avatar))
+}
+
+#[test]
+fn double_accounts_compare_only_cached_identities() {
+    let cached = [identity(10, "Fox", "a1"), identity(11, "Wolf", "b2")];
+    let detection =
+        plan_double_account(identity(20, " fox ", "a1"), &cached, false, false, false).unwrap();
+    assert_eq!(detection.matched_user_id, Some(10));
+
+    // Même nom, autre avatar : pas un doublon.
+    assert_eq!(
+        plan_double_account(identity(20, "Fox", "zz"), &cached, false, false, false),
+        None
+    );
+    // Un membre absent du cache n'est jamais comparé (aucun fetch).
+    assert_eq!(
+        plan_double_account(identity(20, "Fox", "a1"), &[], false, false, false),
+        None
+    );
+}
+
+#[test]
+fn double_accounts_skip_bots_owner_and_whitelist() {
+    let cached = [identity(10, "Fox", "a1")];
+    let candidate = identity(20, "Fox", "a1");
+    assert_eq!(
+        plan_double_account(candidate, &cached, true, false, false),
+        None
+    );
+    assert_eq!(
+        plan_double_account(candidate, &cached, false, true, false),
+        None
+    );
+    assert_eq!(
+        plan_double_account(candidate, &cached, false, false, true),
+        None
+    );
+}
+
+#[test]
+fn identity_name_prefers_the_global_name() {
+    assert_eq!(identity_name("fox_42", Some("Fox")), "Fox");
+    assert_eq!(identity_name("fox_42", None), "fox_42");
+    assert_eq!(identity_name("fox_42", Some("  ")), "fox_42");
+}
+
+#[test]
+fn member_cache_is_prewarmed_only_when_enabled_and_incomplete() {
+    assert!(needs_member_prewarm(true, 1_000, 250));
+    assert!(!needs_member_prewarm(true, 40, 40));
+    assert!(!needs_member_prewarm(false, 1_000, 250));
+}
+
+#[test]
+fn double_account_quarantine_has_a_timeout_fallback() {
+    assert_eq!(
+        DOUBLE_ACCOUNT_QUARANTINE,
+        QuarantineRequest {
+            allow_timeout_fallback: true,
+            remove_dangerous_roles: false,
+            ..QuarantineRequest::ROLE_ONLY
+        }
+    );
+    assert_eq!(
+        double_account_audit_reason(),
+        "FoxSecura Anti-Double-Account: likely alternate account of a member"
+    );
+}
+
+#[test]
+fn double_account_severity_follows_the_quarantine_result() {
+    let cached = [identity(10, "Fox", "a1")];
+    let detection =
+        plan_double_account(identity(20, "Fox", "a1"), &cached, false, false, false).unwrap();
+
+    let contained = double_account_response(Language::French, MEMBER, &detection, &quarantined());
+    assert!(contained.result.terminal && contained.result.action_applied);
+    assert_eq!(contained.incident.module, "anti_double_account");
+    assert_eq!(contained.incident.severity, LogSeverity::Warning);
+    assert!(contained.incident.validate().is_ok());
+    assert!(
+        contained
+            .incident
+            .evidence
+            .contains(&SecurityEvidence::Text {
+                label: "Même nom et même avatar que le membre".to_owned(),
+                value: "10".to_owned(),
+            })
+    );
+    assert!(
+        contained
+            .incident
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .starts_with("Examinez le doublon")
+    );
+
+    let failed_quarantine = QuarantineOutcome {
+        role: Some(RoleStatus::NotConfigured),
+        timeout: Some(failed(FailureCode::MissingPermission)),
+        ..QuarantineOutcome::default()
+    };
+    let not_contained =
+        double_account_response(Language::French, MEMBER, &detection, &failed_quarantine);
+    assert!(!not_contained.result.terminal);
+    assert_eq!(not_contained.incident.severity, LogSeverity::Critical);
+    assert!(not_contained.incident.validate().is_ok());
+    assert_eq!(
+        not_contained.incident.actions[1].action,
+        ActionCode::TimeoutMember
+    );
+}
+
+#[test]
+fn double_accounts_run_after_new_accounts_and_before_impersonation() {
+    let position = |step| JOIN_ORDER.iter().position(|candidate| *candidate == step);
+    assert!(position(JoinStep::AntiNewAccount) < position(JoinStep::AntiDoubleAccount));
+    assert!(position(JoinStep::AntiDoubleAccount) < position(JoinStep::AntiImpersonation));
+    assert_eq!(
+        JoinStep::AntiDoubleAccount.module(),
+        Some(ProtectionModule::AntiDoubleAccount)
+    );
+    // Un double compte contenu arrête la chaîne avant l'usurpation.
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiDoubleAccount => TERMINAL,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(chain.stopped_by(), Some(JoinStep::AntiDoubleAccount));
+    assert!(!steps(&chain).contains(&JoinStep::AntiImpersonation));
 }

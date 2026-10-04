@@ -43,6 +43,7 @@ pub struct ProtectionState {
     quarantine_locks: Arc<MemberLocks>,
     lockdown_locks: Arc<GuildLocks>,
     lockdown_timers: Arc<LockdownTimers>,
+    member_prewarm: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl ProtectionState {
@@ -86,6 +87,12 @@ impl ProtectionState {
     /// les minuteries.
     pub fn lockdown_locks(&self) -> &Arc<GuildLocks> {
         &self.lockdown_locks
+    }
+
+    /// Tour de rôle du préchauffage du cache des membres : une demande à la
+    /// fois, toutes guildes confondues.
+    pub fn member_prewarm(&self) -> &Arc<tokio::sync::Mutex<()>> {
+        &self.member_prewarm
     }
 
     /// Minuteries de levée armées (au plus une par guilde).

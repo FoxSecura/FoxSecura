@@ -1416,5 +1416,25 @@ catalog! {
         en: "The author's permissions could not be established from the cache: the message was deleted but nobody was quarantined, to avoid a false positive on the staff. Check the author by hand.",
         fr: "Les permissions de l'auteur n'ont pas pu être établies d'après le cache : le message a été supprimé mais personne n'a été mis en quarantaine, pour éviter un faux positif sur l'équipe. Vérifiez l'auteur à la main.",
         de: "Die Berechtigungen des Autors ließen sich aus dem Cache nicht ermitteln: Die Nachricht wurde gelöscht, aber niemand unter Quarantäne gestellt, um einen Fehlalarm beim Team zu vermeiden. Autor von Hand prüfen."
+    },
+    ModuleAntiDoubleAccount => {
+        en: "Alt accounts",
+        fr: "Doubles comptes",
+        de: "Zweitkonten"
+    },
+    DoubleAccountSummary => {
+        en: "Likely alternate account of a member",
+        fr: "Double compte probable d'un membre",
+        de: "Wahrscheinliches Zweitkonto eines Mitglieds"
+    },
+    DoubleAccountEvidenceMatch => {
+        en: "Same name and avatar as member",
+        fr: "Même nom et même avatar que le membre",
+        de: "Gleicher Name und Avatar wie Mitglied"
+    },
+    DoubleAccountRecommendationReview => {
+        en: "Review the duplicate: compare both accounts, then release the member from /config if this is a coincidence.",
+        fr: "Examinez le doublon : comparez les deux comptes, puis libérez le membre depuis /config s'il s'agit d'une coïncidence.",
+        de: "Das Duplikat prüfen: beide Konten vergleichen und das Mitglied bei einem Zufall über /config freigeben."
     }
 }
