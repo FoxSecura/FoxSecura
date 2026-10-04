@@ -22,7 +22,7 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 
 ### Arrivées de membres
 
-- Pipeline des membres branché sur `GuildMemberAddition` et `GuildMemberUpdate` : ordre de la V1 (liste noire → anti-bot → nouveaux comptes → usurpation d'identité → pseudos hoistés), arrêt au premier résultat terminal (membre banni, expulsé ou mis en quarantaine), résultats non terminaux cumulés ; arrivée du bot ignorée ; une seule lecture de contexte par événement, via le cache de la guilde.
+- Pipeline des membres branché sur `GuildMemberAddition` et `GuildMemberUpdate` : ordre de la V1 (liste noire → anti-raid → anti-bot → nouveaux comptes → doubles comptes → usurpation d'identité → pseudos hoistés), arrêt au premier résultat terminal (membre banni, expulsé ou mis en quarantaine), résultats non terminaux cumulés ; arrivée du bot ignorée ; une seule lecture de contexte par événement, via le cache de la guilde.
 - Liste noire : ban à l'arrivée (`FoxSecura Blacklist: …`), **terminal même si le ban échoue** ; incident `Critical`. N'agit qu'à l'arrivée.
 - Anti-bot (`anti_bot`) : expulsion d'un bot absent de la liste blanche (`FoxSecura Anti-Bot: unauthorized bot join`) ; bot autorisé : incident `Info`.
 - Nouveaux comptes (`anti_new_account`) : ban avec purge de 7 jours d'un compte plus jeune que l'âge minimal (7 jours par défaut, 1 à 365) ; propriétaire et liste blanche exemptés (`Warning`) ; un ban non appliqué déclenche la **quarantaine de repli avec repli timeout** (10 minutes) ; l'incident `Critical` liste le ban en échec puis les actions de la quarantaine, terminal si le membre est contenu. **Un faux positif bannit un nouveau venu légitime** : voir le wiki Sécurité.
@@ -43,6 +43,37 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Coût : un appel API par salon verrouillable (et par membre pour le verrou du membre), faits un par un ; pendant une limitation de débit, serenity attend puis reprend.
 - Nouvelles permissions si la quarantaine est utilisée : `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MODERATE_MEMBERS` (repli timeout) et un rôle de FoxSecura au-dessus du rôle de quarantaine et des membres.
 - `tokio` : fonctionnalités `sync` et `time` déclarées (déjà activées par serenity, aucune nouvelle crate).
+
+### Verrouillage temporaire et anti-raid
+
+- Migration 8 : `guild_lockdowns` (un verrouillage par guilde : raison, état `active` / `lifting` / `retry`, levée prévue), `guild_lockdown_channels` (ancien `SEND_MESSAGES` de `@everyone` à trois états et ancien mode lent, par salon), `guild_configs.anti_raid_join_threshold` (5, 2 à 50), `guild_configs.anti_raid_window_seconds` (20, 5 à 120) et `guild_configs.honeypot_channel_id`.
+- Verrouillage temporaire (`protection::lockdown`), sous-système réutilisable (futur mode panique) calqué sur la quarantaine : refus de `SEND_MESSAGES` à `@everyone` sur tous les salons sauf les fils, puis mode lent de 10 s, **jamais réduit** ; seul le refus d'écrire compte pour dire qu'un salon est verrouillé. État d'origine enregistré **avant** toute modification ; salon en échec : ligne supprimée ; aucun salon verrouillé : ligne de guilde supprimée et résultat `failed`. Sans `MANAGE_CHANNELS` : `failed` / `missing_permission`, rien n'est enregistré. Un verrouillage actif, en cours de levée ou en attente n'est **jamais relancé**.
+- Levée à l'échéance (10 minutes, minuterie tokio sur l'horloge murale) : restauration exacte de `SEND_MESSAGES` (absent redevient absent) puis du mode lent ; salons en échec **toujours verrouillés** et retentés toutes les 60 s ; salon disparu sans échec ; idempotente ; valeur illisible restaurée en « absent », jamais en « autorisé ». Reprise au démarrage (expirés levés tout de suite, autres réarmés, guilde non résoluble retentée). Incident de levée (type `server`) à la fin ou au premier échec.
+- **Levée manuelle** (nouveauté V2) : « Lever le verrouillage » dans `/config` → Anti-Raid, propriétaire ou `ADMINISTRATOR`.
+- Raisons d'audit log : `FoxSecura Anti-Raid: temporary lockdown`, `FoxSecura Anti-Raid: lockdown restore`, `FoxSecura Anti-Raid: join burst`.
+- Anti-raid (`anti_raid`) juste après la liste noire : fenêtre glissante par guilde, déclenchement quand `nombre >= seuil` (l'arrivée courante déclenche), état borné à 10 000 guildes avec balayage, mono-instance. Action V1 : verrouillage (sauté s'il est déjà actif) **et** quarantaine du membre avec repli timeout, en parallèle ; incident `Critical` avec l'état du verrouillage et les actions de quarantaine ; terminal si le membre est contenu. Les membres arrivés **avant** le seuil ne sont pas mis en quarantaine (V1).
+- Coût : jusqu'à deux appels API par salon dans chaque sens, faits un par un ; pendant une limitation de débit, serenity attend puis reprend.
+- **Faux positif = serveur verrouillé 10 minutes** : voir le wiki Sécurité.
+- Nouvelles permissions si l'anti-raid est activé : `MANAGE_CHANNELS`, `MANAGE_ROLES` (overwrite de `@everyone`), `MODERATE_MEMBERS` (repli timeout).
+
+### Honeypot
+
+- Module `honeypot` et salon piège choisi dans `/config` → Doubles comptes et salon piège ; le salon doit rester lisible et ouvert à l'écriture pour `@everyone`, mais à l'écart des vrais membres.
+- Dans le pipeline des messages, après les gardes salon ignoré, webhook et bot, avant tous les filtres : message **supprimé**, auteur **mis en quarantaine avec retrait des rôles dangereux, sans repli timeout** (`FoxSecura Honeypot: message in the honeypot channel`) ; incident `Critical`, type `member`, extrait rendu par `inline_literal` ; le traitement s'arrête là.
+- Exemptés (V1) : propriétaire, `ADMINISTRATOR`, `MANAGE_GUILD`, liste blanche. Permissions impossibles à établir d'après le cache : suppression et incident, **sans quarantaine**. Un salon piège ignoré n'est pas surveillé.
+- Permissions : `MANAGE_MESSAGES` (salon piège), `MANAGE_ROLES`.
+
+### Doubles comptes
+
+- Module `anti_double_account`, entre les nouveaux comptes et l'usurpation : même nom affiché (nom global, à défaut nom d'utilisateur) et même avatar personnalisé qu'un membre **du cache uniquement** (jamais de fetch complet par arrivée). Propriétaire, liste blanche et bots non analysés.
+- Action V1 : quarantaine avec repli timeout ; incident `Warning` si le membre est contenu, `Critical` sinon, avec la recommandation d'examiner le doublon ; terminal si contenu.
+- Préchauffage du cache des membres sur `GUILD_CREATE` (donc au démarrage) et à l'activation du module, pour les guildes où il est actif et dont le cache est incomplet : demande par la passerelle (intent `GUILD_MEMBERS` déjà présent), séquentielle, une par seconde au plus, au mieux.
+
+### Configuration (`/config`)
+
+- Catégorie Anti-Raid : interrupteur `anti_raid`, modal du seuil et de la fenêtre (bornes validées, refus sans écriture), état du verrouillage (inactif, actif avec levée prévue, levée en cours, nouvelle tentative), bouton « Lever le verrouillage » (`Right::Whitelist`).
+- Catégorie « Doubles comptes et salon piège » (identifiant `anti_double_account` conservé) : interrupteurs des doubles comptes et du honeypot (`Right::Config`), sélecteur du salon piège en bascule.
+- Droits revérifiés à chaque composant et modal ; chaque écriture invalide le cache de la guilde.
 
 ### Anti-Spam
 

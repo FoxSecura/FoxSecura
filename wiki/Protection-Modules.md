@@ -24,7 +24,11 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Nouveaux comptes (`anti_new_account`), **ban** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut, âge minimal 7 jours |
 | Pseudos hoistés (`anti_nickname_hoisting`), renommage | **oui**, `GUILD_MEMBER_ADD` et `GUILD_MEMBER_UPDATE` | `/config` → Anti-Raid, désactivé par défaut |
 | Usurpation d'identité (`anti_impersonation`), **quarantaine** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut |
-| Quarantaine (`quarantine`) : rôle, verrou des salons, libération | **oui** : usurpation, repli des nouveaux comptes, `CHANNEL_CREATE`, `GUILD_MEMBER_UPDATE`, maintenance toutes les 5 minutes | `/config` → Anti-Raid, rôle non configuré par défaut |
+| Quarantaine (`quarantine`) : rôle, verrou des salons, libération | **oui** : usurpation, repli des nouveaux comptes, anti-raid, doubles comptes, honeypot, `CHANNEL_CREATE`, `GUILD_MEMBER_UPDATE`, maintenance toutes les 5 minutes | `/config` → Anti-Raid, rôle non configuré par défaut |
+| Anti-raid, rafales d'arrivées (`anti_raid`), **verrouillage + quarantaine** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut, 5 arrivées en 20 s |
+| Verrouillage temporaire (`lockdown`) | **oui** : anti-raid, minuterie de levée, reprise au démarrage | posé par l'anti-raid ; levée manuelle dans `/config` → Anti-Raid |
+| Doubles comptes (`anti_double_account`), **quarantaine** | **oui**, `GUILD_MEMBER_ADD` ; préchauffage sur `GUILD_CREATE` | `/config` → Doubles comptes et salon piège, désactivé par défaut |
+| Honeypot (`honeypot`), **suppression + quarantaine** | **oui**, `MESSAGE_CREATE` | `/config` → Doubles comptes et salon piège, désactivé, aucun salon par défaut |
 | Tous les autres modules | non (moteurs testés isolément) | — |
 
 ## Anti-Nuke
@@ -76,8 +80,8 @@ Chaîne pure dans `protection::member_join`, détecteurs dans `anti_raid::*`, ef
 Ordre de la V1 à l'arrivée :
 
 ```text
-liste noire → (anti-raid : tranche 7) → anti-bot → nouveaux comptes
-  → (doubles comptes : tranche 7) → usurpation d'identité → pseudos hoistés
+liste noire → anti-raid → anti-bot → nouveaux comptes
+  → doubles comptes → usurpation d'identité → pseudos hoistés
 ```
 
 Chaque module renvoie `{ detected, action_applied, terminal }`. Un résultat **terminal** (membre banni, expulsé ou mis en quarantaine) arrête la chaîne ; les résultats non terminaux se cumulent (par exemple un bot autorisé puis un pseudo corrigé). Chaque module qui relève quelque chose publie un incident de type `member` (salon de logs `member`).
@@ -85,8 +89,10 @@ Chaque module renvoie `{ detected, action_applied, terminal }`. Un résultat **t
 | Module | Déclenche si | Action | Terminal | Sévérité |
 | --- | --- | --- | --- | --- |
 | Liste noire | l'identifiant est sur la liste noire | ban (`FoxSecura Blacklist: user on the guild blacklist`), sans purge | **toujours**, même si le ban échoue | `Critical` ; échec → « vérifier la hiérarchie du ban » |
+| Anti-raid | nombre d'arrivées dans la fenêtre de la guilde ≥ seuil (5 en 20 s par défaut) | verrouillage temporaire du serveur (sauté s'il est déjà actif) **et** quarantaine du membre avec repli timeout (`FoxSecura Anti-Raid: join burst`), en parallèle | si le membre est contenu (rôle ou timeout) | `Critical` |
 | Anti-bot | un **bot** dont l'identifiant n'est pas sur la liste blanche | expulsion (`FoxSecura Anti-Bot: unauthorized bot join`) | si expulsé | `Warning` si expulsé, `Critical` sinon ; bot autorisé : `Info`, aucune action |
 | Nouveaux comptes | âge du compte < âge minimal (7 jours par défaut, 1 à 365) | ban avec purge de 7 jours (`FoxSecura Anti-New-Account: account age below threshold`) ; ban non appliqué → quarantaine de repli, avec repli timeout | si banni, ou contenu par la quarantaine de repli (rôle ou timeout) | `Warning` si banni, `Critical` sinon ; propriétaire ou liste blanche : `Warning` + `ignore_exempt_member`, aucune action |
+| Doubles comptes | même nom affiché et même avatar personnalisé qu'un membre **en cache** | quarantaine avec repli timeout (`FoxSecura Anti-Double-Account: likely alternate account of a member`) | si le membre est contenu | `Warning` si contenu, `Critical` sinon |
 | Usurpation d'identité | un nom du membre (nom d'utilisateur, nom global, pseudo), normalisé, égal à celui du propriétaire ou d'un membre en cache avec `ADMINISTRATOR` ou `MANAGE_GUILD` | quarantaine **sans retrait des rôles dangereux ni repli timeout** (`FoxSecura Anti-Impersonation: name matches a protected member`) | si le rôle de quarantaine (ou un timeout) est appliqué | `Critical` |
 | Pseudos hoistés | nom affiché qui commence par un caractère ni lettre ni chiffre Unicode | renommage (`FoxSecura Anti-Nickname Hoisting`) | jamais | `Warning` si renommé, `Critical` sinon |
 
@@ -95,6 +101,8 @@ Détails :
 - **Liste noire** : la liste reste la référence (V1) ; si le ban n'est pas appliqué (permission, hiérarchie), aucun autre module ne s'exécute pour ce membre et l'incident demande de vérifier la hiérarchie. Elle n'est appliquée **qu'à l'arrivée** : inscrire un membre déjà présent ne le bannit pas. Les listes blanche et noire des utilisateurs s'excluent (base de données, `/config`).
 - **Anti-bot** : seule l'exemption **par identifiant** compte. Échecs classés comme toute sanction : pas de `KICK_MEMBERS` → `MissingPermission` ; rôle du bot au-dessus de celui de FoxSecura → `RoleHierarchy`.
 - **Nouveaux comptes** : âge = date d'arrivée − date de création déduite du snowflake, en jours entiers (un compte d'exactement 7 jours passe un minimum de 7). Les bots sont laissés à l'anti-bot. Preuve : âge observé et âge minimal. Un ban non appliqué déclenche la **quarantaine de repli avec repli timeout** (V1, sans retrait des rôles dangereux) : rôle de quarantaine et verrou des salons, ou timeout de 10 minutes si le rôle ne peut pas être posé. L'incident reste `Critical` (le ban a échoué) et liste l'action de ban en échec, puis les actions de la quarantaine ; il devient terminal si le membre est contenu.
+- **Anti-raid** : voir [Anti-raid et verrouillage temporaire](#anti-raid-et-verrouillage-temporaire-branchés-au-runtime).
+- **Doubles comptes** : identités tirées du **cache des membres uniquement** : nom affiché (nom global, à défaut nom d'utilisateur) et hash d'avatar ; un membre sans avatar personnalisé n'est jamais comparé. Jamais de fetch complet des membres à l'arrivée : pendant un raid, ce serait la limitation de débit garantie. Le cache est **préchauffé** à chaque `GUILD_CREATE` (donc au démarrage) et à l'activation du module, pour les guildes où il est actif et dont le cache est incomplet : demande des membres par la passerelle (intent `GUILD_MEMBERS`), une guilde à la fois, une demande par seconde au plus, **au mieux** (sans garantie de délai). Propriétaire, liste blanche et bots ne sont jamais analysés. Preuve : identifiant du membre dont le compte semble être le double ; recommandation : examiner le doublon.
 - **Usurpation d'identité** : noms protégés = propriétaire (lu par l'API s'il n'est pas en cache : un appel de plus par arrivée) et membres **en cache** qui ont `ADMINISTRATOR` ou `MANAGE_GUILD`. Comparaison du détecteur `anti_impersonation` : casse, accents, substitutions (`0` → `o`, `1` → `i`, `vv` → `w`…), caractères non alphanumériques ignorés, 3 caractères au moins. Jamais appliquée au propriétaire, à un membre privilégié ni à la liste blanche (aucun incident). Uniquement à l'arrivée : un changement de nom ultérieur n'est pas analysé. Preuves : nom du membre et nom protégé, rendus par `inline_literal`. Les membres absents du cache (grands serveurs) ne sont pas protégés.
 - **Pseudos hoistés** : règle V1 `^[^\p{L}\p{N}]+` après suppression des espaces aux extrémités (catégories Unicode exactes, via `regex` : `Ⓐ` est un symbole, donc hoisté ; `É`, `И`, `李`, `٣` ne le sont pas). Nouveau pseudo : le nom nettoyé, tronqué à 32 (unités UTF-16, sans couper un caractère) ; « Member » s'il ne reste rien. C'est une **correction**, pas une sanction : elle s'applique aussi à la liste blanche. Le propriétaire (jamais modifiable par un bot) et les membres au-dessus du bot sont classés `RoleHierarchy` ; `MANAGE_NICKNAMES` requis. Ancien et nouveau nom sont rendus par `inline_literal`.
 - **Aucune boucle** : le pseudo posé commence par une lettre ou un chiffre, il n'est plus hoisté. `GUILD_MEMBER_UPDATE` n'exécute que l'anti-hoisting, et seulement si le nom affiché a changé (ancien nom inconnu : analysé, l'opération étant idempotente) et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là.
@@ -103,7 +111,7 @@ Détails :
 
 ### Quarantaine (branchée au runtime)
 
-Cœur pur dans `protection::quarantine` (rôle, salons, overwrites, enchaînement, libération, verrous), effets Discord et SQLite dans `src/app/pipeline/quarantine.rs`. Utilisée par l'usurpation d'identité et par le repli des nouveaux comptes.
+Cœur pur dans `protection::quarantine` (rôle, salons, overwrites, enchaînement, libération, verrous), effets Discord et SQLite dans `src/app/pipeline/quarantine.rs`. Utilisée par l'usurpation d'identité, le repli des nouveaux comptes, l'anti-raid, les doubles comptes (avec repli timeout) et le honeypot (avec retrait des rôles dangereux, sans repli).
 
 **Rôle de quarantaine** (`guild_configs.quarantine_role_id`, migration 7), configuré dans `/config` → Anti-Raid :
 
@@ -134,6 +142,47 @@ Déclencheurs : action « Libérer un membre » de `/config` (propriétaire ou `
 Permissions : `MANAGE_ROLES` (créer, poser et retirer le rôle, retirer les rôles dangereux, écrire les overwrites), `MANAGE_CHANNELS` (modification des salons), `MODERATE_MEMBERS` (repli timeout), un rôle de FoxSecura **au-dessus** du rôle de quarantaine et des membres visés ; Discord n'autorise un bot à refuser que des permissions qu'il possède lui-même dans le salon (`VIEW_CHANNEL`, `SEND_MESSAGES`, `CONNECT`, `SPEAK`…).
 
 Limites : verrous par membre en mémoire (**mono-instance**) ; état des salons lu dans le cache ; les fils héritent de leur salon et ne sont pas verrouillés individuellement ; un rôle de quarantaine remplacé n'est pas retiré aux membres déjà en quarantaine.
+
+### Anti-raid et verrouillage temporaire (branchés au runtime)
+
+**Anti-raid** (`member_join::anti_raid`, détecteur `anti_raid::join_burst`) : fenêtre glissante des arrivées **par guilde**. Seuil par défaut **5** (2 à 50), fenêtre par défaut **20 s** (5 à 120), persistés (migration 8) et réglables dans `/config`. Déclenchement quand `nombre >= seuil` : c'est l'arrivée courante qui déclenche, puis chaque arrivée suivante dans la fenêtre. Placé **juste après la liste noire** dans la chaîne : un membre banni par la liste noire n'est pas compté.
+
+- **Action (V1)** : verrouillage temporaire du serveur (sauté s'il est déjà actif ; une arrivée qui trouve la ligne déjà écrite n'attend pas la pose en cours) **et** quarantaine du membre qui arrive, avec repli timeout. Les deux sont lancés **en parallèle** : sur un gros serveur, la pose du verrouillage fait un appel par salon et ne doit pas retarder la quarantaine.
+- **Incident** `Critical` (type `member`) : seuil atteint (arrivées / seuil / fenêtre), état du verrouillage (salons modifiés, en échec, total, ou « déjà actif »), puis les actions de la quarantaine. **Terminal** si une quarantaine ou un timeout a été appliqué.
+- **Limite V1** : les membres arrivés **avant** le seuil ne sont **pas** mis en quarantaine ; l'incident rappelle de les examiner.
+- **État en mémoire** : 10 000 guildes au plus (balayage des guildes sans arrivée depuis 120 s, puis oubli de celle dont la dernière arrivée est la plus ancienne), 50 horodatages au plus par guilde. **Mono-instance** : perdu au redémarrage, non partagé entre plusieurs processus.
+
+**Verrouillage temporaire** (`protection::lockdown`, effets dans `src/app/pipeline/lockdown.rs`) : sous-système réutilisable (il servira aussi au futur mode panique), calqué sur la quarantaine : cœur pur derrière un trait d'effets, opérations **sérialisées par guilde**, état d'origine enregistré **avant** chaque modification.
+
+1. **Salons candidats** : tous les salons portant des overwrites, c'est-à-dire tous sauf les fils (catégories comprises).
+2. Sans `MANAGE_CHANNELS` (d'après le cache) : `failed` / `missing_permission`, **rien n'est enregistré**.
+3. La ligne de verrouillage de la guilde (`guild_lockdowns` : raison, état, levée prévue) est insérée **si aucune n'existe** : un verrouillage actif, en cours de levée ou en attente de nouvelle tentative n'est **jamais** relancé (`skipped` / déjà actif), pour ne pas écraser les états d'origine encore attendus.
+4. Pour chaque salon : enregistrement (`guild_lockdown_channels`) de l'ancien `SEND_MESSAGES` de `@everyone` **à trois états** (autorisé, refusé, absent ; le refus prime si les deux bits sont présents) et de l'ancien mode lent (`NULL` sans mode lent), **puis** refus de `SEND_MESSAGES` à `@everyone` (les autres bits de l'overwrite sont conservés ; aucun appel s'il est déjà refusé), **puis** mode lent de **10 s** sur les salons qui l'acceptent (texte, vocal, conférence, forum). Un mode lent déjà plus strict n'est **jamais réduit**. Seul le refus d'écrire compte pour dire qu'un salon est verrouillé ; un échec du mode lent ne le déverrouille pas.
+5. Salon dont le refus échoue : sa ligne est supprimée. **Aucun salon verrouillé** : la ligne de guilde est supprimée et le résultat est `failed`.
+6. **Levée** à l'échéance (**10 minutes**, minuterie tokio calculée sur l'horloge murale, relue au plus tard toutes les 60 s) : restauration **exacte** de `SEND_MESSAGES` (absent redevient absent ; un overwrite redevenu vide est supprimé), **puis** de l'ancien mode lent (seulement si le salon a encore le mode lent du verrouillage : un mode lent changé par l'équipe entre-temps est conservé). Les salons restaurés perdent leur ligne ; ceux en échec **restent verrouillés** et sont retentés **toutes les 60 s**. Un salon disparu n'a plus rien à restaurer, ce qui n'est pas un échec. Une levée est **idempotente**. Une valeur enregistrée illisible se restaure en **« absent »**, jamais en « autorisé ».
+7. **Reprise au démarrage** : les verrouillages persistés sont relus ; ceux qui ont expiré (ou dont la levée a été interrompue) sont levés tout de suite, les autres réarmés. Une guilde pas encore résoluble (absente du cache juste après la connexion) est retentée une minute plus tard, sans rien toucher.
+8. **Levée manuelle** (nouveauté V2, absente de la V1) : bouton « Lever le verrouillage » de `/config` → Anti-Raid, propriétaire ou `ADMINISTRATOR` ; même procédure de restauration ; si des salons restent verrouillés, la minuterie réessaie toutes les minutes.
+9. Raisons d'audit log : `FoxSecura Anti-Raid: temporary lockdown` et `FoxSecura Anti-Raid: lockdown restore` (convention `FoxSecura <module>: …`). Incident de levée (type `server`) publié quand la levée aboutit ou au premier échec, jamais à chaque nouvelle tentative.
+
+**Coût en appels API** : jusqu'à **deux appels par salon** à la pose (refus, mode lent) et autant à la levée, faits un par un. Un serveur de 500 salons demande jusqu'à 1 000 appels dans chaque sens ; pendant une **limitation de débit**, serenity attend la fin de la fenêtre et reprend : la pose est plus lente, pas abandonnée, et les salons déjà traités sont déjà verrouillés.
+
+**Permissions** : `MANAGE_CHANNELS` (mode lent) et `MANAGE_ROLES` (« Gérer les permissions » des salons, pour l'overwrite de `@everyone`) ; Discord n'autorise un bot à refuser `SEND_MESSAGES` que s'il la possède dans le salon. La quarantaine du membre exige en plus `MANAGE_ROLES` et `MODERATE_MEMBERS` (repli timeout).
+
+> ⚠️ **Faux positif = serveur verrouillé 10 minutes.** Une vague d'arrivées légitime (annonce, partenariat, lien partagé) atteint le seuil : plus personne ne peut écrire, et les membres arrivés à partir du seuil sont mis en quarantaine. Choisissez seuil et fenêtre selon votre trafic, levez le verrouillage depuis `/config` et libérez les membres concernés.
+
+**Portée** : seul `@everyone` est visé. Un rôle qui a une autorisation explicite d'écrire dans un salon (overwrite de rôle) écrit encore : c'est voulu pour l'équipe, mais un rôle « membre » autorisé de cette façon contourne le verrouillage. Les permissions accordées au niveau du serveur, elles, sont bien couvertes par l'overwrite du salon.
+
+**Limites** : minuteries, verrous par guilde et fenêtres d'arrivées en mémoire (**mono-instance** ; l'état d'origine, lui, est en base et survit au redémarrage) ; un salon créé pendant un verrouillage n'est pas verrouillé ; les fils suivent leur salon parent.
+
+### Honeypot (branché au runtime)
+
+Salon piège configuré dans `/config` → Doubles comptes et salon piège (`guild_configs.honeypot_channel_id`, migration 8). Il doit être **caché aux vrais membres** sans leur être interdit : placé à l'écart (catégorie repliée en bas de la liste, nom explicite du type « ne-pas-écrire-ici »), mais **lisible et ouvert à l'écriture** pour `@everyone`. Un refus de `VIEW_CHANNEL` ou de `SEND_MESSAGES` empêcherait aussi les comptes automatisés d'y écrire et rendrait le piège inutile. Seuls les comptes qui écrivent partout sans lire y postent.
+
+- **Place** dans le pipeline des messages : **après** les gardes salon ignoré, webhook et bot, **avant** tous les filtres de contenu. Un salon piège ignoré n'est jamais surveillé. Seules les créations de message sont analysées.
+- **Action (V1)** : message **supprimé**, auteur **mis en quarantaine avec retrait des rôles dangereux, sans repli timeout** (`FoxSecura Honeypot: message in the honeypot channel`). Incident `Critical`, type `member`, avec l'extrait du message rendu par `inline_literal`. Le traitement **s'arrête là** : aucun filtre ni anti-spam ne voit le message.
+- **Exemptés (V1)** : propriétaire, membres `ADMINISTRATOR` ou `MANAGE_GUILD`, liste blanche ; leur message suit le pipeline normal.
+- **Permissions inconnues** : si les permissions de l'auteur ne peuvent pas être établies d'après le cache (guilde, membre ou l'un de ses rôles absents), il **n'est pas** mis en quarantaine : le message est supprimé et l'incident signalé (`quarantine_member` = `skipped`, `permissions_unknown`). Un modérateur dont les rôles ne sont pas en cache ne perd ainsi pas ses rôles sur un faux positif ; l'équipe tranche à la lecture du log.
+- Permissions : `MANAGE_MESSAGES` dans le salon piège, `MANAGE_ROLES` (quarantaine, retrait des rôles dangereux).
 
 ## Anti-Spam
 

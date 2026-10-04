@@ -52,13 +52,15 @@ Les preuves d'arnaque ne contiennent **jamais** l'URL complète, ses paramètres
 
 ## Protections des arrivées
 
-Cinq modules agissent sur un membre à son arrivée, sans intervention humaine (voir [Modules de protection](Protection-Modules#arrivées-de-membres-branchées-au-runtime)).
+Sept modules agissent sur un membre à son arrivée, sans intervention humaine (voir [Modules de protection](Protection-Modules#arrivées-de-membres-branchées-au-runtime)).
 
 - **Nouveaux comptes : faux positif = ban d'un nouveau venu légitime**, avec purge de 7 jours de messages. L'âge d'un compte n'est qu'un indice : un vrai nouvel utilisateur de Discord est banni s'il rejoint pendant ses premiers jours. Module désactivé par défaut ; propriétaire et liste blanche exemptés (incident `Warning`) ; ban jamais levé automatiquement. Choisissez l'âge minimal (1 à 365 jours) selon votre communauté et suivez le salon de logs `member`.
 - **Liste noire** : un ban à l'arrivée, **terminal même s'il échoue** (aucun autre module ne s'exécute). La gérer est aussi sensible que la liste blanche : propriétaire ou `ADMINISTRATOR` uniquement, `MANAGE_GUILD` ne suffit pas. Garde-fous : le propriétaire et FoxSecura lui-même sont refusés, et les listes blanche et noire s'excluent (vérifié sous le verrou d'écriture et par des déclencheurs SQLite). La liste n'agit qu'à l'arrivée : elle ne bannit jamais un membre déjà présent.
 - **Anti-bot** : un bot non autorisé est expulsé ; un bot légitime doit être ajouté à la liste blanche **par identifiant** avant son invitation. Un bot invité avec un rôle plus haut que celui de FoxSecura ne peut pas être expulsé : l'incident `Critical` le signale.
 - **Nouveaux comptes, ban impossible** : le membre est mis en quarantaine à la place (ou exclu 10 minutes si le rôle de quarantaine n'est pas utilisable). Un faux positif prive donc un nouveau venu légitime de tous les salons jusqu'à sa libération depuis `/config`.
 - **Usurpation d'identité : faux positif = quarantaine d'un membre légitime** qui porte par hasard le nom (normalisé) d'un administrateur. Le propriétaire, les membres privilégiés et la liste blanche ne sont jamais visés ; seuls les membres **en cache** sont protégés.
+- **Anti-raid : faux positif = serveur verrouillé 10 minutes** et quarantaine des membres arrivés à partir du seuil. Voir [Verrouillage temporaire](#verrouillage-temporaire-et-anti-raid).
+- **Doubles comptes : faux positif = quarantaine d'un membre légitime** qui partage par hasard nom affiché et avatar personnalisé avec un membre en cache (avatar par défaut d'un réseau social, image populaire). L'incident demande d'examiner le doublon ; la libération se fait depuis `/config`. Seul le cache est comparé, jamais un fetch complet des membres : pendant un raid, ce serait la limitation de débit garantie.
 - **Pseudos hoistés** : une correction, appliquée à tous sauf au propriétaire. Le nom d'origine, non fiable, n'est rendu dans les logs que par `inline_literal`. Le pseudo posé n'est jamais hoisté : aucune boucle de renommage.
 
 Permissions : `KICK_MEMBERS`, `BAN_MEMBERS` et `MANAGE_NICKNAMES` ne sont nécessaires que si les modules correspondants sont activés (ou la liste noire remplie). Comme pour l'anti-arnaque, placez le rôle de FoxSecura au-dessus des membres ordinaires, **pas** au-dessus des rôles du staff.
@@ -67,7 +69,7 @@ Permissions : `KICK_MEMBERS`, `BAN_MEMBERS` et `MANAGE_NICKNAMES` ne sont néces
 
 La quarantaine retire à un membre l'accès aux salons (rôle de quarantaine et refus à son nom) sans l'expulser. Elle est réversible, mais pas entièrement :
 
-- **rôles dangereux retirés, non rendus** : quand un module demande leur retrait (aucun des deux modules actuels ne le fait), les rôles portant une permission dangereuse (`ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS`, `MENTION_EVERYONE`) sont retirés **avant** la pose du rôle et **ne sont pas rendus** à la libération (V1). L'incident les liste : l'équipe les rend à la main si nécessaire ;
+- **rôles dangereux retirés, non rendus** : quand un module demande leur retrait (seul le honeypot le fait), les rôles portant une permission dangereuse (`ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS`, `MENTION_EVERYONE`) sont retirés **avant** la pose du rôle et **ne sont pas rendus** à la libération (V1). L'incident les liste : l'équipe les rend à la main si nécessaire ;
 - **refus conservés au retour** : un membre qui quitte le serveur puis revient garde ses refus au niveau du membre (Discord conserve ses overwrites), même sans le rôle de quarantaine. Quitter le serveur ne contourne donc pas la quarantaine ; seule une libération les retire ;
 - **restauration exacte** : l'état d'origine de `VIEW_CHANNEL` et `CONNECT` est enregistré en base **avant** chaque modification ; un plantage en cours d'opération laisse de quoi restaurer. Un refus qui existait avant la quarantaine n'est ni touché ni enregistré : il survit à la libération ;
 - **rôle retiré à la main** : la restauration des salons est lancée, pour ne pas laisser de refus orphelins (si l'ancien état du membre est en cache) ;
@@ -75,6 +77,26 @@ La quarantaine retire à un membre l'accès aux salons (rôle de quarantaine et 
 - **permissions puissantes** : `MANAGE_ROLES` et `MANAGE_CHANNELS` permettent aussi de modifier les rôles et salons sous FoxSecura. Placez son rôle au-dessus des membres ordinaires et du rôle de quarantaine, **pas** au-dessus du staff ;
 - **coût et limitation de débit** : un appel API par salon verrouillable et par membre. Pendant une limitation de débit, les appels attendent : une quarantaine sur un gros serveur peut prendre du temps, durant lequel le membre voit encore les salons pas encore verrouillés (le rôle, posé en premier, retire déjà l'accès là où aucun autre rôle ne l'autorise) ;
 - **mono-instance** : la sérialisation par membre est en mémoire ; deux instances du bot sur la même base pourraient entrelacer une quarantaine et une libération.
+
+## Verrouillage temporaire et anti-raid
+
+Une rafale d'arrivées (5 en 20 s par défaut) **verrouille tout le serveur** pendant 10 minutes : refus de `SEND_MESSAGES` à `@everyone` sur chaque salon sauf les fils, et mode lent de 10 s. C'est l'action automatique la plus large de FoxSecura.
+
+- **Faux positif = serveur verrouillé 10 minutes.** Une vague d'arrivées légitime (annonce, partenariat, lien partagé sur un autre réseau) suffit. Réglez seuil (2 à 50) et fenêtre (5 à 120 s) selon le trafic habituel, suivez les salons de logs `member` et `server`, et levez le verrouillage depuis `/config` (bouton « Lever le verrouillage ») : la levée manuelle suit exactement la restauration de l'échéance. Les membres arrivés à partir du seuil sont aussi en quarantaine : libérez-les. Ceux arrivés **avant** le seuil ne sont pas mis en quarantaine (V1) : examinez-les.
+- **Levée réservée** au propriétaire et à `ADMINISTRATOR` : rouvrir l'écriture pendant un raid est aussi sensible que de libérer un membre. `MANAGE_GUILD` voit l'état du verrouillage mais pas le bouton.
+- **Restauration exacte et sûre** : l'état d'origine (`SEND_MESSAGES` de `@everyone` à trois états, ancien mode lent) est enregistré en base **avant** toute modification. Un plantage pendant la pose ou la levée laisse de quoi restaurer ; au redémarrage, les verrouillages expirés sont levés tout de suite et les autres réarmés. Une valeur enregistrée illisible se restaure en « absent » (le salon retombe sur les permissions des rôles), **jamais** en « autorisé ». Un verrouillage en cours (actif, en levée ou en attente) n'est jamais relancé, pour ne pas écraser ces états d'origine.
+- **Échecs** : sans `MANAGE_CHANNELS`, rien n'est posé ni enregistré (`failed` / `missing_permission`). Un salon que FoxSecura n'a pas pu rendre **reste verrouillé** et est retenté toutes les minutes : vérifiez ses permissions dans ce salon. Un salon supprimé entre-temps n'est pas un échec.
+- **Coût et limitation de débit** : jusqu'à deux appels API par salon dans chaque sens, faits un par un. Sur un gros serveur, la pose prend du temps pendant une limitation de débit ; la quarantaine du membre est lancée en parallèle, sans l'attendre.
+- **Portée** : seul `@everyone` est visé ; un rôle autorisé explicitement à écrire dans un salon le peut encore (voulu pour l'équipe). Ne donnez pas cette autorisation à un rôle attribué à tous les membres.
+- **Mono-instance** : fenêtres d'arrivées (10 000 guildes au plus), minuteries et verrous par guilde vivent dans le processus. Deux instances du bot sur la même base compteraient chacune leurs arrivées et pourraient lever un verrouillage en parallèle (idempotent, mais sans coordination).
+
+## Honeypot
+
+Le salon piège doit rester **lisible et ouvert à l'écriture pour `@everyone`** (sinon les comptes automatisés ne peuvent pas y écrire non plus), mais à l'écart des vrais membres : catégorie repliée en bas de liste, nom explicite. Un membre qui y écrit perd son message, ses **rôles dangereux** (non rendus) et est mis en quarantaine, sans repli timeout.
+
+- **Faux positif** : un membre curieux qui écrit dans le salon malgré son nom est mis en quarantaine. Nommez le salon sans ambiguïté.
+- **Équipe protégée** : propriétaire, `ADMINISTRATOR`, `MANAGE_GUILD` et liste blanche sont exemptés. Si les permissions de l'auteur **ne peuvent pas être établies d'après le cache**, FoxSecura ne le met **pas** en quarantaine : il supprime le message et signale l'incident, pour ne jamais retirer ses rôles à un modérateur sur une donnée manquante.
+- Un salon piège ajouté aux **salons ignorés** n'est plus surveillé (le salon ignoré passe en premier).
 
 ## Cache de configuration
 

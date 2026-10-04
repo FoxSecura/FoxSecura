@@ -4,9 +4,12 @@
 //! Honeypot : un message posté dans le salon piège trahit un compte
 //! automatisé (V1).
 //!
-//! Le salon piège doit être **caché aux vrais membres** (refus de
-//! `VIEW_CHANNEL` pour `@everyone`) : seuls les selfbots qui écrivent dans
-//! tous les salons, sans les voir, y postent.
+//! Le salon piège doit être **caché aux vrais membres** sans leur être
+//! interdit : placé à l'écart (catégorie repliée, nom explicite), mais
+//! lisible et ouvert à l'écriture pour `@everyone`. Un refus de
+//! `VIEW_CHANNEL` ou de `SEND_MESSAGES` empêcherait aussi les comptes
+//! automatisés d'y écrire. Seuls les comptes qui écrivent partout sans lire
+//! y postent.
 //!
 //! # Place dans le pipeline des messages
 //!
