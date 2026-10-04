@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use foxsecura::i18n::DEFAULT_LANGUAGE;
+use foxsecura::protection::anti_raid::honeypot::{HoneypotRoute, route_honeypot};
 use foxsecura::protection::automod::bad_words::DEFAULT_BAD_WORDS_LANGUAGE;
 use foxsecura::protection::content_filter::{
     AuthorContext, MessageContent, MessageEvent, MessageRoute, MessageUpdate, MissingFields,
@@ -15,7 +16,7 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
-use super::{anti_spam, bot_assigned_roles, content_filter, unix_duration};
+use super::{anti_spam, bot_assigned_roles, content_filter, honeypot, unix_duration};
 use crate::app::{AppData, run_database};
 
 /// Message converti depuis un événement Discord, prêt pour le pipeline.
@@ -103,8 +104,13 @@ pub async fn handle_update(
 ///
 /// Gardes (hors guilde, webhook, bot), puis une seule lecture en base
 /// (configuration, salon ignoré, liste blanche, modules activés, mots
-/// interdits), puis les filtres de contenu et enfin l'anti-spam. Chaque module est isolé : son
-/// erreur est journalisée sans interrompre le pipeline ni le client.
+/// interdits), puis le honeypot, les filtres de contenu et enfin
+/// l'anti-spam. Chaque module est isolé : son erreur est journalisée sans
+/// interrompre le pipeline ni le client.
+///
+/// Honeypot : après les gardes salon ignoré, webhook et bot, avant tous les
+/// filtres. Un message piégé est supprimé, son auteur mis en quarantaine, et
+/// le traitement s'arrête là.
 async fn process(
     ctx: &serenity::Context,
     data: &AppData,
@@ -144,6 +150,45 @@ async fn process(
         bot_assigned_roles(context.guild_config.as_ref()),
     );
     let scope = message_scope(context.channel_ignored, author_exempt);
+    let language = context
+        .guild_config
+        .as_ref()
+        .map_or(DEFAULT_LANGUAGE, |guild_config| guild_config.language);
+
+    // Honeypot, avant tous les filtres. Le cache n'est lu que pour un
+    // message du salon piège.
+    let honeypot_channel = context
+        .guild_config
+        .as_ref()
+        .and_then(|guild_config| guild_config.honeypot_channel_id);
+    if honeypot_channel == Some(channel_id) {
+        let (author, roles) = honeypot::author_facts(
+            ctx,
+            &guild_message,
+            inspected.member_roles.as_deref(),
+            author_exempt,
+        );
+        let route = HoneypotRoute {
+            created: event == MessageEvent::Created,
+            scope,
+            enabled_modules: context.enabled_modules,
+            channel_id,
+            honeypot_channel_id: honeypot_channel,
+        };
+        if let Some(plan) = route_honeypot(route, author) {
+            honeypot::run(
+                ctx,
+                data,
+                &guild_message,
+                &inspected.content.content,
+                plan,
+                roles.as_deref(),
+                language,
+            )
+            .await;
+            return;
+        }
+    }
 
     // Liste compilée une fois par liste (cache borné), jamais par message.
     let bad_words = context
@@ -171,10 +216,6 @@ async fn process(
     ) {
         MessageRoute::Skip => {}
         MessageRoute::Filter(detection) => {
-            let language = context
-                .guild_config
-                .as_ref()
-                .map_or(DEFAULT_LANGUAGE, |guild_config| guild_config.language);
             content_filter::run(
                 ctx,
                 data,

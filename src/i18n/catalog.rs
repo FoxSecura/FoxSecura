@@ -1396,5 +1396,25 @@ catalog! {
         en: "The member could not be quarantined or timed out: check the quarantine role, Manage Roles and Moderate Members, then review the recent joins by hand.",
         fr: "Le membre n'a pu être ni mis en quarantaine ni exclu temporairement : vérifiez le rôle de quarantaine, Gérer les rôles et Exclure temporairement des membres, puis examinez les arrivées récentes à la main.",
         de: "Das Mitglied konnte weder unter Quarantäne gestellt noch mit Timeout belegt werden: Quarantänerolle, Rollen verwalten und Mitglieder moderieren prüfen, dann die letzten Beitritte von Hand prüfen."
+    },
+    ModuleHoneypot => {
+        en: "Honeypot channel",
+        fr: "Salon piège (honeypot)",
+        de: "Honeypot-Kanal"
+    },
+    HoneypotSummary => {
+        en: "Message posted in the honeypot channel",
+        fr: "Message posté dans le salon piège",
+        de: "Nachricht im Honeypot-Kanal gepostet"
+    },
+    HoneypotRecommendationQuarantined => {
+        en: "The author is quarantined and their dangerous roles were removed (not given back). Check the account: only automated accounts write in a channel hidden from members.",
+        fr: "L'auteur est en quarantaine et ses rôles dangereux ont été retirés (non rendus). Examinez le compte : seuls des comptes automatisés écrivent dans un salon caché aux membres.",
+        de: "Der Autor ist unter Quarantäne, seine gefährlichen Rollen wurden entfernt (nicht zurückgegeben). Konto prüfen: Nur automatisierte Konten schreiben in einen für Mitglieder verborgenen Kanal."
+    },
+    HoneypotRecommendationUnknownPermissions => {
+        en: "The author's permissions could not be established from the cache: the message was deleted but nobody was quarantined, to avoid a false positive on the staff. Check the author by hand.",
+        fr: "Les permissions de l'auteur n'ont pas pu être établies d'après le cache : le message a été supprimé mais personne n'a été mis en quarantaine, pour éviter un faux positif sur l'équipe. Vérifiez l'auteur à la main.",
+        de: "Die Berechtigungen des Autors ließen sich aus dem Cache nicht ermitteln: Die Nachricht wurde gelöscht, aber niemand unter Quarantäne gestellt, um einen Fehlalarm beim Team zu vermeiden. Autor von Hand prüfen."
     }
 }

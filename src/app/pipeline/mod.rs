@@ -10,6 +10,7 @@
 mod anti_spam;
 mod content_filter;
 mod delete;
+mod honeypot;
 mod incident_log;
 pub mod lockdown;
 pub mod member;

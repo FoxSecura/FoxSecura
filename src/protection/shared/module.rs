@@ -32,11 +32,12 @@ pub enum ProtectionModule {
     AntiNicknameHoisting,
     AntiImpersonation,
     AntiRaid,
+    Honeypot,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -51,6 +52,7 @@ impl ProtectionModule {
         Self::AntiNicknameHoisting,
         Self::AntiImpersonation,
         Self::AntiRaid,
+        Self::Honeypot,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -70,6 +72,7 @@ impl ProtectionModule {
             Self::AntiNicknameHoisting => "anti_nickname_hoisting",
             Self::AntiImpersonation => "anti_impersonation",
             Self::AntiRaid => "anti_raid",
+            Self::Honeypot => "honeypot",
         }
     }
 
