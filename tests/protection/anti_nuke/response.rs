@@ -100,8 +100,8 @@ fn other_authors_are_quarantined_and_missing_ones_are_unavailable() {
 
 #[test]
 fn quarantine_removes_dangerous_roles_without_timeout_fallback() {
-    assert!(ANTI_NUKE_QUARANTINE.remove_dangerous_roles);
-    assert!(!ANTI_NUKE_QUARANTINE.allow_timeout_fallback);
+    const { assert!(ANTI_NUKE_QUARANTINE.remove_dangerous_roles) };
+    const { assert!(!ANTI_NUKE_QUARANTINE.allow_timeout_fallback) };
     let reason = anti_nuke_audit_reason(NukeAction::Ban);
     assert_eq!(reason, "FoxSecura Anti-Nuke: burst of anti_mass_ban");
     // Le socle reconnaît ses propres sanctions.
