@@ -19,8 +19,9 @@
 //! # Coût en appels API
 //!
 //! Tous les salons portant des overwrites (tous sauf les fils) sont
-//! candidats : jusqu'à **deux appels par salon** à la pose (refus d'écrire,
-//! puis mode lent) et autant à la levée, faits un par un. Un serveur de
+//! candidats : une lecture de la liste des salons, puis jusqu'à **deux
+//! appels par salon** à la pose (refus d'écrire, puis mode lent) et autant à
+//! la levée, faits un par un. Un serveur de
 //! 500 salons demande donc jusqu'à 1 000 appels dans chaque sens ; pendant
 //! une limitation de débit, serenity attend la fin de la fenêtre avant de
 //! reprendre, la pose est plus lente mais n'est pas abandonnée.

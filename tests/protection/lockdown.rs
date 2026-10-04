@@ -895,3 +895,15 @@ fn lift_incident_is_published_on_completion_or_first_failure_only() {
     assert_eq!(staff.severity, LogSeverity::Info);
     assert!(staff.summary.contains("by staff"));
 }
+
+#[test]
+fn an_already_active_lockdown_seen_on_the_fast_path_writes_nothing() {
+    let outcome = LockdownOutcome::already_active(12);
+    assert_eq!(outcome.start, LockdownStart::AlreadyActive);
+    assert_eq!((outcome.total, outcome.locked, outcome.failed), (12, 0, 0));
+    assert!(!outcome.applied());
+    assert_eq!(outcome.lift_at, None);
+    let action = outcome.action_outcome();
+    assert_eq!(action.status, ActionStatus::Skipped);
+    assert_eq!(action.details.as_deref(), Some("already_active"));
+}

@@ -153,6 +153,12 @@ impl LockdownOutcome {
         }
     }
 
+    /// Verrouillage déjà en place, constaté sans rien écrire (chemin rapide
+    /// d'une rafale : la ligne de guilde existe déjà).
+    pub fn already_active(total: usize) -> Self {
+        Self::new(LockdownStart::AlreadyActive, total)
+    }
+
     /// Le verrouillage a été posé par cette opération.
     pub fn applied(&self) -> bool {
         self.start == LockdownStart::Applied

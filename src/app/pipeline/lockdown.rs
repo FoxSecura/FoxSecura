@@ -5,8 +5,10 @@
 //! tentatives et reprise au démarrage.
 //!
 //! Les décisions sont dans `foxsecura::protection::lockdown` ; ce module
-//! relève l'état du cache (verrou du cache relâché avant tout `.await`) et
-//! appelle l'API.
+//! relève l'état des salons et appelle l'API. Les salons sont lus par l'API
+//! (un appel), sous le verrou de la guilde : le cache peut retarder sur les
+//! modifications que FoxSecura vient de faire. Repli sur le cache si l'appel
+//! échoue (verrou du cache relâché avant tout `.await`).
 //!
 //! # Minuteries
 //!
@@ -15,8 +17,9 @@
 //! verrouillage à l'échéance et réessaie toutes les 60 secondes tant que des
 //! salons restent verrouillés. Au démarrage, les verrouillages persistés
 //! sont relus ([`spawn_resume`]) : ceux qui ont expiré sont levés tout de
-//! suite, les autres réarmés. Une guilde pas encore résoluble (absente du
-//! cache) est retentée une minute plus tard.
+//! suite, les autres réarmés. Une guilde pas encore résoluble (salons
+//! illisibles par l'API et absents du cache) est retentée une minute plus
+//! tard.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -64,7 +67,9 @@ impl LockdownRuntime {
 ///
 /// Pendant une rafale, chaque arrivée suivante trouve la ligne déjà écrite :
 /// elle obtient « déjà actif » sans attendre le verrou de la guilde, tenu
-/// par la pose en cours (un appel par salon).
+/// par la pose en cours (un appel par salon), et sans rien écrire. Sous le
+/// verrou, l'insertion atomique de la ligne refuse de toute façon une
+/// seconde pose.
 pub async fn apply(
     ctx: &serenity::Context,
     data: &AppData,
@@ -76,7 +81,6 @@ pub async fn apply(
         reason,
         lift_at: unix_now().saturating_add(DEFAULT_LOCKDOWN_DURATION.as_secs()),
     };
-    let facts = lockdown_facts(ctx, guild_id);
     let mut effects = GuildEffects {
         ctx,
         database: &runtime.database,
@@ -84,12 +88,20 @@ pub async fn apply(
         reason: lockdown_audit_reason(reason),
     };
 
-    let already = matches!(read_state(&runtime, guild_id).await, Ok(Some(_)));
-    let outcome = if already {
-        // L'insertion est atomique : sans ligne libre, rien n'est modifié.
-        apply_lockdown(&mut effects, &facts, request).await
-    } else {
+    // Ligne déjà écrite (rafale en cours) : rien n'est tenté, et surtout
+    // rien n'est écrit hors du verrou de la guilde.
+    if matches!(read_state(&runtime, guild_id).await, Ok(Some(_))) {
+        let total = ctx
+            .cache
+            .guild(serenity::GuildId::new(guild_id))
+            .map_or(0, |guild| guild.channels.len());
+        return LockdownOutcome::already_active(total);
+    }
+    let outcome = {
         let _guard = runtime.locks.lock(guild_id).await;
+        // Salons relus sous le verrou : jamais un état d'avant une levée
+        // qui vient de se terminer.
+        let facts = lockdown_facts(ctx, guild_id).await;
         apply_lockdown(&mut effects, &facts, request).await
     };
 
@@ -115,23 +127,24 @@ pub async fn apply(
     outcome
 }
 
-/// Salons candidats (tous sauf les fils, absents de `guild.channels`) et
-/// `MANAGE_CHANNELS` du bot, d'après le cache.
-fn lockdown_facts(ctx: &serenity::Context, guild_id: u64) -> LockdownFacts {
-    let bot_id = ctx.cache.current_user().id;
-    let Some(guild) = ctx.cache.guild(serenity::GuildId::new(guild_id)) else {
-        return LockdownFacts {
-            manage_channels: None,
-            channels: Vec::new(),
-        };
+/// Salons candidats (tous sauf les fils) et `MANAGE_CHANNELS` du bot.
+///
+/// La permission vient du cache ; les salons de [`guild_channels`].
+async fn lockdown_facts(ctx: &serenity::Context, guild_id: u64) -> LockdownFacts {
+    let manage_channels = {
+        let bot_id = ctx.cache.current_user().id;
+        ctx.cache
+            .guild(serenity::GuildId::new(guild_id))
+            .and_then(|guild| {
+                guild.members.get(&bot_id).map(|member| {
+                    let permissions = guild.member_permissions(member);
+                    permissions.administrator() || permissions.manage_channels()
+                })
+            })
     };
-    let manage_channels = guild.members.get(&bot_id).map(|member| {
-        let permissions = guild.member_permissions(member);
-        permissions.administrator() || permissions.manage_channels()
-    });
-    let mut channels: Vec<LockdownChannel> = guild
-        .channels
-        .values()
+    let channels = guild_channels(ctx, guild_id).await.unwrap_or_default();
+    let mut channels: Vec<LockdownChannel> = channels
+        .iter()
         .map(|channel| LockdownChannel {
             channel_id: channel.id.get(),
             everyone: convert_channel(channel).overwrite(OverwriteTarget::Role(guild_id)),
@@ -149,6 +162,30 @@ fn lockdown_facts(ctx: &serenity::Context, guild_id: u64) -> LockdownFacts {
     LockdownFacts {
         manage_channels,
         channels,
+    }
+}
+
+/// Salons de la guilde (hors fils), lus par l'API : un seul appel, et
+/// l'état réel des overwrites et du mode lent. Le cache peut avoir un temps
+/// de retard sur les modifications que FoxSecura vient de faire (une levée
+/// suivie d'une nouvelle pose enregistrerait sinon « refusé » comme état
+/// d'origine). Repli sur le cache si l'appel échoue ; `None` si la guilde
+/// n'y est pas non plus.
+async fn guild_channels(
+    ctx: &serenity::Context,
+    guild_id: u64,
+) -> Option<Vec<serenity::GuildChannel>> {
+    let guild = serenity::GuildId::new(guild_id);
+    match guild.channels(&ctx.http).await {
+        Ok(channels) => Some(channels.into_values().collect()),
+        Err(error) => {
+            eprintln!(
+                "[lockdown] salons de la guilde {guild_id} illisibles par l'API, repli sur le cache : {error}"
+            );
+            ctx.cache
+                .guild(guild)
+                .map(|guild| guild.channels.values().cloned().collect())
+        }
     }
 }
 
@@ -175,7 +212,7 @@ pub async fn lift(
     }
 
     let facts = LiftFacts {
-        channels: current_channels(ctx, guild_id),
+        channels: current_channels(ctx, guild_id).await,
         now,
     };
     let mut effects = GuildEffects {
@@ -316,17 +353,16 @@ pub fn spawn_resume(ctx: serenity::Context, runtime: LockdownRuntime) {
     });
 }
 
-/// Overwrite de `@everyone` et mode lent de chaque salon du cache ; `None`
-/// si la guilde n'y est pas.
-fn current_channels(
+/// Overwrite de `@everyone` et mode lent de chaque salon (voir
+/// [`guild_channels`]) ; `None` si la guilde n'est pas résoluble.
+async fn current_channels(
     ctx: &serenity::Context,
     guild_id: u64,
 ) -> Option<BTreeMap<u64, CurrentChannel>> {
-    let guild = ctx.cache.guild(serenity::GuildId::new(guild_id))?;
+    let channels = guild_channels(ctx, guild_id).await?;
     Some(
-        guild
-            .channels
-            .values()
+        channels
+            .iter()
             .map(|channel| {
                 (
                     channel.id.get(),
