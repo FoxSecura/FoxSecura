@@ -38,6 +38,7 @@ const BUTTONS_PER_ROW: usize = 5;
 
 /// Modules des arrivées de membres, affichés dans la catégorie Anti-Raid.
 pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiRaid,
     ProtectionModule::AntiBot,
     ProtectionModule::AntiNewAccount,
     ProtectionModule::AntiImpersonation,
@@ -198,6 +199,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiNewAccount => TextKey::ModuleAntiNewAccount,
         ProtectionModule::AntiNicknameHoisting => TextKey::ModuleAntiNicknameHoisting,
         ProtectionModule::AntiImpersonation => TextKey::ModuleAntiImpersonation,
+        ProtectionModule::AntiRaid => TextKey::ModuleAntiRaid,
     }
 }
 

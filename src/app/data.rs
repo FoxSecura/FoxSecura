@@ -4,6 +4,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use foxsecura::database::{Database, DatabaseError};
+use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
 use foxsecura::protection::lockdown::{GuildLocks, LockdownTimers};
@@ -37,6 +38,7 @@ impl AppData {
 #[derive(Default)]
 pub struct ProtectionState {
     message_flood: Mutex<MessageFloodTracker>,
+    join_bursts: Mutex<JoinBurstDetector>,
     bad_words: Mutex<BadWordsMatcherCache>,
     quarantine_locks: Arc<MemberLocks>,
     lockdown_locks: Arc<GuildLocks>,
@@ -50,6 +52,16 @@ impl ProtectionState {
     /// ne contient que des horodatages, toujours cohérents entre deux appels.
     pub fn message_flood(&self) -> MutexGuard<'_, MessageFloodTracker> {
         self.message_flood
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Fenêtres glissantes des arrivées, par guilde (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn join_bursts(&self) -> MutexGuard<'_, JoinBurstDetector> {
+        self.join_bursts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

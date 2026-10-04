@@ -348,7 +348,8 @@ fn detect_module(
         ProtectionModule::AntiBot
         | ProtectionModule::AntiNewAccount
         | ProtectionModule::AntiNicknameHoisting
-        | ProtectionModule::AntiImpersonation => None,
+        | ProtectionModule::AntiImpersonation
+        | ProtectionModule::AntiRaid => None,
     }
 }
 

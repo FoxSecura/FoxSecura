@@ -1356,5 +1356,45 @@ catalog! {
         en: "Some channels are still locked: FoxSecura retries every minute. Check that it still has Manage Channels on them.",
         fr: "Des salons restent verrouillés : FoxSecura réessaie toutes les minutes. Vérifiez qu'il a toujours Gérer les salons sur ces salons.",
         de: "Einige Kanäle sind noch gesperrt: FoxSecura versucht es jede Minute erneut. Prüfen, ob es dort noch Kanäle verwalten hat."
+    },
+    ModuleAntiRaid => {
+        en: "Anti-raid (join bursts)",
+        fr: "Anti-raid (rafales d'arrivées)",
+        de: "Anti-Raid (Beitrittswellen)"
+    },
+    AntiRaidSummary => {
+        en: "Join burst: server locked down and member quarantined",
+        fr: "Rafale d'arrivées : serveur verrouillé et membre mis en quarantaine",
+        de: "Beitrittswelle: Server gesperrt und Mitglied unter Quarantäne"
+    },
+    AntiRaidEvidenceLockdown => {
+        en: "Lockdown",
+        fr: "Verrouillage",
+        de: "Sperre"
+    },
+    AntiRaidLockdownApplied => {
+        en: "applied: {locked} channels locked, {failed} failed, {total} in total",
+        fr: "posé : {locked} salons modifiés, {failed} en échec, {total} au total",
+        de: "aktiv: {locked} Kanäle gesperrt, {failed} fehlgeschlagen, {total} insgesamt"
+    },
+    AntiRaidLockdownAlreadyActive => {
+        en: "already active",
+        fr: "déjà actif",
+        de: "bereits aktiv"
+    },
+    AntiRaidLockdownFailed => {
+        en: "failed: {locked} channels locked, {failed} failed, {total} in total",
+        fr: "en échec : {locked} salons modifiés, {failed} en échec, {total} au total",
+        de: "fehlgeschlagen: {locked} Kanäle gesperrt, {failed} fehlgeschlagen, {total} insgesamt"
+    },
+    AntiRaidRecommendationQuarantined => {
+        en: "Check the members who joined just before: they are not quarantined. The server stays locked for 10 minutes; lift it early in /config if this was a legitimate wave.",
+        fr: "Vérifiez les membres arrivés juste avant : ils ne sont pas mis en quarantaine. Le serveur reste verrouillé 10 minutes ; levez-le plus tôt dans /config s'il s'agissait d'une vague légitime.",
+        de: "Die kurz zuvor beigetretenen Mitglieder prüfen: Sie sind nicht unter Quarantäne. Der Server bleibt 10 Minuten gesperrt; bei einer legitimen Welle in /config früher aufheben."
+    },
+    AntiRaidRecommendationFailed => {
+        en: "The member could not be quarantined or timed out: check the quarantine role, Manage Roles and Moderate Members, then review the recent joins by hand.",
+        fr: "Le membre n'a pu être ni mis en quarantaine ni exclu temporairement : vérifiez le rôle de quarantaine, Gérer les rôles et Exclure temporairement des membres, puis examinez les arrivées récentes à la main.",
+        de: "Das Mitglied konnte weder unter Quarantäne gestellt noch mit Timeout belegt werden: Quarantänerolle, Rollen verwalten und Mitglieder moderieren prüfen, dann die letzten Beitritte von Hand prüfen."
     }
 }

@@ -11,9 +11,16 @@ use foxsecura::protection::anti_raid::anti_new_account::{
     AntiNewAccountInput, DEFAULT_MIN_ACCOUNT_AGE_DAYS, MIN_ACCOUNT_AGE_DAYS_RANGE,
     is_valid_min_account_age_days,
 };
+use foxsecura::protection::anti_raid::join_burst::{
+    JoinBurstConfig, JoinBurstDetector, JoinBurstLimits, JoinBurstResult, JoinEvent,
+};
+use foxsecura::protection::lockdown::LockdownOutcome;
 use foxsecura::protection::member_join::anti_bot::{
     ANTI_BOT_SANCTION, AntiBotPlan, anti_bot_audit_reason, anti_bot_response,
     authorized_bot_response, plan_anti_bot,
+};
+use foxsecura::protection::member_join::anti_raid::{
+    ANTI_RAID_QUARANTINE, anti_raid_audit_reason, anti_raid_response,
 };
 use foxsecura::protection::member_join::blacklist::{
     BLACKLIST_BAN, BLACKLIST_MODULE, blacklist_audit_reason, blacklist_response,
@@ -799,6 +806,7 @@ fn refused_rename_is_critical_and_classified() {
 
 fn all_join_modules() -> ModuleSet {
     [
+        ProtectionModule::AntiRaid,
         ProtectionModule::AntiBot,
         ProtectionModule::AntiNewAccount,
         ProtectionModule::AntiImpersonation,
@@ -840,11 +848,16 @@ fn join_chain_follows_the_v1_order() {
         JOIN_ORDER,
         [
             JoinStep::Blacklist,
+            JoinStep::AntiRaid,
             JoinStep::AntiBot,
             JoinStep::AntiNewAccount,
             JoinStep::AntiImpersonation,
             JoinStep::AntiNicknameHoisting,
         ]
+    );
+    assert_eq!(
+        JoinStep::AntiRaid.module(),
+        Some(ProtectionModule::AntiRaid)
     );
     assert_eq!(
         JoinStep::AntiImpersonation.module(),
@@ -878,7 +891,10 @@ fn terminal_result_stops_the_chain() {
         JoinStep::AntiBot => TERMINAL,
         _ => ModuleResult::NOT_DETECTED,
     });
-    assert_eq!(steps(&chain), [JoinStep::Blacklist, JoinStep::AntiBot]);
+    assert_eq!(
+        steps(&chain),
+        [JoinStep::Blacklist, JoinStep::AntiRaid, JoinStep::AntiBot]
+    );
     assert_eq!(chain.stopped_by(), Some(JoinStep::AntiBot));
 
     let chain = run(all_join_modules(), |step| match step {
@@ -901,6 +917,7 @@ fn impersonation_runs_after_new_accounts_and_its_quarantine_stops_the_chain() {
         steps(&chain),
         [
             JoinStep::Blacklist,
+            JoinStep::AntiRaid,
             JoinStep::AntiBot,
             JoinStep::AntiNewAccount,
             JoinStep::AntiImpersonation,
@@ -988,4 +1005,259 @@ fn member_update_is_screened_only_when_the_display_name_changed() {
     let fix = plan_nickname_fix("!Alice").unwrap();
     assert!(display_name_changed(Some(&fix.old), &fix.new));
     assert_eq!(plan_nickname_fix(&fix.new), None);
+}
+
+// --- Anti-raid (rafales d'arrivées) ---
+
+/// Bilans de verrouillage obtenus par le vrai moteur, sur des effets
+/// minimaux : posé (deux salons sur trois), déjà actif.
+fn lockdown_outcomes() -> (LockdownOutcome, LockdownOutcome) {
+    use foxsecura::protection::lockdown::{
+        LockdownChannel, LockdownEffects, LockdownFacts, LockdownReason, LockdownRequest,
+        LockdownStatus, RecordedChannel, apply_lockdown,
+    };
+    use foxsecura::protection::quarantine::{DiscordFailure, OverwriteBits, StoreError};
+
+    struct Effects {
+        active: bool,
+    }
+    impl LockdownEffects for Effects {
+        async fn begin_lockdown(&mut self, _: LockdownRequest) -> Result<bool, StoreError> {
+            Ok(!std::mem::replace(&mut self.active, true))
+        }
+        async fn end_lockdown(&mut self) -> Result<bool, StoreError> {
+            Ok(true)
+        }
+        async fn set_lockdown_status(
+            &mut self,
+            _: LockdownStatus,
+            _: Option<u64>,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn record_channel(&mut self, _: u64, _: RecordedChannel) -> Result<bool, StoreError> {
+            Ok(true)
+        }
+        async fn forget_channel(&mut self, _: u64) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn recorded_channels(&mut self) -> Result<Vec<(u64, RecordedChannel)>, StoreError> {
+            Ok(Vec::new())
+        }
+        async fn write_everyone_overwrite(
+            &mut self,
+            channel_id: u64,
+            _: OverwriteBits,
+        ) -> Result<(), DiscordFailure> {
+            if channel_id == 3 {
+                Err(DiscordFailure::new(
+                    Some(403),
+                    Some(50013),
+                    "Missing Permissions",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        async fn delete_everyone_overwrite(&mut self, _: u64) -> Result<(), DiscordFailure> {
+            Ok(())
+        }
+        async fn set_slowmode(&mut self, _: u64, _: u16) -> Result<(), DiscordFailure> {
+            Ok(())
+        }
+    }
+
+    let facts = LockdownFacts {
+        manage_channels: Some(true),
+        channels: (1..=3)
+            .map(|channel_id| LockdownChannel {
+                channel_id,
+                everyone: None,
+                slowmode: 0,
+                supports_slowmode: true,
+            })
+            .collect(),
+    };
+    let request = LockdownRequest {
+        reason: LockdownReason::AntiRaid,
+        lift_at: 600,
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let mut effects = Effects { active: false };
+    let applied = runtime.block_on(apply_lockdown(&mut effects, &facts, request));
+    let already = runtime.block_on(apply_lockdown(&mut effects, &facts, request));
+    (applied, already)
+}
+
+fn burst(join_count: usize) -> JoinBurstResult {
+    let mut detector = JoinBurstDetector::new();
+    let config = JoinBurstLimits::default().config(true);
+    let mut result = None;
+    for user_id in 0..join_count as u64 {
+        result = Some(detector.detect(config, JoinEvent::new(1, user_id, user_id * 1_000)));
+    }
+    result.unwrap()
+}
+
+#[test]
+fn anti_raid_defaults_and_bounds_are_the_v1_ones() {
+    let limits = JoinBurstLimits::default();
+    assert_eq!((limits.threshold, limits.window_seconds), (5, 20));
+    assert_eq!(
+        limits.config(true),
+        JoinBurstConfig::new(true, 5, Duration::from_secs(20))
+    );
+    assert!(JoinBurstLimits::validated(2, 5).is_ok());
+    assert!(JoinBurstLimits::validated(50, 120).is_ok());
+    assert!(JoinBurstLimits::validated(1, 20).is_err());
+    assert!(JoinBurstLimits::validated(51, 20).is_err());
+    assert!(JoinBurstLimits::validated(5, 4).is_err());
+    assert!(JoinBurstLimits::validated(5, 121).is_err());
+}
+
+#[test]
+fn anti_raid_quarantines_only_from_the_threshold_with_timeout_fallback() {
+    // Les arrivées sous le seuil ne déclenchent rien : ces membres ne sont
+    // pas mis en quarantaine (V1).
+    for count in 1..5 {
+        assert!(!burst(count).triggered(), "{count}");
+    }
+    // L'arrivée qui atteint le seuil déclenche, puis chacune des suivantes.
+    assert!(burst(5).triggered());
+    assert!(burst(6).triggered());
+
+    assert_eq!(
+        ANTI_RAID_QUARANTINE,
+        QuarantineRequest {
+            allow_timeout_fallback: true,
+            remove_dangerous_roles: false,
+            ..QuarantineRequest::ROLE_ONLY
+        }
+    );
+    assert_eq!(anti_raid_audit_reason(), "FoxSecura Anti-Raid: join burst");
+}
+
+#[test]
+fn anti_raid_incident_reports_the_lockdown_and_the_quarantine() {
+    let (applied, already) = lockdown_outcomes();
+    assert!(applied.applied());
+    let response = anti_raid_response(
+        Language::French,
+        MEMBER,
+        &burst(5),
+        JoinBurstLimits::default(),
+        &applied,
+        &quarantined(),
+    );
+
+    assert!(response.result.detected && response.result.action_applied);
+    assert!(response.result.terminal, "membre contenu : chaîne arrêtée");
+    let incident = &response.incident;
+    assert_eq!(incident.module, "anti_raid");
+    assert_eq!(incident.log_type, LogType::Member);
+    assert_eq!(incident.severity, LogSeverity::Critical);
+    assert!(incident.validate().is_ok());
+    // Verrouillage d'abord, puis la quarantaine.
+    assert_eq!(incident.actions[0].action, ActionCode::ApplyLockdown);
+    assert_eq!(incident.actions[0].status, ActionStatus::Partial);
+    assert_eq!(incident.actions[1].action, ActionCode::QuarantineMember);
+    assert!(incident.evidence.contains(&SecurityEvidence::Threshold {
+        observed: 5,
+        threshold: 5,
+        window_seconds: Some(20),
+        unit: foxsecura::logs::ThresholdUnit::Joins,
+    }));
+    assert!(incident.evidence.iter().any(|evidence| matches!(
+        evidence,
+        SecurityEvidence::Text { value, .. }
+            if value == "posé : 2 salons modifiés, 1 en échec, 3 au total"
+    )));
+    assert!(
+        incident
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .contains("arrivés juste avant")
+    );
+
+    // Arrivée suivante : verrouillage sauté, membre tout de même contenu.
+    let next = anti_raid_response(
+        Language::French,
+        MEMBER,
+        &burst(6),
+        JoinBurstLimits::default(),
+        &already,
+        &quarantined(),
+    );
+    assert!(next.result.terminal);
+    assert_eq!(next.incident.actions[0].status, ActionStatus::Skipped);
+    assert!(next.incident.evidence.iter().any(|evidence| matches!(
+        evidence,
+        SecurityEvidence::Text { value, .. } if value == "déjà actif"
+    )));
+}
+
+#[test]
+fn anti_raid_without_containment_is_not_terminal() {
+    let (applied, _) = lockdown_outcomes();
+    let not_contained = QuarantineOutcome {
+        role: Some(RoleStatus::NotConfigured),
+        timeout: Some(failed(FailureCode::MissingPermission)),
+        ..QuarantineOutcome::default()
+    };
+    let response = anti_raid_response(
+        Language::English,
+        MEMBER,
+        &burst(5),
+        JoinBurstLimits::default(),
+        &applied,
+        &not_contained,
+    );
+    assert!(!response.result.terminal);
+    // Le verrouillage a tout de même été posé.
+    assert!(response.result.action_applied);
+    assert_eq!(response.incident.severity, LogSeverity::Critical);
+    assert!(
+        response
+            .incident
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .contains("Moderate Members")
+    );
+    for language in [Language::English, Language::French, Language::German] {
+        let response = anti_raid_response(
+            language,
+            MEMBER,
+            &burst(5),
+            JoinBurstLimits::default(),
+            &applied,
+            &quarantined(),
+        );
+        for evidence in &response.incident.evidence {
+            if let SecurityEvidence::Text { value, .. } = evidence {
+                assert!(!value.contains('{'), "{value}");
+            }
+        }
+    }
+}
+
+#[test]
+fn anti_raid_runs_right_after_the_blacklist() {
+    assert_eq!(JOIN_ORDER[0], JoinStep::Blacklist);
+    assert_eq!(JOIN_ORDER[1], JoinStep::AntiRaid);
+    // Un membre de la liste noire est banni avant d'être compté.
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::Blacklist => TERMINAL,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(steps(&chain), [JoinStep::Blacklist]);
+    // Une rafale qui contient le membre arrête la chaîne.
+    let chain = run(all_join_modules(), |step| match step {
+        JoinStep::AntiRaid => TERMINAL,
+        _ => ModuleResult::NOT_DETECTED,
+    });
+    assert_eq!(steps(&chain), [JoinStep::Blacklist, JoinStep::AntiRaid]);
 }

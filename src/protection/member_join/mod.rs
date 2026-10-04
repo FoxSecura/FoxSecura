@@ -13,7 +13,7 @@
 //!
 //! Ordre de la V1 ([`JOIN_ORDER`]) : liste noire → anti-raid → anti-bot →
 //! nouveaux comptes → doubles comptes → usurpation → pseudos hoistés.
-//! L'anti-raid et les doubles comptes (tranche 7) ne sont pas encore portés.
+//! Les doubles comptes ne sont pas encore portés.
 //!
 //! Un résultat `terminal` (membre banni, expulsé ou mis en quarantaine, ou
 //! liste noire) arrête la chaîne ; les résultats non terminaux se cumulent
@@ -23,6 +23,7 @@
 //! seulement si le nom affiché a changé ([`display_name_changed`]).
 
 pub mod anti_bot;
+pub mod anti_raid;
 pub mod blacklist;
 pub mod hoisting;
 pub mod impersonation;
@@ -70,6 +71,7 @@ impl ModuleResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JoinStep {
     Blacklist,
+    AntiRaid,
     AntiBot,
     AntiNewAccount,
     AntiImpersonation,
@@ -77,9 +79,9 @@ pub enum JoinStep {
 }
 
 /// Ordre de la V1, restreint aux modules portés.
-pub const JOIN_ORDER: [JoinStep; 5] = [
+pub const JOIN_ORDER: [JoinStep; 6] = [
     JoinStep::Blacklist,
-    // Anti-raid (rafales d'arrivées) : tranche 7.
+    JoinStep::AntiRaid,
     JoinStep::AntiBot,
     JoinStep::AntiNewAccount,
     // Doubles comptes : tranche 7, entre les nouveaux comptes et
@@ -94,6 +96,7 @@ impl JoinStep {
     pub const fn module(self) -> Option<ProtectionModule> {
         match self {
             Self::Blacklist => None,
+            Self::AntiRaid => Some(ProtectionModule::AntiRaid),
             Self::AntiBot => Some(ProtectionModule::AntiBot),
             Self::AntiNewAccount => Some(ProtectionModule::AntiNewAccount),
             Self::AntiImpersonation => Some(ProtectionModule::AntiImpersonation),

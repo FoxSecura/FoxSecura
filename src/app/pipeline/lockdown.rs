@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Verrouillage temporaire au runtime : levée à l'échéance, nouvelles
+//! Verrouillage temporaire au runtime : pose, levée à l'échéance, nouvelles
 //! tentatives et reprise au démarrage.
 //!
 //! Les décisions sont dans `foxsecura::protection::lockdown` ; ce module
@@ -25,10 +25,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::i18n::DEFAULT_LANGUAGE;
 use foxsecura::protection::lockdown::{
-    CurrentChannel, GuildLocks, LOCKDOWN_RETRY_INTERVAL, LiftFacts, LiftOutcome, LiftTrigger,
-    LockdownEffects, LockdownRequest, LockdownState, LockdownStatus, LockdownTimers,
-    RecordedChannel, WakeAction, lift_incident, lift_lockdown, lockdown_restore_audit_reason,
-    resume_plan, should_publish_lift, wake_action,
+    CurrentChannel, DEFAULT_LOCKDOWN_DURATION, GuildLocks, LOCKDOWN_RETRY_INTERVAL, LiftFacts,
+    LiftOutcome, LiftTrigger, LockdownChannel, LockdownEffects, LockdownFacts, LockdownOutcome,
+    LockdownReason, LockdownRequest, LockdownStart, LockdownState, LockdownStatus, LockdownTimers,
+    RecordedChannel, WakeAction, apply_lockdown, lift_incident, lift_lockdown,
+    lockdown_audit_reason, lockdown_restore_audit_reason, resume_plan, should_publish_lift,
+    wake_action,
 };
 use foxsecura::protection::quarantine::{
     DiscordFailure, OverwriteBits, OverwriteTarget, StoreError,
@@ -54,6 +56,99 @@ impl LockdownRuntime {
             locks: Arc::clone(data.protection.lockdown_locks()),
             timers: Arc::clone(data.protection.lockdown_timers()),
         }
+    }
+}
+
+/// Pose un verrouillage de [`DEFAULT_LOCKDOWN_DURATION`] et arme sa
+/// minuterie.
+///
+/// Pendant une rafale, chaque arrivée suivante trouve la ligne déjà écrite :
+/// elle obtient « déjà actif » sans attendre le verrou de la guilde, tenu
+/// par la pose en cours (un appel par salon).
+pub async fn apply(
+    ctx: &serenity::Context,
+    data: &AppData,
+    guild_id: u64,
+    reason: LockdownReason,
+) -> LockdownOutcome {
+    let runtime = LockdownRuntime::from_data(data);
+    let request = LockdownRequest {
+        reason,
+        lift_at: unix_now().saturating_add(DEFAULT_LOCKDOWN_DURATION.as_secs()),
+    };
+    let facts = lockdown_facts(ctx, guild_id);
+    let mut effects = GuildEffects {
+        ctx,
+        database: &runtime.database,
+        guild_id,
+        reason: lockdown_audit_reason(reason),
+    };
+
+    let already = matches!(read_state(&runtime, guild_id).await, Ok(Some(_)));
+    let outcome = if already {
+        // L'insertion est atomique : sans ligne libre, rien n'est modifié.
+        apply_lockdown(&mut effects, &facts, request).await
+    } else {
+        let _guard = runtime.locks.lock(guild_id).await;
+        apply_lockdown(&mut effects, &facts, request).await
+    };
+
+    if outcome.applied() {
+        println!(
+            "[lockdown] verrouillage de la guilde {guild_id} ({}) : {} salons verrouillés, {} échecs, {} au total, levée à {}",
+            reason.key(),
+            outcome.locked,
+            outcome.failed,
+            outcome.total,
+            request.lift_at
+        );
+        arm(ctx, &runtime, guild_id);
+    } else if !matches!(outcome.start, LockdownStart::AlreadyActive) {
+        eprintln!(
+            "[lockdown] verrouillage de la guilde {guild_id} impossible : {:?} ({} échecs sur {})",
+            outcome.start, outcome.failed, outcome.total
+        );
+    }
+    for error in &outcome.store_errors {
+        eprintln!("[lockdown] verrouillage de la guilde {guild_id} : {error}");
+    }
+    outcome
+}
+
+/// Salons candidats (tous sauf les fils, absents de `guild.channels`) et
+/// `MANAGE_CHANNELS` du bot, d'après le cache.
+fn lockdown_facts(ctx: &serenity::Context, guild_id: u64) -> LockdownFacts {
+    let bot_id = ctx.cache.current_user().id;
+    let Some(guild) = ctx.cache.guild(serenity::GuildId::new(guild_id)) else {
+        return LockdownFacts {
+            manage_channels: None,
+            channels: Vec::new(),
+        };
+    };
+    let manage_channels = guild.members.get(&bot_id).map(|member| {
+        let permissions = guild.member_permissions(member);
+        permissions.administrator() || permissions.manage_channels()
+    });
+    let mut channels: Vec<LockdownChannel> = guild
+        .channels
+        .values()
+        .map(|channel| LockdownChannel {
+            channel_id: channel.id.get(),
+            everyone: convert_channel(channel).overwrite(OverwriteTarget::Role(guild_id)),
+            slowmode: channel.rate_limit_per_user.unwrap_or(0),
+            supports_slowmode: matches!(
+                channel.kind,
+                serenity::ChannelType::Text
+                    | serenity::ChannelType::Voice
+                    | serenity::ChannelType::Stage
+                    | serenity::ChannelType::Forum
+            ),
+        })
+        .collect();
+    channels.sort_unstable_by_key(|channel| channel.channel_id);
+    LockdownFacts {
+        manage_channels,
+        channels,
     }
 }
 

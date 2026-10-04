@@ -538,7 +538,8 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         ProtectionModule::AntiBot
         | ProtectionModule::AntiNewAccount
         | ProtectionModule::AntiNicknameHoisting
-        | ProtectionModule::AntiImpersonation => {
+        | ProtectionModule::AntiImpersonation
+        | ProtectionModule::AntiRaid => {
             unreachable!("module des arrivées, absent de CONTENT_FILTERS")
         }
     }

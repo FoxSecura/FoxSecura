@@ -6,10 +6,11 @@
 //!
 //! Arrivée : une seule lecture de contexte (cache de la guilde), puis la
 //! chaîne de la V1 (`foxsecura::protection::member_join`) : liste noire →
-//! anti-bot → nouveaux comptes → usurpation d'identité → pseudos hoistés. Un
-//! résultat terminal (membre banni, expulsé ou mis en quarantaine, liste
-//! noire) arrête la chaîne. Un ban de nouveau compte non appliqué déclenche
-//! la quarantaine de repli.
+//! anti-raid → anti-bot → nouveaux comptes → usurpation d'identité →
+//! pseudos hoistés. Un résultat terminal (membre banni, expulsé ou mis en
+//! quarantaine, liste noire) arrête la chaîne. Un ban de nouveau compte non
+//! appliqué déclenche la quarantaine de repli. Une rafale d'arrivées
+//! verrouille le serveur et met en quarantaine le membre qui arrive.
 //!
 //! Mise à jour : seul l'anti-pseudo hoisté s'exécute, si le nom affiché a
 //! changé et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là. Un
@@ -26,9 +27,14 @@ use foxsecura::i18n::{DEFAULT_LANGUAGE, Language};
 use foxsecura::protection::anti_raid::anti_new_account::{
     AntiNewAccountInput, DEFAULT_MIN_ACCOUNT_AGE_DAYS,
 };
+use foxsecura::protection::anti_raid::join_burst::{JoinBurstLimits, JoinEvent};
+use foxsecura::protection::lockdown::LockdownReason;
 use foxsecura::protection::member_join::anti_bot::{
     ANTI_BOT_SANCTION, AntiBotPlan, anti_bot_audit_reason, anti_bot_response,
     authorized_bot_response, plan_anti_bot,
+};
+use foxsecura::protection::member_join::anti_raid::{
+    ANTI_RAID_QUARANTINE, anti_raid_audit_reason, anti_raid_response,
 };
 use foxsecura::protection::member_join::blacklist::{
     BLACKLIST_BAN, blacklist_audit_reason, blacklist_response,
@@ -54,6 +60,7 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
+use super::lockdown;
 use super::quarantine::{self, QuarantineTarget};
 use super::sanction::{self, NicknameRequest, SanctionRequest};
 use super::{bot_assigned_roles, incident_log, unix_duration};
@@ -104,6 +111,7 @@ pub async fn handle_join(ctx: &serenity::Context, data: &AppData, member: &seren
     while let Some(step) = chain.next_step() {
         let result = match step {
             JoinStep::Blacklist => blacklist(ctx, data, &context, &facts).await,
+            JoinStep::AntiRaid => anti_raid(ctx, data, &context, &facts).await,
             JoinStep::AntiBot => anti_bot(ctx, data, &context, &facts).await,
             JoinStep::AntiNewAccount => new_account(ctx, data, &context, &facts).await,
             JoinStep::AntiImpersonation => impersonation(ctx, data, &context, &facts).await,
@@ -189,6 +197,59 @@ async fn blacklist(
         context,
         facts,
         blacklist_response(language(context), facts.target, &outcome),
+    )
+    .await
+}
+
+/// Anti-raid : une rafale d'arrivées verrouille le serveur et met en
+/// quarantaine le membre qui arrive, en parallèle.
+async fn anti_raid(
+    ctx: &serenity::Context,
+    data: &AppData,
+    context: &MemberGuardContext,
+    facts: &MemberFacts<'_>,
+) -> ModuleResult {
+    let limits = context
+        .guild_config
+        .as_ref()
+        .map_or_else(JoinBurstLimits::default, |config| config.anti_raid);
+    let burst = data.protection.join_bursts().detect(
+        limits.config(true),
+        JoinEvent::new(
+            facts.target.guild_id,
+            facts.target.user_id,
+            u64::try_from(facts.joined_at.as_millis()).unwrap_or(u64::MAX),
+        ),
+    );
+    if !burst.triggered() {
+        return ModuleResult::NOT_DETECTED;
+    }
+
+    let whitelist_exempt = whitelist_exempt(context, facts);
+    let target = quarantine_target(facts, whitelist_exempt);
+    let (lockdown, quarantine) = tokio::join!(
+        lockdown::apply(ctx, data, facts.target.guild_id, LockdownReason::AntiRaid),
+        quarantine::quarantine(
+            ctx,
+            data,
+            &target,
+            ANTI_RAID_QUARANTINE,
+            anti_raid_audit_reason(),
+        ),
+    );
+    publish(
+        ctx,
+        data,
+        context,
+        facts,
+        anti_raid_response(
+            language(context),
+            facts.target,
+            &burst,
+            limits,
+            &lockdown,
+            &quarantine,
+        ),
     )
     .await
 }
