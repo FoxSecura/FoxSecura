@@ -4,8 +4,9 @@
 //! Salons verrouillés, état d'origine et restauration exacte (V1).
 //!
 //! Sur chaque salon candidat, `SEND_MESSAGES` est refusé à `@everyone`
-//! (identifiant de la guilde), puis un mode lent de
-//! [`LOCKDOWN_SLOWMODE_SECONDS`] est posé si le salon l'accepte. Seul le refus
+//! (identifiant de la guilde), puis le mode lent demandé par le verrouillage
+//! est posé si le salon l'accepte ([`LOCKDOWN_SLOWMODE_SECONDS`] pour
+//! l'anti-raid, 30 s pour le mode panique). Seul le refus
 //! d'écrire compte pour dire qu'un salon est verrouillé ; le mode lent est un
 //! confort, il n'est jamais réduit.
 //!
@@ -17,7 +18,10 @@ use poise::serenity_prelude::Permissions;
 
 use crate::protection::quarantine::{OverwriteBits, PermissionState, RestorePlan};
 
-/// Mode lent posé pendant un verrouillage, en secondes (V1).
+/// Mode lent posé par un verrouillage de l'anti-raid, en secondes (V1).
+///
+/// Valeur aussi prise par les lignes de verrouillage antérieures à la
+/// migration 9, qui n'enregistraient pas le mode lent posé.
 pub const LOCKDOWN_SLOWMODE_SECONDS: u16 = 10;
 
 /// Mode lent maximal accepté par Discord, en secondes (6 heures).
@@ -88,23 +92,25 @@ pub struct ChannelLockPlan {
     pub slowmode: Option<u16>,
 }
 
-/// Décide du verrouillage d'un salon. Les autres bits de l'overwrite de
-/// `@everyone` sont conservés tels quels.
-pub fn plan_channel_lock(channel: &LockdownChannel) -> ChannelLockPlan {
+/// Décide du verrouillage d'un salon avec le mode lent `slowmode` (en
+/// secondes). Les autres bits de l'overwrite de `@everyone` sont conservés
+/// tels quels.
+pub fn plan_channel_lock(channel: &LockdownChannel, slowmode: u16) -> ChannelLockPlan {
     let bits = channel.everyone.unwrap_or_default();
     let already_denied = bits.deny.contains(LOCKDOWN_DENY) && !bits.allow.contains(LOCKDOWN_DENY);
     ChannelLockPlan {
         record: RecordedChannel::capture(channel),
         overwrite: (!already_denied).then(|| PermissionState::Deny.apply(bits, LOCKDOWN_DENY)),
-        slowmode: lock_slowmode(channel.slowmode, channel.supports_slowmode),
+        slowmode: lock_slowmode(channel.slowmode, channel.supports_slowmode, slowmode),
     }
 }
 
-/// Mode lent à poser : jamais sur un salon qui ne l'accepte pas, et jamais
-/// en réduisant un mode lent déjà plus strict (ou égal).
-pub const fn lock_slowmode(current: u16, supports_slowmode: bool) -> Option<u16> {
-    if supports_slowmode && current < LOCKDOWN_SLOWMODE_SECONDS {
-        Some(LOCKDOWN_SLOWMODE_SECONDS)
+/// Mode lent à poser (`target`, en secondes) : jamais sur un salon qui ne
+/// l'accepte pas, et jamais en réduisant un mode lent déjà plus strict (ou
+/// égal).
+pub const fn lock_slowmode(current: u16, supports_slowmode: bool, target: u16) -> Option<u16> {
+    if supports_slowmode && current < target {
+        Some(target)
     } else {
         None
     }
@@ -125,10 +131,11 @@ pub fn plan_send_restore(current: Option<OverwriteBits>, recorded: PermissionSta
 
 /// Mode lent à réécrire à la levée ; `None` : rien à faire.
 ///
-/// Seul le mode lent posé par le verrouillage est rendu : si l'équipe l'a
-/// modifié entre-temps, ou s'il n'avait pas été touché (déjà plus strict),
-/// il est conservé.
-pub fn plan_slowmode_restore(current: u16, recorded: Option<u16>) -> Option<u16> {
+/// `applied` : mode lent posé par ce verrouillage, enregistré avec la ligne
+/// de verrouillage (migration 9). Seul ce mode lent est rendu : si l'équipe
+/// l'a modifié entre-temps, ou s'il n'avait pas été touché (déjà plus
+/// strict), il est conservé.
+pub fn plan_slowmode_restore(current: u16, recorded: Option<u16>, applied: u16) -> Option<u16> {
     let previous = recorded.unwrap_or(0);
-    (current == LOCKDOWN_SLOWMODE_SECONDS && previous != current).then_some(previous)
+    (applied > 0 && current == applied && previous != current).then_some(previous)
 }

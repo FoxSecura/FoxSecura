@@ -28,7 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::i18n::DEFAULT_LANGUAGE;
 use foxsecura::protection::lockdown::{
-    CurrentChannel, DEFAULT_LOCKDOWN_DURATION, GuildLocks, LOCKDOWN_RETRY_INTERVAL, LiftFacts,
+    CurrentChannel, GuildLocks, LOCKDOWN_RETRY_INTERVAL, LOCKDOWN_SLOWMODE_SECONDS, LiftFacts,
     LiftOutcome, LiftTrigger, LockdownChannel, LockdownEffects, LockdownFacts, LockdownOutcome,
     LockdownReason, LockdownRequest, LockdownStart, LockdownState, LockdownStatus, LockdownTimers,
     RecordedChannel, WakeAction, apply_lockdown, lift_incident, lift_lockdown,
@@ -62,8 +62,9 @@ impl LockdownRuntime {
     }
 }
 
-/// Pose un verrouillage de [`DEFAULT_LOCKDOWN_DURATION`] et arme sa
-/// minuterie.
+/// Pose un verrouillage avec la durée et le mode lent de sa raison
+/// (anti-raid : 10 minutes et 10 s ; mode panique : 15 minutes et 30 s) et
+/// arme sa minuterie.
 ///
 /// Pendant une rafale, chaque arrivée suivante trouve la ligne déjà écrite :
 /// elle obtient « déjà actif » sans attendre le verrou de la guilde, tenu
@@ -77,10 +78,7 @@ pub async fn apply(
     reason: LockdownReason,
 ) -> LockdownOutcome {
     let runtime = LockdownRuntime::from_data(data);
-    let request = LockdownRequest {
-        reason,
-        lift_at: unix_now().saturating_add(DEFAULT_LOCKDOWN_DURATION.as_secs()),
-    };
+    let request = LockdownRequest::for_reason(reason, unix_now());
     let mut effects = GuildEffects {
         ctx,
         database: &runtime.database,
@@ -214,6 +212,7 @@ pub async fn lift(
     let facts = LiftFacts {
         channels: current_channels(ctx, guild_id).await,
         now,
+        slowmode_seconds: state.map_or(LOCKDOWN_SLOWMODE_SECONDS, |state| state.slowmode_seconds),
     };
     let mut effects = GuildEffects {
         ctx,

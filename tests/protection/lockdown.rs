@@ -143,14 +143,17 @@ fn restore_is_exact_for_each_state() {
 
 #[test]
 fn lock_denies_send_messages_and_keeps_other_bits() {
-    let plan = plan_channel_lock(&channel(
-        1,
-        Some(bits(
-            SEND | Permissions::VIEW_CHANNEL,
-            Permissions::ADD_REACTIONS,
-        )),
-        0,
-    ));
+    let plan = plan_channel_lock(
+        &channel(
+            1,
+            Some(bits(
+                SEND | Permissions::VIEW_CHANNEL,
+                Permissions::ADD_REACTIONS,
+            )),
+            0,
+        ),
+        LOCKDOWN_SLOWMODE_SECONDS,
+    );
     assert_eq!(
         plan.overwrite,
         Some(bits(
@@ -162,34 +165,40 @@ fn lock_denies_send_messages_and_keeps_other_bits() {
     assert_eq!(plan.slowmode, Some(LOCKDOWN_SLOWMODE_SECONDS));
 
     // Déjà refusé : aucun appel pour le refus.
-    let denied = plan_channel_lock(&channel(2, Some(bits(Permissions::empty(), SEND)), 0));
+    let denied = plan_channel_lock(
+        &channel(2, Some(bits(Permissions::empty(), SEND)), 0),
+        LOCKDOWN_SLOWMODE_SECONDS,
+    );
     assert_eq!(denied.overwrite, None);
     // Refusé et autorisé à la fois : nettoyé.
-    let both = plan_channel_lock(&channel(3, Some(bits(SEND, SEND)), 0));
+    let both = plan_channel_lock(
+        &channel(3, Some(bits(SEND, SEND)), 0),
+        LOCKDOWN_SLOWMODE_SECONDS,
+    );
     assert_eq!(both.overwrite, Some(bits(Permissions::empty(), SEND)));
 }
 
 #[test]
 fn slowmode_is_never_reduced() {
-    assert_eq!(lock_slowmode(0, true), Some(10));
-    assert_eq!(lock_slowmode(5, true), Some(10));
-    assert_eq!(lock_slowmode(10, true), None);
-    assert_eq!(lock_slowmode(30, true), None);
-    assert_eq!(lock_slowmode(21_600, true), None);
+    assert_eq!(lock_slowmode(0, true, 10), Some(10));
+    assert_eq!(lock_slowmode(5, true, 10), Some(10));
+    assert_eq!(lock_slowmode(10, true, 10), None);
+    assert_eq!(lock_slowmode(30, true, 10), None);
+    assert_eq!(lock_slowmode(21_600, true, 10), None);
     // Salon sans mode lent possible (catégorie, annonces).
-    assert_eq!(lock_slowmode(0, false), None);
+    assert_eq!(lock_slowmode(0, false, 10), None);
 }
 
 #[test]
 fn slowmode_restore_gives_back_only_the_lockdown_slowmode() {
-    assert_eq!(plan_slowmode_restore(10, None), Some(0));
-    assert_eq!(plan_slowmode_restore(10, Some(5)), Some(5));
+    assert_eq!(plan_slowmode_restore(10, None, 10), Some(0));
+    assert_eq!(plan_slowmode_restore(10, Some(5), 10), Some(5));
     // Déjà plus strict, jamais touché.
-    assert_eq!(plan_slowmode_restore(30, Some(30)), None);
-    assert_eq!(plan_slowmode_restore(10, Some(10)), None);
+    assert_eq!(plan_slowmode_restore(30, Some(30), 10), None);
+    assert_eq!(plan_slowmode_restore(10, Some(10), 10), None);
     // Modifié par l'équipe pendant le verrouillage : conservé.
-    assert_eq!(plan_slowmode_restore(60, None), None);
-    assert_eq!(plan_slowmode_restore(0, None), None);
+    assert_eq!(plan_slowmode_restore(60, None, 10), None);
+    assert_eq!(plan_slowmode_restore(0, None, 10), None);
 }
 
 // --- Effets simulés ---
@@ -351,10 +360,7 @@ fn run<F: std::future::Future>(future: F) -> F::Output {
 }
 
 fn request() -> LockdownRequest {
-    LockdownRequest {
-        reason: LockdownReason::AntiRaid,
-        lift_at: NOW + DEFAULT_LOCKDOWN_DURATION.as_secs(),
-    }
+    LockdownRequest::for_reason(LockdownReason::AntiRaid, NOW)
 }
 
 /// Serveur de trois salons : sans overwrite, écriture autorisée avec mode
@@ -391,6 +397,7 @@ fn lift(fake: &mut Fake) -> LiftOutcome {
     let facts = LiftFacts {
         channels: Some(fake.current()),
         now: NOW,
+        slowmode_seconds: LOCKDOWN_SLOWMODE_SECONDS,
     };
     run(lift_lockdown(fake, &facts))
 }
@@ -719,6 +726,7 @@ fn an_unresolvable_guild_is_retried_later_without_touching_anything() {
         &LiftFacts {
             channels: None,
             now: NOW,
+            slowmode_seconds: LOCKDOWN_SLOWMODE_SECONDS,
         },
     ));
     assert!(outcome.unresolved && outcome.pending);
@@ -754,6 +762,7 @@ fn state(guild_id: u64, status: LockdownStatus, lift_at: u64) -> LockdownState {
         reason: Some(LockdownReason::AntiRaid),
         status,
         lift_at,
+        slowmode_seconds: LOCKDOWN_SLOWMODE_SECONDS,
     }
 }
 
@@ -906,4 +915,105 @@ fn an_already_active_lockdown_seen_on_the_fast_path_writes_nothing() {
     let action = outcome.action_outcome();
     assert_eq!(action.status, ActionStatus::Skipped);
     assert_eq!(action.details.as_deref(), Some("already_active"));
+}
+
+// --- Généralisation : durée et mode lent portés par la requête ---
+
+#[test]
+fn anti_raid_lockdown_is_unchanged_ten_minutes_and_ten_seconds() {
+    let request = LockdownRequest::for_reason(LockdownReason::AntiRaid, NOW);
+    assert_eq!(request.lift_at, NOW + 600);
+    assert_eq!(request.slowmode_seconds, 10);
+    assert_eq!(
+        LockdownReason::AntiRaid.duration(),
+        DEFAULT_LOCKDOWN_DURATION
+    );
+}
+
+#[test]
+fn panic_lockdown_is_fifteen_minutes_with_a_thirty_second_slowmode() {
+    let request = LockdownRequest::for_reason(LockdownReason::PanicMode, NOW);
+    assert_eq!(request.lift_at, NOW + 15 * 60);
+    assert_eq!(request.slowmode_seconds, 30);
+    assert_eq!(
+        LockdownReason::from_key("panic_mode"),
+        Some(LockdownReason::PanicMode)
+    );
+    assert_eq!(LockdownReason::PanicMode.key(), "panic_mode");
+    let apply = lockdown_audit_reason(LockdownReason::PanicMode);
+    assert_eq!(
+        apply,
+        "FoxSecura Panic Mode: correlated nuke signals detected"
+    );
+    assert!(is_foxsecura_audit_reason(&apply));
+    assert_eq!(
+        lockdown_restore_audit_reason(Some(LockdownReason::PanicMode)),
+        "FoxSecura Panic Mode: lockdown restore"
+    );
+}
+
+#[test]
+fn slowmode_plans_follow_the_requested_value() {
+    assert_eq!(lock_slowmode(0, true, 30), Some(30));
+    assert_eq!(lock_slowmode(10, true, 30), Some(30));
+    assert_eq!(lock_slowmode(30, true, 30), None);
+    assert_eq!(lock_slowmode(60, true, 30), None);
+    assert_eq!(lock_slowmode(0, false, 30), None);
+
+    // La levée compare au mode lent enregistré avec le verrouillage.
+    assert_eq!(plan_slowmode_restore(30, None, 30), Some(0));
+    assert_eq!(plan_slowmode_restore(30, Some(5), 30), Some(5));
+    assert_eq!(plan_slowmode_restore(30, Some(30), 30), None);
+    assert_eq!(plan_slowmode_restore(45, Some(5), 30), None);
+    // Avant la généralisation, la comparaison à 10 s laissait un salon
+    // bloqué à 30 s pour toujours.
+    assert_eq!(plan_slowmode_restore(30, Some(5), 10), None);
+    // Aucun mode lent posé : jamais touché.
+    assert_eq!(plan_slowmode_restore(0, None, 0), None);
+}
+
+#[test]
+fn panic_lockdown_regression_lift_gives_back_the_previous_slowmode() {
+    let (mut fake, facts) = server();
+    let request = LockdownRequest::for_reason(LockdownReason::PanicMode, NOW);
+    let outcome = run(apply_lockdown(&mut fake, &facts, request));
+
+    assert_eq!(outcome.start, LockdownStart::Applied);
+    assert_eq!(outcome.lift_at, Some(NOW + 900));
+    assert_eq!(fake.guild, Some((LockdownStatus::Active, NOW + 900)));
+    // Pose à 30 s ; le salon 3 était déjà à 30 s, il n'est pas touché.
+    assert_eq!(fake.slowmode[&1], 30);
+    assert_eq!(fake.slowmode[&2], 30);
+    assert_eq!(fake.slowmode[&3], 30);
+    assert!(fake.calls.contains(&"slowmode 1 30".to_owned()));
+    assert!(!fake.calls.iter().any(|call| call.starts_with("slowmode 3")));
+
+    fake.calls.clear();
+    let facts = LiftFacts {
+        channels: Some(fake.current()),
+        now: NOW + 900,
+        slowmode_seconds: request.slowmode_seconds,
+    };
+    let lifted = run(lift_lockdown(&mut fake, &facts));
+    assert!(lifted.ended && !lifted.pending);
+    // Chaque salon retrouve son ancien mode lent.
+    assert_eq!(fake.slowmode[&1], 0);
+    assert_eq!(fake.slowmode[&2], 5);
+    assert_eq!(fake.slowmode[&3], 30);
+    assert!(fake.rows.is_empty());
+}
+
+#[test]
+fn anti_raid_lift_still_restores_only_its_ten_seconds() {
+    let (mut fake, facts) = server();
+    apply(&mut fake, &facts);
+    assert_eq!((fake.slowmode[&1], fake.slowmode[&2]), (10, 10));
+    // L'équipe change le mode lent du salon 2 pendant le verrouillage.
+    fake.slowmode.insert(2, 60);
+
+    let lifted = lift(&mut fake);
+    assert!(lifted.ended);
+    assert_eq!(fake.slowmode[&1], 0);
+    assert_eq!(fake.slowmode[&2], 60, "réglage de l'équipe conservé");
+    assert_eq!(fake.slowmode[&3], 30);
 }

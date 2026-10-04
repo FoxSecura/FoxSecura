@@ -1089,6 +1089,7 @@ fn lockdown_outcomes() -> (LockdownOutcome, LockdownOutcome) {
     let request = LockdownRequest {
         reason: LockdownReason::AntiRaid,
         lift_at: 600,
+        slowmode_seconds: 10,
     };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()

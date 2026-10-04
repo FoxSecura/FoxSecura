@@ -389,6 +389,7 @@ mod tests {
             reason: Some(LockdownReason::AntiRaid),
             status,
             lift_at: 1_700_000_600,
+            slowmode_seconds: 10,
         }
     }
 

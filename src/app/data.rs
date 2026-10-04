@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::anti_nuke::audit::AuditEntryDedup;
 use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
+use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
@@ -49,6 +50,7 @@ pub struct ProtectionState {
     member_prewarm: Arc<tokio::sync::Mutex<()>>,
     audit_dedup: Mutex<AuditEntryDedup>,
     nuke_bursts: Mutex<NukeBurstTracker>,
+    panic_mode: Mutex<PanicModeDetector>,
     audit_permission_warnings: Mutex<HashSet<u64>>,
 }
 
@@ -117,6 +119,16 @@ impl ProtectionState {
     /// horodatages.
     pub fn nuke_bursts(&self) -> MutexGuard<'_, NukeBurstTracker> {
         self.nuke_bursts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Signaux du mode panique, par guilde (fenêtre de 30 s, bornés).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages et des clés de modules.
+    pub fn panic_mode(&self) -> MutexGuard<'_, PanicModeDetector> {
+        self.panic_mode
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Verrouillage temporaire (migration 8) : ligne de verrouillage par guilde
-//! et état d'origine de chaque salon.
+//! Verrouillage temporaire (migrations 8 et 9) : ligne de verrouillage par
+//! guilde, avec le mode lent posé, et état d'origine de chaque salon.
 //!
 //! Une ligne de salon est écrite **avant** la modification du salon et n'est
 //! supprimée qu'après sa restauration (ou sa disparition) : un plantage
@@ -16,7 +16,8 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::protection::lockdown::{
-    LockdownReason, LockdownRequest, LockdownState, LockdownStatus, RecordedChannel,
+    LOCKDOWN_SLOWMODE_SECONDS, LockdownReason, LockdownRequest, LockdownState, LockdownStatus,
+    MAX_SLOWMODE_SECONDS, RecordedChannel,
 };
 
 use super::models::parse_snowflake;
@@ -35,14 +36,15 @@ impl Database {
         ensure_guild_config(&connection, guild_id)?;
         let affected = connection.execute(
             r#"
-INSERT INTO guild_lockdowns (guild_id, reason, status, lift_at)
-VALUES (?1, ?2, 'active', ?3)
+INSERT INTO guild_lockdowns (guild_id, reason, status, lift_at, slowmode_seconds)
+VALUES (?1, ?2, 'active', ?3, ?4)
 ON CONFLICT DO NOTHING
 "#,
             params![
                 guild_id.to_string(),
                 request.reason.key(),
-                clamp_unix(request.lift_at)
+                clamp_unix(request.lift_at),
+                request.slowmode_seconds.min(MAX_SLOWMODE_SECONDS)
             ],
         )?;
         Ok(affected > 0)
@@ -88,7 +90,11 @@ WHERE guild_id = ?1
         let connection = self.connection()?;
         let row = connection
             .query_row(
-                "SELECT guild_id, reason, status, lift_at FROM guild_lockdowns WHERE guild_id = ?1",
+                r#"
+SELECT guild_id, reason, status, lift_at, slowmode_seconds
+FROM guild_lockdowns
+WHERE guild_id = ?1
+"#,
                 params![guild_id.to_string()],
                 read_state_row,
             )
@@ -181,14 +187,20 @@ WHERE guild_id = ?1
     }
 }
 
-type StateRow = (String, String, String, i64);
+type StateRow = (String, String, String, i64, i64);
 
 fn read_state_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StateRow> {
-    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+    ))
 }
 
 fn parse_state(
-    (guild_id, reason, status, lift_at): StateRow,
+    (guild_id, reason, status, lift_at, slowmode): StateRow,
 ) -> Result<LockdownState, DatabaseError> {
     Ok(LockdownState {
         guild_id: parse_snowflake(&guild_id)?,
@@ -196,12 +208,22 @@ fn parse_state(
         status: LockdownStatus::from_key(&status)
             .ok_or(DatabaseError::InvalidLockdownStatus(status))?,
         lift_at: u64::try_from(lift_at).unwrap_or(0),
+        // Valeur illisible (base écrite hors de FoxSecura) : celle de la V1,
+        // seule possible avant la migration 9.
+        slowmode_seconds: u16::try_from(slowmode)
+            .ok()
+            .filter(|seconds| *seconds <= MAX_SLOWMODE_SECONDS)
+            .unwrap_or(LOCKDOWN_SLOWMODE_SECONDS),
     })
 }
 
 fn lockdown_states(connection: &Connection) -> Result<Vec<LockdownState>, DatabaseError> {
     let mut statement = connection.prepare_cached(
-        "SELECT guild_id, reason, status, lift_at FROM guild_lockdowns ORDER BY lift_at, guild_id",
+        r#"
+SELECT guild_id, reason, status, lift_at, slowmode_seconds
+FROM guild_lockdowns
+ORDER BY lift_at, guild_id
+"#,
     )?;
     let rows = statement.query_map([], read_state_row)?;
     let mut states = Vec::new();

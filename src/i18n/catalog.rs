@@ -1636,5 +1636,20 @@ catalog! {
         en: "Whitelisted author: confirm with them that these actions were intended, and review their permissions.",
         fr: "Auteur de la liste blanche : confirmez avec lui que ces actions étaient voulues, et revoyez ses permissions.",
         de: "Urheber auf der Whitelist: Kläre mit ihm, ob diese Aktionen beabsichtigt waren, und überprüfe seine Berechtigungen."
+        },
+    PanicModeEvidenceModules => {
+        en: "Correlated modules",
+        fr: "Modules corrélés",
+        de: "Korrelierte Module"
+    },
+    PanicModeRecommendation => {
+        en: "The server is locked down for 15 minutes (30 s slowmode). Check the anti-nuke incidents above, review the permissions of every author, then lift the lockdown from /config once the server is safe.",
+        fr: "Le serveur est verrouillé 15 minutes (mode lent de 30 s). Consultez les incidents anti-nuke précédents, revoyez les permissions de chaque auteur, puis levez le verrouillage depuis /config une fois le serveur sûr.",
+        de: "Der Server ist 15 Minuten gesperrt (30 s Slowmode). Prüfe die vorherigen Anti-Nuke-Vorfälle, überprüfe die Berechtigungen jedes Urhebers und hebe die Sperre über /config auf, sobald der Server sicher ist."
+    },
+    PanicModeRecommendationFailed => {
+        en: "The lockdown could not be applied (see the action status, usually Manage Channels is missing): lock the server down by hand and review the permissions of every author.",
+        fr: "Le verrouillage n'a pas pu être posé (voir l'état de l'action, souvent Gérer les salons manquant) : verrouillez le serveur à la main et revoyez les permissions de chaque auteur.",
+        de: "Die Sperre konnte nicht gesetzt werden (siehe Aktionsstatus, meist fehlt Kanäle verwalten): Sperre den Server manuell und überprüfe die Berechtigungen jedes Urhebers."
     }
 }

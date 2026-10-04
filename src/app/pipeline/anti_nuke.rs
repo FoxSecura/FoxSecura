@@ -5,7 +5,7 @@
 //! (`GUILD_AUDIT_LOG_ENTRY_CREATE`).
 //!
 //! `entrée → gardes → classement → contexte (cache par guilde) → rafale par
-//! auteur → confinement de l'auteur → incident`. Les actions déjà faites ne
+//! auteur → confinement de l'auteur → incident → signal au mode panique`. Les actions déjà faites ne
 //! sont jamais annulées en masse (voir `anti_nuke::response`). Les
 //! décisions sont dans `foxsecura::protection::anti_nuke` ; ce module ne fait
 //! que convertir l'événement et relever l'état du cache. Les erreurs sont
@@ -26,12 +26,15 @@ use foxsecura::protection::anti_nuke::audit::{
 };
 use foxsecura::protection::anti_nuke::burst::BurstVerdict;
 use foxsecura::protection::anti_nuke::is_anti_nuke_enabled;
+use foxsecura::protection::anti_nuke::panic_mode::{PanicDecision, panic_incident};
 use foxsecura::protection::anti_nuke::response::{
     ANTI_NUKE_QUARANTINE, AuthorFacts, Containment, NukeIncidentInput, NukeResponsePlan,
-    anti_nuke_audit_reason, nuke_incident, plan_response,
+    anti_nuke_audit_reason, nuke_incident, plan_response, sends_panic_signal,
 };
 use foxsecura::protection::anti_nuke::settings::AntiNukeSettings;
+use foxsecura::protection::lockdown::LockdownReason;
 use foxsecura::protection::quarantine::UNKNOWN_MEMBER;
+use foxsecura::protection::shared::ProtectionModule;
 use poise::serenity_prelude::{
     self as serenity,
     audit_log::{
@@ -41,7 +44,7 @@ use poise::serenity_prelude::{
 };
 
 use super::quarantine::{self, QuarantineTarget, discord_failure};
-use super::{bot_assigned_roles, incident_log};
+use super::{bot_assigned_roles, incident_log, lockdown};
 use crate::app::{AppData, run_database};
 
 /// Entrée du journal d'audit poussée par Discord.
@@ -108,6 +111,72 @@ pub async fn handle_audit_entry(
         &containment,
     );
     incident_log::publish(ctx, data, guild, language(&context), &incident).await;
+
+    if sends_panic_signal(&incident)
+        && context
+            .enabled_modules
+            .contains(ProtectionModule::PanicMode)
+    {
+        panic_signal(ctx, data, &context, guild, action, guard.now).await;
+    }
+}
+
+/// Signal d'un incident critique au mode panique ; verrouille le serveur 15
+/// minutes (mode lent de 30 s) si assez de modules distincts ont réagi en
+/// 30 s et qu'aucun verrouillage n'est déjà actif.
+async fn panic_signal(
+    ctx: &serenity::Context,
+    data: &AppData,
+    context: &MemberGuardContext,
+    guild_id: u64,
+    action: NukeAction,
+    now: Duration,
+) {
+    let lockdown_active = match run_database(&data.database, move |database| {
+        database.lockdown_state(guild_id)
+    })
+    .await
+    {
+        Ok(state) => state.is_some(),
+        Err(error) => {
+            // La pose refuse de toute façon un second verrouillage (insertion
+            // atomique de la ligne) : on continue.
+            eprintln!("[anti-nuke] verrouillage de la guilde {guild_id} illisible : {error}");
+            false
+        }
+    };
+    let threshold = context
+        .guild_config
+        .as_ref()
+        .map_or_else(AntiNukeSettings::default, |config| config.anti_nuke)
+        .panic_threshold;
+    let result = data.protection.panic_mode().record_with(
+        guild_id,
+        action.module().key(),
+        now,
+        usize::from(threshold),
+        lockdown_active,
+    );
+    match result.decision {
+        PanicDecision::Below => return,
+        PanicDecision::LockdownActive => {
+            println!(
+                "[anti-nuke] mode panique sur la guilde {guild_id} : {} modules distincts, verrouillage déjà actif",
+                result.distinct_types
+            );
+            return;
+        }
+        PanicDecision::Trigger => {}
+    }
+
+    let outcome = lockdown::apply(ctx, data, guild_id, LockdownReason::PanicMode).await;
+    println!(
+        "[anti-nuke] mode panique sur la guilde {guild_id} : {} ({:?})",
+        result.kinds.join(", "),
+        outcome.start
+    );
+    let incident = panic_incident(language(context), guild_id, &result, &outcome);
+    incident_log::publish(ctx, data, guild_id, language(context), &incident).await;
 }
 
 /// Confine l'auteur d'une rafale : rien s'il est exempté, quarantaine avec

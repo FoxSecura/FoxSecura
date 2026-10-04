@@ -2341,6 +2341,7 @@ fn lockdown_request(lift_at: u64) -> LockdownRequest {
     LockdownRequest {
         reason: LockdownReason::AntiRaid,
         lift_at,
+        slowmode_seconds: 10,
     }
 }
 
@@ -2362,6 +2363,7 @@ fn a_guild_has_at_most_one_lockdown_whatever_its_status() {
             reason: Some(LockdownReason::AntiRaid),
             status: LockdownStatus::Active,
             lift_at: 1_000,
+            slowmode_seconds: 10,
         })
     );
 
@@ -2884,6 +2886,8 @@ VALUES ('123', '100', 'allow', 5);
     // Le verrouillage en cours est conservé.
     let state = database.lockdown_state(123).unwrap().unwrap();
     assert_eq!(state.lift_at, 4000);
+    // Ligne antérieure à la migration 9 : posée par l'anti-raid, 10 s.
+    assert_eq!(state.slowmode_seconds, 10);
     assert_eq!(
         database.lockdown_channels(123).unwrap(),
         vec![(100, channel_state(PermissionState::Allow, Some(5)))]
@@ -3044,4 +3048,34 @@ fn out_of_range_thresholds_written_outside_foxsecura_are_refused_by_sqlite() {
     }
     drop(connection);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn the_applied_slowmode_is_stored_with_the_lockdown() {
+    let database = Database::open_in_memory().unwrap();
+    let request = LockdownRequest::for_reason(LockdownReason::PanicMode, 1_000);
+    assert!(database.begin_lockdown(1, request).unwrap());
+    assert_eq!(
+        database.lockdown_state(1).unwrap(),
+        Some(LockdownState {
+            guild_id: 1,
+            reason: Some(LockdownReason::PanicMode),
+            status: LockdownStatus::Active,
+            lift_at: 1_900,
+            slowmode_seconds: 30,
+        })
+    );
+    assert_eq!(database.lockdown_states().unwrap()[0].slowmode_seconds, 30);
+    // Les changements d'état ne touchent pas au mode lent enregistré.
+    database
+        .set_lockdown_status(1, LockdownStatus::Retry, Some(2_000))
+        .unwrap();
+    assert_eq!(
+        database
+            .lockdown_state(1)
+            .unwrap()
+            .unwrap()
+            .slowmode_seconds,
+        30
+    );
 }

@@ -40,36 +40,45 @@ use crate::protection::quarantine::{
 };
 
 use super::plan::{
-    LockdownChannel, RecordedChannel, plan_channel_lock, plan_send_restore, plan_slowmode_restore,
+    LOCKDOWN_SLOWMODE_SECONDS, LockdownChannel, RecordedChannel, plan_channel_lock,
+    plan_send_restore, plan_slowmode_restore,
 };
 use super::schedule::LockdownStatus;
 
-/// Durée par défaut d'un verrouillage (V1).
+/// Durée d'un verrouillage de l'anti-raid (V1).
 pub const DEFAULT_LOCKDOWN_DURATION: Duration = Duration::from_secs(10 * 60);
+
+/// Durée d'un verrouillage du mode panique (V1).
+pub const PANIC_LOCKDOWN_DURATION: Duration = Duration::from_secs(15 * 60);
+
+/// Mode lent d'un verrouillage du mode panique, en secondes (V1).
+pub const PANIC_LOCKDOWN_SLOWMODE_SECONDS: u16 = 30;
 
 /// Délai entre deux tentatives de levée (V1).
 pub const LOCKDOWN_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Origine d'un verrouillage, persistée (`guild_lockdowns.reason`).
-///
-/// Le sous-système est réutilisable : le futur mode panique y ajoutera sa
-/// propre raison.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockdownReason {
-    /// Rafale d'arrivées (anti-raid).
+    /// Rafale d'arrivées (anti-raid) : 10 minutes, mode lent de 10 s.
     AntiRaid,
+    /// Signaux d'anti-nuke corrélés (mode panique) : 15 minutes, mode lent
+    /// de 30 s.
+    PanicMode,
 }
 
 impl LockdownReason {
     pub const fn key(self) -> &'static str {
         match self {
             Self::AntiRaid => "anti_raid",
+            Self::PanicMode => "panic_mode",
         }
     }
 
     pub fn from_key(key: &str) -> Option<Self> {
         match key {
             "anti_raid" => Some(Self::AntiRaid),
+            "panic_mode" => Some(Self::PanicMode),
             _ => None,
         }
     }
@@ -79,6 +88,23 @@ impl LockdownReason {
     pub const fn audit_label(self) -> &'static str {
         match self {
             Self::AntiRaid => "Anti-Raid",
+            Self::PanicMode => "Panic Mode",
+        }
+    }
+
+    /// Durée du verrouillage (V1).
+    pub const fn duration(self) -> Duration {
+        match self {
+            Self::AntiRaid => DEFAULT_LOCKDOWN_DURATION,
+            Self::PanicMode => PANIC_LOCKDOWN_DURATION,
+        }
+    }
+
+    /// Mode lent posé, en secondes (V1).
+    pub const fn slowmode_seconds(self) -> u16 {
+        match self {
+            Self::AntiRaid => LOCKDOWN_SLOWMODE_SECONDS,
+            Self::PanicMode => PANIC_LOCKDOWN_SLOWMODE_SECONDS,
         }
     }
 }
@@ -89,6 +115,21 @@ pub struct LockdownRequest {
     pub reason: LockdownReason,
     /// Levée prévue, en secondes Unix (horloge murale).
     pub lift_at: u64,
+    /// Mode lent posé sur chaque salon, en secondes ; enregistré avec la
+    /// ligne de verrouillage pour que la levée ne rende que celui-là.
+    pub slowmode_seconds: u16,
+}
+
+impl LockdownRequest {
+    /// Requête avec la durée et le mode lent propres à la raison, à partir
+    /// de `now` (secondes Unix).
+    pub const fn for_reason(reason: LockdownReason, now: u64) -> Self {
+        Self {
+            reason,
+            lift_at: now.saturating_add(reason.duration().as_secs()),
+            slowmode_seconds: reason.slowmode_seconds(),
+        }
+    }
 }
 
 /// Tout ce que le runtime sait avant de verrouiller.
@@ -260,6 +301,9 @@ pub struct LiftFacts {
     pub channels: Option<BTreeMap<u64, CurrentChannel>>,
     /// Maintenant, en secondes Unix (horloge murale).
     pub now: u64,
+    /// Mode lent posé par ce verrouillage, relu sur la ligne de
+    /// verrouillage : seul celui-là est rendu à la levée.
+    pub slowmode_seconds: u16,
 }
 
 /// Bilan d'une levée.
@@ -399,7 +443,7 @@ pub async fn apply_lockdown<E: LockdownEffects>(
 
     let mut outcome = LockdownOutcome::new(LockdownStart::Applied, total);
     for channel in &facts.channels {
-        outcome.record(lock_channel(effects, channel).await);
+        outcome.record(lock_channel(effects, channel, request.slowmode_seconds).await);
     }
 
     if outcome.locked == 0 {
@@ -413,14 +457,16 @@ pub async fn apply_lockdown<E: LockdownEffects>(
     outcome
 }
 
-/// Verrouille un salon : enregistre l'état d'origine **avant** de le
-/// modifier, et supprime la ligne tout juste créée si le refus échoue. Sans
-/// enregistrement réussi, le salon n'est jamais modifié.
+/// Verrouille un salon avec le mode lent `slowmode` : enregistre l'état
+/// d'origine **avant** de le modifier, et supprime la ligne tout juste créée
+/// si le refus échoue. Sans enregistrement réussi, le salon n'est jamais
+/// modifié.
 pub async fn lock_channel<E: LockdownEffects>(
     effects: &mut E,
     channel: &LockdownChannel,
+    slowmode: u16,
 ) -> ChannelLockResult {
-    let plan = plan_channel_lock(channel);
+    let plan = plan_channel_lock(channel, slowmode);
     let inserted = match effects
         .record_channel(channel.channel_id, plan.record)
         .await
@@ -484,7 +530,15 @@ pub async fn lift_lockdown<E: LockdownEffects>(effects: &mut E, facts: &LiftFact
     match effects.recorded_channels().await {
         Ok(rows) => {
             for (channel_id, recorded) in rows {
-                restore_channel(effects, channels, channel_id, recorded, &mut outcome).await;
+                restore_channel(
+                    effects,
+                    channels,
+                    channel_id,
+                    recorded,
+                    facts.slowmode_seconds,
+                    &mut outcome,
+                )
+                .await;
             }
         }
         Err(StoreError(error)) => outcome.store_errors.push(error),
@@ -515,6 +569,7 @@ async fn restore_channel<E: LockdownEffects>(
     channels: &BTreeMap<u64, CurrentChannel>,
     channel_id: u64,
     recorded: RecordedChannel,
+    applied_slowmode: u16,
     outcome: &mut LiftOutcome,
 ) {
     let Some(current) = channels.get(&channel_id) else {
@@ -540,13 +595,15 @@ async fn restore_channel<E: LockdownEffects>(
     // Le refus d'écrire d'abord : tant qu'il n'est pas levé, le salon reste
     // verrouillé et sa ligne est conservée.
     let slowmode = match send {
-        Ok(()) => match plan_slowmode_restore(current.slowmode, recorded.slowmode) {
-            Some(seconds) => {
-                changed = true;
-                effects.set_slowmode(channel_id, seconds).await
+        Ok(()) => {
+            match plan_slowmode_restore(current.slowmode, recorded.slowmode, applied_slowmode) {
+                Some(seconds) => {
+                    changed = true;
+                    effects.set_slowmode(channel_id, seconds).await
+                }
+                None => Ok(()),
             }
-            None => Ok(()),
-        },
+        }
         Err(failure) => Err(failure),
     };
 
