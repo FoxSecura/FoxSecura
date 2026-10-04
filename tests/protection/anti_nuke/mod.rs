@@ -13,5 +13,7 @@ mod member_actions;
 mod panic_mode;
 #[path = "resource_actions/mod.rs"]
 mod resource_actions;
+#[path = "response.rs"]
+mod response;
 #[path = "server_integrity/mod.rs"]
 mod server_integrity;

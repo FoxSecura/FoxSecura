@@ -1616,5 +1616,25 @@ catalog! {
         en: "Panic mode: several anti-nuke protections fired at once, server locked down",
         fr: "Mode panique : plusieurs protections anti-nuke ont réagi en même temps, serveur verrouillé",
         de: "Panikmodus: Mehrere Anti-Nuke-Schutzfunktionen haben gleichzeitig ausgelöst, Server gesperrt"
+        },
+    AntiNukeExemptSummary => {
+        en: "Burst of sensitive actions by a whitelisted author: no containment",
+        fr: "Rafale d'actions sensibles par un auteur de la liste blanche : aucun confinement",
+        de: "Serie sensibler Aktionen durch einen Urheber auf der Whitelist: keine Eindämmung"
+    },
+    AntiNukeEvidenceTarget => {
+        en: "Last target",
+        fr: "Dernière cible",
+        de: "Letztes Ziel"
+    },
+    AntiNukeRecommendation => {
+        en: "Review the author's permissions and roles. Actions already taken (bans, kicks, timeouts, creations) are never undone automatically: review them one by one. Release the author from /config if this was legitimate.",
+        fr: "Revoyez les permissions et les rôles de l'auteur. Les actions déjà faites (bans, expulsions, exclusions, créations) ne sont jamais annulées automatiquement : revoyez-les une par une. Libérez l'auteur depuis /config si c'était légitime.",
+        de: "Überprüfe die Berechtigungen und Rollen des Urhebers. Bereits ausgeführte Aktionen (Banns, Kicks, Timeouts, Erstellungen) werden nie automatisch rückgängig gemacht: Prüfe sie einzeln. Gib den Urheber über /config frei, falls es legitim war."
+    },
+    AntiNukeRecommendationExempt => {
+        en: "Whitelisted author: confirm with them that these actions were intended, and review their permissions.",
+        fr: "Auteur de la liste blanche : confirmez avec lui que ces actions étaient voulues, et revoyez ses permissions.",
+        de: "Urheber auf der Whitelist: Kläre mit ihm, ob diese Aktionen beabsichtigt waren, und überprüfe seine Berechtigungen."
     }
 }

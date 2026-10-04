@@ -6,6 +6,7 @@
 //! - [`audit`] : socle des journaux d'audit (gardes, dédoublonnage,
 //!   classement des entrées) ;
 //! - [`burst`] : rafales par auteur, avec pause après un déclenchement ;
+//! - [`response`] : réponse à une rafale (quarantaine de l'auteur, incident) ;
 //! - [`settings`] : seuils réglables (migration 9).
 //!
 //! Les modules de détection hérités de l'archive (`server_integrity`,
@@ -21,6 +22,7 @@ pub mod limit_role;
 pub mod member_actions;
 pub mod panic_mode;
 pub mod resource_actions;
+pub mod response;
 pub mod server_integrity;
 pub mod settings;
 

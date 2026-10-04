@@ -5,7 +5,8 @@
 //! (`GUILD_AUDIT_LOG_ENTRY_CREATE`).
 //!
 //! `entrée → gardes → classement → contexte (cache par guilde) → rafale par
-//! auteur`. Les
+//! auteur → confinement de l'auteur → incident`. Les actions déjà faites ne
+//! sont jamais annulées en masse (voir `anti_nuke::response`). Les
 //! décisions sont dans `foxsecura::protection::anti_nuke` ; ce module ne fait
 //! que convertir l'événement et relever l'état du cache. Les erreurs sont
 //! journalisées et jamais propagées.
@@ -17,13 +18,20 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::MemberGuardContext;
+use foxsecura::i18n::{DEFAULT_LANGUAGE, Language};
+use foxsecura::protection::anti_nuke::audit::NukeAction;
 use foxsecura::protection::anti_nuke::audit::{
     AuditAction, AuditEntry, AuditGuardContext, classify_entry, screen_entry,
     should_warn_missing_audit_permission,
 };
 use foxsecura::protection::anti_nuke::burst::BurstVerdict;
 use foxsecura::protection::anti_nuke::is_anti_nuke_enabled;
+use foxsecura::protection::anti_nuke::response::{
+    ANTI_NUKE_QUARANTINE, AuthorFacts, Containment, NukeIncidentInput, NukeResponsePlan,
+    anti_nuke_audit_reason, nuke_incident, plan_response,
+};
 use foxsecura::protection::anti_nuke::settings::AntiNukeSettings;
+use foxsecura::protection::quarantine::UNKNOWN_MEMBER;
 use poise::serenity_prelude::{
     self as serenity,
     audit_log::{
@@ -32,6 +40,8 @@ use poise::serenity_prelude::{
     },
 };
 
+use super::quarantine::{self, QuarantineTarget, discord_failure};
+use super::{bot_assigned_roles, incident_log};
 use crate::app::{AppData, run_database};
 
 /// Entrée du journal d'audit poussée par Discord.
@@ -84,6 +94,103 @@ pub async fn handle_audit_entry(
         burst.threshold,
         burst.window.as_secs()
     );
+
+    let containment = contain_author(ctx, data, &context, guild, author_id, action).await;
+    let incident = nuke_incident(
+        language(&context),
+        NukeIncidentInput {
+            guild_id: guild,
+            author_id,
+            burst,
+            target_id: entry.target_id,
+            target_name: entry.target_name.as_deref(),
+        },
+        &containment,
+    );
+    incident_log::publish(ctx, data, guild, language(&context), &incident).await;
+}
+
+/// Confine l'auteur d'une rafale : rien s'il est exempté, quarantaine avec
+/// retrait des rôles dangereux sinon (jamais de repli timeout).
+async fn contain_author(
+    ctx: &serenity::Context,
+    data: &AppData,
+    context: &MemberGuardContext,
+    guild_id: u64,
+    author_id: u64,
+    action: NukeAction,
+) -> Containment {
+    let author = author_roles(ctx, guild_id, author_id).await;
+    let plan = plan_response(AuthorFacts {
+        user_listed: context.user_whitelisted,
+        whitelist_roles: &context.whitelist_roles,
+        ignored_roles: bot_assigned_roles(context.guild_config.as_ref()),
+        member_roles: author.as_deref().ok(),
+    });
+    match plan {
+        NukeResponsePlan::IgnoreExempt => Containment::Exempt,
+        NukeResponsePlan::AuthorUnavailable => Containment::AuthorUnavailable {
+            details: author.err().unwrap_or_default(),
+        },
+        NukeResponsePlan::Quarantine => {
+            let roles = author.unwrap_or_default();
+            let target = QuarantineTarget {
+                guild_id,
+                user_id: author_id,
+                member_roles: &roles,
+                // Exemption déjà décidée : un auteur exempté n'arrive pas ici.
+                whitelisted: false,
+            };
+            Containment::Quarantine(
+                quarantine::quarantine(
+                    ctx,
+                    data,
+                    &target,
+                    ANTI_NUKE_QUARANTINE,
+                    anti_nuke_audit_reason(action),
+                )
+                .await,
+            )
+        }
+    }
+}
+
+/// Rôles de l'auteur : cache de la guilde, sinon lecture par l'API (un
+/// appel). `Err` avec le détail si l'auteur est introuvable.
+async fn author_roles(
+    ctx: &serenity::Context,
+    guild_id: u64,
+    author_id: u64,
+) -> Result<Vec<u64>, String> {
+    let guild = serenity::GuildId::new(guild_id);
+    let user = serenity::UserId::new(author_id);
+    let cached = ctx.cache.guild(guild).and_then(|guild| {
+        guild
+            .members
+            .get(&user)
+            .map(|member| member.roles.iter().map(|role| role.get()).collect())
+    });
+    if let Some(roles) = cached {
+        return Ok(roles);
+    }
+    match guild.member(ctx, user).await {
+        Ok(member) => Ok(member.roles.iter().map(|role| role.get()).collect()),
+        Err(error) => {
+            let failure = discord_failure(error);
+            Err(if failure.is_unknown(UNKNOWN_MEMBER) {
+                "member_missing".to_owned()
+            } else {
+                failure.details
+            })
+        }
+    }
+}
+
+fn language(context: &MemberGuardContext) -> Language {
+    context
+        .guild_config
+        .as_ref()
+        .map_or(DEFAULT_LANGUAGE, |config| config.language)
 }
 
 /// Une seule lecture par entrée, servie par le cache de la guilde.
