@@ -541,7 +541,16 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::AntiImpersonation
         | ProtectionModule::AntiRaid
         | ProtectionModule::AntiDoubleAccount
-        | ProtectionModule::Honeypot => {
+        | ProtectionModule::Honeypot
+        | ProtectionModule::AntiMassBan
+        | ProtectionModule::AntiMassKick
+        | ProtectionModule::AntiMassTimeout
+        | ProtectionModule::AntiMassUnban
+        | ProtectionModule::AntiMassChannelCreate
+        | ProtectionModule::AntiMassRoleCreate
+        | ProtectionModule::AntiEmojiStickerNuke
+        | ProtectionModule::AntiMassRoleGrant
+        | ProtectionModule::PanicMode => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }

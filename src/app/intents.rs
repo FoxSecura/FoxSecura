@@ -5,6 +5,10 @@ use poise::serenity_prelude::{self as serenity, GatewayIntents};
 
 /// Intents demandés au Gateway.
 ///
+/// - `GUILD_MODERATION` : bans, débannissements et entrées du journal
+///   d'audit poussées par Discord (anti-nuke). Ces entrées exigent en plus la
+///   permission `VIEW_AUDIT_LOG` dans chaque serveur : sans elle, Discord
+///   n'en envoie aucune (signalé une fois par guilde dans les logs locaux).
 /// - `GUILD_MESSAGES` : créations et modifications de messages (anti-spam,
 ///   filtres de contenu).
 /// - `MESSAGE_CONTENT` (**privilégié**) : texte et mentions des messages, lus

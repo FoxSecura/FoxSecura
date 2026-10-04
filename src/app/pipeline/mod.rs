@@ -7,6 +7,7 @@
 //! logique métier reste dans `foxsecura::protection`, ce module ne fait que
 //! convertir les événements et exécuter les effets Discord.
 
+pub mod anti_nuke;
 mod anti_spam;
 mod content_filter;
 mod delete;

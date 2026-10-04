@@ -34,11 +34,20 @@ pub enum ProtectionModule {
     AntiRaid,
     Honeypot,
     AntiDoubleAccount,
+    AntiMassBan,
+    AntiMassKick,
+    AntiMassTimeout,
+    AntiMassUnban,
+    AntiMassChannelCreate,
+    AntiMassRoleCreate,
+    AntiEmojiStickerNuke,
+    AntiMassRoleGrant,
+    PanicMode,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 25] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -55,6 +64,15 @@ impl ProtectionModule {
         Self::AntiRaid,
         Self::Honeypot,
         Self::AntiDoubleAccount,
+        Self::AntiMassBan,
+        Self::AntiMassKick,
+        Self::AntiMassTimeout,
+        Self::AntiMassUnban,
+        Self::AntiMassChannelCreate,
+        Self::AntiMassRoleCreate,
+        Self::AntiEmojiStickerNuke,
+        Self::AntiMassRoleGrant,
+        Self::PanicMode,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -76,6 +94,15 @@ impl ProtectionModule {
             Self::AntiRaid => "anti_raid",
             Self::Honeypot => "honeypot",
             Self::AntiDoubleAccount => "anti_double_account",
+            Self::AntiMassBan => "anti_mass_ban",
+            Self::AntiMassKick => "anti_mass_kick",
+            Self::AntiMassTimeout => "anti_mass_timeout",
+            Self::AntiMassUnban => "anti_mass_unban",
+            Self::AntiMassChannelCreate => "anti_mass_channel_create",
+            Self::AntiMassRoleCreate => "anti_mass_role_create",
+            Self::AntiEmojiStickerNuke => "anti_emoji_sticker_nuke",
+            Self::AntiMassRoleGrant => "anti_mass_role_grant",
+            Self::PanicMode => "panic_mode",
         }
     }
 

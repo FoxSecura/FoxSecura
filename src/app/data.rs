@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use foxsecura::database::{Database, DatabaseError};
+use foxsecura::protection::anti_nuke::audit::AuditEntryDedup;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
@@ -44,6 +46,8 @@ pub struct ProtectionState {
     lockdown_locks: Arc<GuildLocks>,
     lockdown_timers: Arc<LockdownTimers>,
     member_prewarm: Arc<tokio::sync::Mutex<()>>,
+    audit_dedup: Mutex<AuditEntryDedup>,
+    audit_permission_warnings: Mutex<HashSet<u64>>,
 }
 
 impl ProtectionState {
@@ -93,6 +97,24 @@ impl ProtectionState {
     /// fois, toutes guildes confondues.
     pub fn member_prewarm(&self) -> &Arc<tokio::sync::Mutex<()>> {
         &self.member_prewarm
+    }
+
+    /// Entrées du journal d'audit déjà traitées (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants.
+    pub fn audit_dedup(&self) -> MutexGuard<'_, AuditEntryDedup> {
+        self.audit_dedup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Guildes déjà signalées pour l'absence de `VIEW_AUDIT_LOG` depuis le
+    /// démarrage (une entrée par guilde au plus).
+    pub fn audit_permission_warnings(&self) -> MutexGuard<'_, HashSet<u64>> {
+        self.audit_permission_warnings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Minuteries de levée armées (au plus une par guilde).

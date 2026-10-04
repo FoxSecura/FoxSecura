@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#[path = "audit.rs"]
+mod audit;
 #[path = "limit_role.rs"]
 mod limit_role;
 #[path = "member_actions/mod.rs"]

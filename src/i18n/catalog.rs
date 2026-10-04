@@ -1561,5 +1561,60 @@ catalog! {
         en: "A joining member with the same display name and custom avatar as a member in FoxSecura's cache is quarantined, or timed out for 10 minutes without a usable quarantine role. Only the cache is compared, never a full member fetch; it is warmed up at startup for servers where the module is on (best effort). Owner, whitelist and bots are never checked. Requires Manage Roles, Moderate Members and the Server Members intent.",
         fr: "Un membre qui arrive avec le même nom affiché et le même avatar personnalisé qu'un membre du cache de FoxSecura est mis en quarantaine, ou exclu 10 minutes sans rôle de quarantaine utilisable. Seul le cache est comparé, jamais une lecture complète des membres ; il est préchauffé au démarrage pour les serveurs où le module est actif (au mieux). Le propriétaire, la liste blanche et les bots ne sont jamais vérifiés. Requiert Gérer les rôles, Exclure temporairement et l'intent Server Members.",
         de: "Ein beitretendes Mitglied mit gleichem Anzeigenamen und eigenem Avatar wie ein Mitglied im Cache von FoxSecura wird unter Quarantäne gestellt oder ohne nutzbare Quarantäne-Rolle 10 Minuten mit Timeout belegt. Verglichen wird nur der Cache, nie ein vollständiger Abruf der Mitglieder; er wird beim Start für Server mit aktivem Modul vorgewärmt (nach Möglichkeit). Inhaber, Whitelist und Bots werden nie geprüft. Benötigt Rollen verwalten, Mitglieder moderieren und den Server-Members-Intent."
+        },
+    ModuleAntiMassBan => {
+        en: "Mass bans",
+        fr: "Bannissements de masse",
+        de: "Massenbanns"
+    },
+    ModuleAntiMassKick => {
+        en: "Mass kicks",
+        fr: "Expulsions de masse",
+        de: "Massenkicks"
+    },
+    ModuleAntiMassTimeout => {
+        en: "Mass timeouts",
+        fr: "Exclusions temporaires de masse",
+        de: "Massen-Timeouts"
+    },
+    ModuleAntiMassUnban => {
+        en: "Mass unbans",
+        fr: "Débannissements de masse",
+        de: "Massen-Entbannungen"
+    },
+    ModuleAntiMassChannelCreate => {
+        en: "Mass channel creation",
+        fr: "Création de salons en masse",
+        de: "Massenerstellung von Kanälen"
+    },
+    ModuleAntiMassRoleCreate => {
+        en: "Mass role creation",
+        fr: "Création de rôles en masse",
+        de: "Massenerstellung von Rollen"
+    },
+    ModuleAntiEmojiStickerNuke => {
+        en: "Emoji and sticker nuke",
+        fr: "Nuke d'emojis et de stickers",
+        de: "Emoji- und Sticker-Nuke"
+    },
+    ModuleAntiMassRoleGrant => {
+        en: "Mass role grants",
+        fr: "Attribution de rôles en masse",
+        de: "Massenvergabe von Rollen"
+    },
+    ModulePanicMode => {
+        en: "Panic mode",
+        fr: "Mode panique",
+        de: "Panikmodus"
+        },
+    AntiNukeSummary => {
+        en: "Burst of sensitive actions by the same author",
+        fr: "Rafale d'actions sensibles par un même auteur",
+        de: "Serie sensibler Aktionen durch denselben Urheber"
+    },
+    PanicModeSummary => {
+        en: "Panic mode: several anti-nuke protections fired at once, server locked down",
+        fr: "Mode panique : plusieurs protections anti-nuke ont réagi en même temps, serveur verrouillé",
+        de: "Panikmodus: Mehrere Anti-Nuke-Schutzfunktionen haben gleichzeitig ausgelöst, Server gesperrt"
     }
 }

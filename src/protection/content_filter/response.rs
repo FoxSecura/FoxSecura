@@ -372,5 +372,14 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiRaid => TextKey::AntiRaidSummary,
         ProtectionModule::Honeypot => TextKey::HoneypotSummary,
         ProtectionModule::AntiDoubleAccount => TextKey::DoubleAccountSummary,
+        ProtectionModule::AntiMassBan
+        | ProtectionModule::AntiMassKick
+        | ProtectionModule::AntiMassTimeout
+        | ProtectionModule::AntiMassUnban
+        | ProtectionModule::AntiMassChannelCreate
+        | ProtectionModule::AntiMassRoleCreate
+        | ProtectionModule::AntiEmojiStickerNuke
+        | ProtectionModule::AntiMassRoleGrant => TextKey::AntiNukeSummary,
+        ProtectionModule::PanicMode => TextKey::PanicModeSummary,
     }
 }
