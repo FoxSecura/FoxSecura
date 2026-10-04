@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use std::sync::Arc;
+
+use foxsecura::database::Database;
 use foxsecura::i18n::Language;
 use foxsecura::logs::{SecurityIncident, format_security_log_message};
 use poise::serenity_prelude as serenity;
@@ -15,6 +18,18 @@ use crate::app::{AppData, run_database};
 pub async fn publish(
     ctx: &serenity::Context,
     data: &AppData,
+    guild_id: u64,
+    language: Language,
+    incident: &SecurityIncident,
+) {
+    publish_with(ctx, &data.database, guild_id, language, incident).await;
+}
+
+/// Comme [`publish`], pour une tâche de fond qui n'a que la base (minuterie
+/// de verrouillage).
+pub async fn publish_with(
+    ctx: &serenity::Context,
+    database: &Arc<Database>,
     guild_id: u64,
     language: Language,
     incident: &SecurityIncident,
@@ -37,7 +52,7 @@ pub async fn publish(
     }
 
     let log_type = incident.log_type;
-    let channel = match run_database(&data.database, move |database| {
+    let channel = match run_database(database, move |database| {
         database.log_channel(guild_id, log_type)
     })
     .await

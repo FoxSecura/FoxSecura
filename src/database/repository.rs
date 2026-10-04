@@ -6,6 +6,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::i18n::Language;
 use crate::logs::LogType;
 use crate::protection::anti_raid::anti_new_account::is_valid_min_account_age_days;
+use crate::protection::anti_raid::join_burst::JoinBurstLimits;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 use crate::protection::automod::bad_words::BadWordsLanguage;
 use crate::protection::shared::is_everyone_role;
@@ -142,6 +143,55 @@ ON CONFLICT(guild_id) DO UPDATE SET
         read_guild_config(&connection, guild_id)
     }
 
+    /// Enregistre le seuil et la fenêtre de l'anti-raid après validation
+    /// des bornes (2 à 50 arrivées, 5 à 120 secondes). Une valeur hors bornes
+    /// ne modifie rien.
+    pub fn set_anti_raid_limits(
+        &self,
+        guild_id: u64,
+        threshold: u32,
+        window_seconds: u32,
+    ) -> Result<GuildConfig, DatabaseError> {
+        JoinBurstLimits::validated(threshold, window_seconds)?;
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, anti_raid_join_threshold, anti_raid_window_seconds)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(guild_id) DO UPDATE SET
+    anti_raid_join_threshold = excluded.anti_raid_join_threshold,
+    anti_raid_window_seconds = excluded.anti_raid_window_seconds,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), threshold, window_seconds],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
+    /// Enregistre (ou efface, avec `None`) le salon piège du honeypot.
+    pub fn set_honeypot_channel(
+        &self,
+        guild_id: u64,
+        channel_id: Option<u64>,
+    ) -> Result<GuildConfig, DatabaseError> {
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, honeypot_channel_id)
+VALUES (?1, ?2)
+ON CONFLICT(guild_id) DO UPDATE SET
+    honeypot_channel_id = excluded.honeypot_channel_id,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), channel_id.map(|id| id.to_string())],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
     /// Rôle de quarantaine, servi par le cache de la guilde ; aucune écriture.
     pub fn quarantine_role_id(&self, guild_id: u64) -> Result<Option<u64>, DatabaseError> {
         Ok(self
@@ -273,7 +323,8 @@ pub(super) fn read_guild_config(
         r#"
 SELECT guild_id, language, created_at, updated_at,
     anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
-    bad_words_language, new_account_min_age_days, quarantine_role_id
+    bad_words_language, new_account_min_age_days, quarantine_role_id,
+    anti_raid_join_threshold, anti_raid_window_seconds, honeypot_channel_id
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -290,6 +341,9 @@ WHERE guild_id = ?1
                 row.get::<_, String>(7)?,
                 row.get::<_, u16>(8)?,
                 row.get::<_, Option<String>>(9)?,
+                row.get::<_, u32>(10)?,
+                row.get::<_, u32>(11)?,
+                row.get::<_, Option<String>>(12)?,
             ))
         },
     )?;
@@ -304,6 +358,8 @@ WHERE guild_id = ?1
             .filter(|days| is_valid_min_account_age_days(*days))
             .ok_or(DatabaseError::InvalidNewAccountMinAge(row.8))?,
         quarantine_role_id: row.9.as_deref().map(parse_snowflake).transpose()?,
+        anti_raid: JoinBurstLimits::validated(row.10, row.11)?,
+        honeypot_channel_id: row.12.as_deref().map(parse_snowflake).transpose()?,
         created_at: row.2,
         updated_at: row.3,
     })

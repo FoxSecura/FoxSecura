@@ -56,8 +56,9 @@ impl PermissionState {
         }
     }
 
-    /// Applique cet état à un bit, sans toucher aux autres.
-    fn apply(self, bits: OverwriteBits, permission: Permissions) -> OverwriteBits {
+    /// Applique cet état à un bit, sans toucher aux autres (réutilisé par le
+    /// verrouillage du serveur pour `SEND_MESSAGES`).
+    pub fn apply(self, bits: OverwriteBits, permission: Permissions) -> OverwriteBits {
         let (allow, deny) = (bits.allow - permission, bits.deny - permission);
         match self {
             Self::Allow => OverwriteBits {

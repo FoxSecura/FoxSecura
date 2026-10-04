@@ -1336,5 +1336,25 @@ catalog! {
         en: "Blacklist scope",
         fr: "Portée de la liste noire",
         de: "Geltungsbereich der Blacklist"
+    },
+    LockdownLiftSummary => {
+        en: "Temporary lockdown lifted",
+        fr: "Verrouillage temporaire levé",
+        de: "Temporäre Sperre aufgehoben"
+    },
+    LockdownLiftStaffSummary => {
+        en: "Temporary lockdown lifted by staff",
+        fr: "Verrouillage temporaire levé par l'équipe",
+        de: "Temporäre Sperre vom Team aufgehoben"
+    },
+    LockdownLiftRecommendationDone => {
+        en: "Every channel got its original Send Messages permission for @everyone and its original slowmode back.",
+        fr: "Chaque salon a retrouvé la permission Envoyer des messages d'origine de @everyone et son ancien mode lent.",
+        de: "Jeder Kanal hat die ursprüngliche Berechtigung Nachrichten senden für @everyone und seinen alten Slowmode zurückerhalten."
+    },
+    LockdownLiftRecommendationPending => {
+        en: "Some channels are still locked: FoxSecura retries every minute. Check that it still has Manage Channels on them.",
+        fr: "Des salons restent verrouillés : FoxSecura réessaie toutes les minutes. Vérifiez qu'il a toujours Gérer les salons sur ces salons.",
+        de: "Einige Kanäle sind noch gesperrt: FoxSecura versucht es jede Minute erneut. Prüfen, ob es dort noch Kanäle verwalten hat."
     }
 }

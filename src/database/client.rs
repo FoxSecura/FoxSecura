@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
+use crate::protection::anti_raid::join_burst::JoinBurstLimitsError;
 use crate::protection::anti_spam::message_flood::MessageFloodConfigError;
 use crate::protection::automod::bad_words::CustomWordsError;
 
@@ -157,6 +158,10 @@ pub enum DatabaseError {
     EveryoneRoleNotQuarantinable,
     /// État d'overwrite enregistré inconnu (base écrite hors de FoxSecura).
     InvalidOverwriteState(String),
+    /// Seuil ou fenêtre de l'anti-raid hors des bornes.
+    InvalidAntiRaidLimits(JoinBurstLimitsError),
+    /// État de verrouillage inconnu (base écrite hors de FoxSecura).
+    InvalidLockdownStatus(String),
 }
 
 impl fmt::Display for DatabaseError {
@@ -207,6 +212,13 @@ impl fmt::Display for DatabaseError {
                     "état d'overwrite invalide stocké en base : {value}"
                 )
             }
+            Self::InvalidAntiRaidLimits(error) => error.fmt(formatter),
+            Self::InvalidLockdownStatus(value) => {
+                write!(
+                    formatter,
+                    "état de verrouillage invalide stocké en base : {value}"
+                )
+            }
             Self::UserBlacklisted(user_id) => write!(
                 formatter,
                 "l'utilisateur {user_id} est sur la liste noire : il ne peut pas être mis sur la liste blanche"
@@ -222,6 +234,7 @@ impl Error for DatabaseError {
             Self::Io(error) => Some(error),
             Self::InvalidAntiSpamConfig(error) => Some(error),
             Self::InvalidCustomWords(error) => Some(error),
+            Self::InvalidAntiRaidLimits(error) => Some(error),
             Self::LockPoisoned
             | Self::InvalidLanguage(_)
             | Self::InvalidLogType(_)
@@ -232,7 +245,8 @@ impl Error for DatabaseError {
             | Self::UserBlacklisted(_)
             | Self::InvalidNewAccountMinAge(_)
             | Self::EveryoneRoleNotQuarantinable
-            | Self::InvalidOverwriteState(_) => None,
+            | Self::InvalidOverwriteState(_)
+            | Self::InvalidLockdownStatus(_) => None,
         }
     }
 }
@@ -246,6 +260,12 @@ impl From<rusqlite::Error> for DatabaseError {
 impl From<MessageFloodConfigError> for DatabaseError {
     fn from(error: MessageFloodConfigError) -> Self {
         Self::InvalidAntiSpamConfig(error)
+    }
+}
+
+impl From<JoinBurstLimitsError> for DatabaseError {
+    fn from(error: JoinBurstLimitsError) -> Self {
+        Self::InvalidAntiRaidLimits(error)
     }
 }
 

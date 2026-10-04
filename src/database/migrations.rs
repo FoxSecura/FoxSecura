@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 7;
+pub const LATEST_SCHEMA_VERSION: i64 = 8;
 
 struct Migration {
     version: i64,
@@ -212,6 +212,55 @@ CREATE TABLE guild_quarantine_pending_releases (
 
 CREATE INDEX guild_quarantine_pending_releases_by_age
     ON guild_quarantine_pending_releases (updated_at);
+"#,
+    },
+    Migration {
+        version: 8,
+        name: "lockdown_anti_raid",
+        // Anti-raid : seuil (5 par défaut, 2 à 50) et fenêtre (20 s par
+        // défaut, 5 à 120) des rafales d'arrivées. Salon piège du honeypot
+        // (`NULL` : non configuré ; un salon peut porter l'identifiant de la
+        // guilde, aucune contrainte ne le refuse).
+        //
+        // `guild_lockdowns` : un verrouillage temporaire par guilde (raison,
+        // état, levée prévue en secondes Unix). Sa présence, quel que soit
+        // son état (`active`, `lifting`, `retry`), interdit d'en poser un
+        // autre : les états d'origine attendus ne sont jamais écrasés.
+        //
+        // `guild_lockdown_channels` : état d'origine de chaque salon,
+        // enregistré **avant** sa modification. `previous_send` porte le bit
+        // `SEND_MESSAGES` de `@everyone` à trois états ; il n'a volontairement
+        // pas de contrainte `CHECK` : une valeur illisible se relit en
+        // « absent » (jamais « autorisé »). `previous_slowmode` : `NULL` pour
+        // un salon sans mode lent. Les lignes de salon ne dépendent pas de la
+        // ligne de verrouillage (aucune cascade) : supprimer celle-ci ne doit
+        // jamais effacer un état d'origine encore attendu.
+        sql: r#"
+ALTER TABLE guild_configs ADD COLUMN anti_raid_join_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_raid_join_threshold BETWEEN 2 AND 50);
+ALTER TABLE guild_configs ADD COLUMN anti_raid_window_seconds INTEGER NOT NULL DEFAULT 20
+    CHECK (anti_raid_window_seconds BETWEEN 5 AND 120);
+ALTER TABLE guild_configs ADD COLUMN honeypot_channel_id TEXT;
+
+CREATE TABLE guild_lockdowns (
+    guild_id TEXT PRIMARY KEY NOT NULL,
+    reason TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 64),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'lifting', 'retry')),
+    lift_at INTEGER NOT NULL CHECK (lift_at >= 0),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TABLE guild_lockdown_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    previous_send TEXT NOT NULL,
+    previous_slowmode INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
 "#,
     },
 ];

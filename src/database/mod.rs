@@ -11,6 +11,7 @@ mod bad_words;
 mod cache;
 mod client;
 mod exemptions;
+mod lockdown;
 mod migrations;
 mod models;
 mod modules;

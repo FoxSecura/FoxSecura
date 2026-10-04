@@ -11,6 +11,7 @@ mod anti_spam;
 mod content_filter;
 mod delete;
 mod incident_log;
+pub mod lockdown;
 pub mod member;
 pub mod message;
 pub mod quarantine;

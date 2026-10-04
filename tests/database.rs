@@ -12,11 +12,15 @@ use foxsecura::database::{
 };
 use foxsecura::i18n::Language;
 use foxsecura::logs::LogType;
+use foxsecura::protection::anti_raid::join_burst::{JoinBurstLimits, JoinBurstLimitsError};
 use foxsecura::protection::anti_spam::message_flood::{
     MessageFloodConfig, MessageFloodConfigError,
 };
 use foxsecura::protection::automod::bad_words::{
     BadWordsLanguage, CustomWordsError, MAX_CUSTOM_WORDS,
+};
+use foxsecura::protection::lockdown::{
+    LockdownReason, LockdownRequest, LockdownState, LockdownStatus, RecordedChannel,
 };
 use foxsecura::protection::quarantine::{PermissionState, RecordedOverwrite};
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule};
@@ -275,8 +279,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_seven() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 7);
+fn latest_schema_version_is_eight() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 8);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -2085,7 +2089,7 @@ VALUES ('123', 'anti_new_account', 1);
     }
 
     let database = Database::open(&path).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 7);
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
 
     let config = database.find_guild_config(123).unwrap().unwrap();
     assert_eq!(config.language, Language::English);
@@ -2110,10 +2114,465 @@ VALUES ('123', 'anti_new_account', 1);
     database.set_quarantine_role(123, 500).unwrap();
     drop(database);
     let reopened = Database::open(&path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 7);
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
     assert_eq!(reopened.quarantine_role_id(123).unwrap(), Some(500));
     drop(reopened);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn migrates_version_seven_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v7");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        // Schéma v7 figé, tel que publié avant le verrouillage et l'anti-raid.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                r#"
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_configs (
+    guild_id TEXT PRIMARY KEY NOT NULL,
+    language TEXT NOT NULL DEFAULT 'fr' CHECK (language IN ('en', 'fr', 'de')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE TABLE guild_log_channels (
+    guild_id TEXT NOT NULL,
+    log_type TEXT NOT NULL CHECK (
+        log_type IN ('message', 'server', 'member', 'channel', 'role', 'moderation')
+    ),
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, log_type),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_enabled INTEGER NOT NULL DEFAULT 0
+    CHECK (anti_spam_enabled IN (0, 1));
+ALTER TABLE guild_configs ADD COLUMN anti_spam_message_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_message_threshold BETWEEN 2 AND 50);
+ALTER TABLE guild_configs ADD COLUMN anti_spam_window_seconds INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_spam_window_seconds BETWEEN 1 AND 60);
+CREATE TABLE guild_whitelist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_whitelist_roles (
+    guild_id TEXT NOT NULL,
+    role_id TEXT NOT NULL CHECK (role_id <> guild_id),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, role_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_ignored_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+CREATE TABLE guild_protection_modules (
+    guild_id TEXT NOT NULL,
+    module_key TEXT NOT NULL CHECK (length(module_key) BETWEEN 1 AND 64),
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, module_key),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN bad_words_language TEXT NOT NULL DEFAULT 'all'
+    CHECK (bad_words_language IN ('french', 'english', 'all'));
+CREATE TABLE guild_bad_words (
+    guild_id TEXT NOT NULL,
+    word TEXT NOT NULL CHECK (length(word) BETWEEN 1 AND 100),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, word),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+ALTER TABLE guild_configs ADD COLUMN new_account_min_age_days INTEGER NOT NULL DEFAULT 7
+    CHECK (new_account_min_age_days BETWEEN 1 AND 365);
+
+CREATE TABLE guild_blacklist_users (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TRIGGER guild_blacklist_users_exclusive
+BEFORE INSERT ON guild_blacklist_users
+WHEN EXISTS (
+    SELECT 1 FROM guild_whitelist_users
+    WHERE guild_id = NEW.guild_id AND user_id = NEW.user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'user is on the whitelist');
+END;
+
+CREATE TRIGGER guild_whitelist_users_exclusive
+BEFORE INSERT ON guild_whitelist_users
+WHEN EXISTS (
+    SELECT 1 FROM guild_blacklist_users
+    WHERE guild_id = NEW.guild_id AND user_id = NEW.user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'user is on the blacklist');
+END;
+ALTER TABLE guild_configs ADD COLUMN quarantine_role_id TEXT
+    CHECK (quarantine_role_id IS NULL OR quarantine_role_id <> guild_id);
+
+CREATE TABLE guild_quarantine_overwrites (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    previous_view TEXT NOT NULL CHECK (previous_view IN ('allow', 'deny', 'unset')),
+    previous_connect TEXT NOT NULL CHECK (previous_connect IN ('allow', 'deny', 'unset')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TABLE guild_quarantine_pending_releases (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, user_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE INDEX guild_quarantine_pending_releases_by_age
+    ON guild_quarantine_pending_releases (updated_at);
+INSERT INTO schema_migrations (version, name) VALUES (1, 'initial');
+INSERT INTO schema_migrations (version, name) VALUES (2, 'anti_spam_settings');
+INSERT INTO schema_migrations (version, name) VALUES (3, 'whitelist_and_ignored_channels');
+INSERT INTO schema_migrations (version, name) VALUES (4, 'protection_modules');
+INSERT INTO schema_migrations (version, name) VALUES (5, 'bad_words');
+INSERT INTO schema_migrations (version, name) VALUES (6, 'member_protection');
+INSERT INTO schema_migrations (version, name) VALUES (7, 'quarantine');
+INSERT INTO guild_configs (
+    guild_id, language, created_at, updated_at,
+    anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
+    bad_words_language, new_account_min_age_days, quarantine_role_id
+)
+VALUES ('123', 'de', 1000, 2000, 1, 9, 20, 'english', 30, '500');
+INSERT INTO guild_quarantine_overwrites
+    (guild_id, user_id, channel_id, previous_view, previous_connect)
+VALUES ('123', '10', '100', 'allow', 'unset');
+INSERT INTO guild_quarantine_pending_releases (guild_id, user_id) VALUES ('123', '10');
+INSERT INTO guild_protection_modules (guild_id, module_key, enabled)
+VALUES ('123', 'anti_impersonation', 1);
+"#,
+            )
+            .unwrap();
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 8);
+
+    let config = database.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(config.language, Language::German);
+    assert_eq!((config.created_at, config.updated_at), (1000, 2000));
+    assert_eq!(config.quarantine_role_id, Some(500));
+    assert_eq!(config.new_account_min_age_days, 30);
+    // Réglages de la migration 8 : valeurs par défaut de la V1.
+    assert_eq!(config.anti_raid, JoinBurstLimits::default());
+    assert_eq!(
+        (config.anti_raid.threshold, config.anti_raid.window_seconds),
+        (5, 20)
+    );
+    assert_eq!(config.honeypot_channel_id, None);
+    assert!(
+        database
+            .enabled_modules(123)
+            .unwrap()
+            .contains(ProtectionModule::AntiImpersonation)
+    );
+    // Les données de quarantaine sont conservées.
+    assert_eq!(
+        database.quarantine_overwrites(123, 10).unwrap(),
+        vec![(
+            100,
+            recorded(PermissionState::Allow, PermissionState::Unset)
+        )]
+    );
+    assert_eq!(database.pending_releases(10).unwrap(), vec![(123, 10)]);
+    // Aucun verrouillage après la migration.
+    assert_eq!(database.lockdown_state(123).unwrap(), None);
+    assert!(database.lockdown_states().unwrap().is_empty());
+
+    database.set_anti_raid_limits(123, 8, 30).unwrap();
+    database.set_honeypot_channel(123, Some(900)).unwrap();
+    drop(database);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), 8);
+    let config = reopened.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(
+        (config.anti_raid.threshold, config.anti_raid.window_seconds),
+        (8, 30)
+    );
+    assert_eq!(config.honeypot_channel_id, Some(900));
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+// --- Verrouillage et anti-raid (migration 8) ---
+
+fn lockdown_request(lift_at: u64) -> LockdownRequest {
+    LockdownRequest {
+        reason: LockdownReason::AntiRaid,
+        lift_at,
+    }
+}
+
+fn channel_state(send: PermissionState, slowmode: Option<u16>) -> RecordedChannel {
+    RecordedChannel {
+        send_messages: send,
+        slowmode,
+    }
+}
+
+#[test]
+fn a_guild_has_at_most_one_lockdown_whatever_its_status() {
+    let database = Database::open_in_memory().unwrap();
+    assert!(database.begin_lockdown(1, lockdown_request(1_000)).unwrap());
+    assert_eq!(
+        database.lockdown_state(1).unwrap(),
+        Some(LockdownState {
+            guild_id: 1,
+            reason: Some(LockdownReason::AntiRaid),
+            status: LockdownStatus::Active,
+            lift_at: 1_000,
+        })
+    );
+
+    for status in [
+        LockdownStatus::Active,
+        LockdownStatus::Lifting,
+        LockdownStatus::Retry,
+    ] {
+        database.set_lockdown_status(1, status, None).unwrap();
+        assert!(
+            !database.begin_lockdown(1, lockdown_request(9_999)).unwrap(),
+            "{status:?}"
+        );
+        let state = database.lockdown_state(1).unwrap().unwrap();
+        assert_eq!((state.status, state.lift_at), (status, 1_000));
+    }
+
+    database
+        .set_lockdown_status(1, LockdownStatus::Retry, Some(1_060))
+        .unwrap();
+    assert_eq!(database.lockdown_state(1).unwrap().unwrap().lift_at, 1_060);
+
+    // Autre guilde : indépendante.
+    assert!(database.begin_lockdown(2, lockdown_request(500)).unwrap());
+    let states = database.lockdown_states().unwrap();
+    assert_eq!(
+        states
+            .iter()
+            .map(|state| state.guild_id)
+            .collect::<Vec<_>>(),
+        vec![2, 1]
+    );
+    // Sans ligne : aucune écriture.
+    database
+        .set_lockdown_status(3, LockdownStatus::Retry, Some(1))
+        .unwrap();
+    assert_eq!(database.lockdown_state(3).unwrap(), None);
+}
+
+#[test]
+fn lockdown_channels_keep_the_first_origin_and_block_the_end() {
+    let database = Database::open_in_memory().unwrap();
+    database.begin_lockdown(1, lockdown_request(1_000)).unwrap();
+    let original = channel_state(PermissionState::Allow, Some(5));
+    assert!(database.record_lockdown_channel(1, 20, original).unwrap());
+    // Un second enregistrement ne remplace jamais l'état d'origine.
+    assert!(
+        !database
+            .record_lockdown_channel(1, 20, channel_state(PermissionState::Deny, None))
+            .unwrap()
+    );
+    database
+        .record_lockdown_channel(1, 10, channel_state(PermissionState::Unset, None))
+        .unwrap();
+    database
+        .record_lockdown_channel(2, 10, channel_state(PermissionState::Deny, None))
+        .unwrap();
+
+    assert_eq!(
+        database.lockdown_channels(1).unwrap(),
+        vec![
+            (10, channel_state(PermissionState::Unset, None)),
+            (20, original),
+        ]
+    );
+
+    // Des salons restent : la ligne de guilde n'est pas supprimée.
+    assert!(!database.end_lockdown(1).unwrap());
+    assert!(database.lockdown_state(1).unwrap().is_some());
+
+    assert!(database.forget_lockdown_channel(1, 10).unwrap());
+    assert!(database.forget_lockdown_channel(1, 20).unwrap());
+    assert!(!database.forget_lockdown_channel(1, 20).unwrap());
+    assert!(database.end_lockdown(1).unwrap());
+    assert_eq!(database.lockdown_state(1).unwrap(), None);
+    assert!(!database.end_lockdown(1).unwrap());
+    // L'autre guilde garde sa ligne.
+    assert_eq!(database.lockdown_channels(2).unwrap().len(), 1);
+}
+
+#[test]
+fn unreadable_lockdown_states_are_read_back_as_unset() {
+    let path = temporary_directory("lockdown-unreadable").join("foxsecura.sqlite3");
+    let database = Database::open(&path).unwrap();
+    database.begin_lockdown(1, lockdown_request(1_000)).unwrap();
+    drop(database);
+
+    // Écriture hors de FoxSecura : état inconnu et mode lent impossible.
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(
+            r#"
+INSERT INTO guild_lockdown_channels (guild_id, channel_id, previous_send, previous_slowmode)
+VALUES ('1', '10', 'granted', -4), ('1', '11', 'allow', 30);
+"#,
+        )
+        .unwrap();
+    drop(connection);
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(
+        database.lockdown_channels(1).unwrap(),
+        vec![
+            (10, channel_state(PermissionState::Unset, None)),
+            (11, channel_state(PermissionState::Allow, Some(30))),
+        ]
+    );
+    drop(database);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn schema_rejects_invalid_lockdown_rows() {
+    let path = temporary_directory("lockdown-schema").join("foxsecura.sqlite3");
+    let database = Database::open(&path).unwrap();
+    database.guild_config(1).unwrap();
+    drop(database);
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    for sql in [
+        "INSERT INTO guild_lockdowns (guild_id, reason, status, lift_at) VALUES ('1', 'anti_raid', 'paused', 1)",
+        "INSERT INTO guild_lockdowns (guild_id, reason, status, lift_at) VALUES ('1', '', 'active', 1)",
+        "INSERT INTO guild_lockdowns (guild_id, reason, status, lift_at) VALUES ('1', 'anti_raid', 'active', -1)",
+        "UPDATE guild_configs SET anti_raid_join_threshold = 1 WHERE guild_id = '1'",
+        "UPDATE guild_configs SET anti_raid_join_threshold = 51 WHERE guild_id = '1'",
+        "UPDATE guild_configs SET anti_raid_window_seconds = 4 WHERE guild_id = '1'",
+        "UPDATE guild_configs SET anti_raid_window_seconds = 121 WHERE guild_id = '1'",
+    ] {
+        assert!(connection.execute(sql, []).is_err(), "{sql}");
+    }
+    drop(connection);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn lockdown_rows_cascade_when_guild_config_is_deleted() {
+    let path = temporary_directory("lockdown-cascade").join("foxsecura.sqlite3");
+    let database = Database::open(&path).unwrap();
+    database.begin_lockdown(1, lockdown_request(1_000)).unwrap();
+    database
+        .record_lockdown_channel(1, 10, channel_state(PermissionState::Unset, None))
+        .unwrap();
+    drop(database);
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON; DELETE FROM guild_configs WHERE guild_id = '1';")
+        .unwrap();
+    drop(connection);
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.lockdown_state(1).unwrap(), None);
+    assert!(database.lockdown_channels(1).unwrap().is_empty());
+    drop(database);
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn anti_raid_limits_are_bounded_and_honeypot_channel_can_be_cleared() {
+    let database = Database::open_in_memory().unwrap();
+    assert_eq!(
+        database.guild_config(1).unwrap().anti_raid,
+        JoinBurstLimits::default()
+    );
+
+    for (threshold, window) in [(2, 5), (50, 120), (7, 45)] {
+        let config = database.set_anti_raid_limits(1, threshold, window).unwrap();
+        assert_eq!(
+            (config.anti_raid.threshold, config.anti_raid.window_seconds),
+            (threshold, window)
+        );
+    }
+    for (threshold, window, expected) in [
+        (1, 20, JoinBurstLimitsError::ThresholdOutOfRange(1)),
+        (51, 20, JoinBurstLimitsError::ThresholdOutOfRange(51)),
+        (5, 4, JoinBurstLimitsError::WindowOutOfRange(4)),
+        (5, 121, JoinBurstLimitsError::WindowOutOfRange(121)),
+    ] {
+        assert!(matches!(
+            database.set_anti_raid_limits(1, threshold, window),
+            Err(DatabaseError::InvalidAntiRaidLimits(error)) if error == expected
+        ));
+    }
+    // Rien n'a été modifié par les refus.
+    let config = database.find_guild_config(1).unwrap().unwrap();
+    assert_eq!(
+        (config.anti_raid.threshold, config.anti_raid.window_seconds),
+        (7, 45)
+    );
+
+    // Un salon peut porter l'identifiant de la guilde (ancien #general).
+    assert_eq!(
+        database
+            .set_honeypot_channel(1, Some(1))
+            .unwrap()
+            .honeypot_channel_id,
+        Some(1)
+    );
+    assert_eq!(
+        database
+            .set_honeypot_channel(1, None)
+            .unwrap()
+            .honeypot_channel_id,
+        None
+    );
+}
+
+#[test]
+fn anti_raid_and_honeypot_writes_invalidate_the_guild_cache() {
+    let database = Database::open_in_memory().unwrap();
+    database.guild_config(1).unwrap();
+    database.member_guard_context(1, 2).unwrap();
+    database.set_anti_raid_limits(1, 9, 60).unwrap();
+    let context = database.member_guard_context(1, 2).unwrap();
+    assert_eq!(context.guild_config.unwrap().anti_raid.threshold, 9);
+
+    database.message_guard_context(1, 3, 2).unwrap();
+    database.set_honeypot_channel(1, Some(3)).unwrap();
+    let context = database.message_guard_context(1, 3, 2).unwrap();
+    assert_eq!(context.guild_config.unwrap().honeypot_channel_id, Some(3));
 }
 
 #[test]
