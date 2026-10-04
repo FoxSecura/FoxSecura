@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_raid::join_burst::JoinBurstLimits;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 use crate::protection::automod::bad_words::BadWordsLanguage;
 use crate::protection::shared::ModuleSet;
@@ -23,6 +24,10 @@ pub struct GuildConfig {
     pub new_account_min_age_days: u16,
     /// Rôle de quarantaine (migration 7) ; `None` : non configuré.
     pub quarantine_role_id: Option<u64>,
+    /// Seuil et fenêtre de l'anti-raid (migration 8).
+    pub anti_raid: JoinBurstLimits,
+    /// Salon piège du honeypot (migration 8) ; `None` : non configuré.
+    pub honeypot_channel_id: Option<u64>,
     pub created_at: i64,
     pub updated_at: i64,
 }

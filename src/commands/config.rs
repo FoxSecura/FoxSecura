@@ -3,6 +3,7 @@
 
 mod access;
 mod access_control;
+mod alt_accounts;
 mod anti_raid;
 mod anti_spam;
 mod bad_words;
@@ -11,20 +12,24 @@ mod content_filters;
 use poise::serenity_prelude as serenity;
 
 use super::Context;
+use crate::app::pipeline::lockdown::{self, LockdownRuntime};
+use crate::app::pipeline::member::prewarm_members;
 use crate::app::pipeline::quarantine::{self, QuarantineRoleError, ReleaseTrigger};
 use crate::app::{AppData, Error, run_database};
 use access::{Access, Right};
 use access_control::{BlacklistEdit, BlacklistRefusal, ListTarget};
-use anti_raid::QuarantineAction;
+use anti_raid::{AntiRaidState, QuarantineAction};
 use bad_words::BadWordsAction;
 use content_filters::ModuleToggle;
 use foxsecura::database::{BadWordsSettings, DatabaseError, GuildExemptions};
 use foxsecura::i18n::{Language, TextKey, text};
 use foxsecura::protection::anti_raid::anti_new_account::DEFAULT_MIN_ACCOUNT_AGE_DAYS;
+use foxsecura::protection::anti_raid::join_burst::JoinBurstLimits;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
 use foxsecura::protection::automod::bad_words::parse_custom_words;
+use foxsecura::protection::lockdown::LiftTrigger;
 use foxsecura::protection::quarantine::QuarantineRoleRefusal;
-use foxsecura::protection::shared::ModuleSet;
+use foxsecura::protection::shared::{ModuleSet, ProtectionModule};
 
 const CATEGORY_SELECT_ID: &str = "foxsecura:config:category";
 
@@ -109,10 +114,12 @@ enum CategoryView {
         access: Access,
     },
     AntiRaid {
-        modules: ModuleSet,
-        min_age_days: u16,
-        quarantine_role_id: Option<u64>,
+        state: AntiRaidState,
         access: Access,
+    },
+    AltAccounts {
+        modules: ModuleSet,
+        honeypot_channel_id: Option<u64>,
     },
 }
 
@@ -147,8 +154,9 @@ pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
 /// ne lui appartient pas.
 ///
 /// Le droit exigé par le composant est revérifié à chaque interaction : les
-/// listes blanche et noire et la quarantaine exigent le propriétaire ou
-/// `ADMINISTRATOR`, le reste l'accès normal à `/config`.
+/// listes blanche et noire, la quarantaine et la levée du verrouillage
+/// exigent le propriétaire ou `ADMINISTRATOR`, le reste l'accès normal à
+/// `/config`.
 pub async fn handle_component(
     ctx: &serenity::Context,
     data: &AppData,
@@ -165,6 +173,7 @@ pub async fn handle_component(
         (None, Some(_)) => Right::Config,
         (None, None) if blacklist_edit.is_some() => Right::Blacklist,
         (None, None) if quarantine_action.is_some() => Right::Whitelist,
+        (None, None) if custom_id == anti_raid::LOCKDOWN_LIFT_ID => anti_raid::LOCKDOWN_LIFT_RIGHT,
         (None, None) if bad_words_action.is_some() => Right::Config,
         (None, None)
             if [
@@ -173,6 +182,8 @@ pub async fn handle_component(
                 anti_spam::DISABLE_ID,
                 anti_spam::LIMITS_ID,
                 anti_raid::MIN_AGE_ID,
+                anti_raid::LIMITS_ID,
+                alt_accounts::HONEYPOT_CHANNEL_SELECT_ID,
             ]
             .contains(&custom_id) =>
         {
@@ -189,7 +200,14 @@ pub async fn handle_component(
         component.user.id,
     );
     let Some(guild_id) = component.guild_id.filter(|_| access.allows(required)) else {
-        let denied = denied_key(required, access, quarantine_action.is_some());
+        let specific = if quarantine_action.is_some() {
+            Some(TextKey::ConfigQuarantineAccessDenied)
+        } else if custom_id == anti_raid::LOCKDOWN_LIFT_ID {
+            Some(TextKey::ConfigLockdownAccessDenied)
+        } else {
+            None
+        };
+        let denied = denied_key(required, access, specific);
         respond_ephemeral_component(ctx, component, text(language, denied)).await?;
         return Ok(true);
     };
@@ -197,6 +215,50 @@ pub async fn handle_component(
 
     if let Some(action) = quarantine_action {
         handle_quarantine(ctx, data, component, language, guild_id, access, action).await?;
+        return Ok(true);
+    }
+
+    if custom_id == anti_raid::LOCKDOWN_LIFT_ID {
+        lift_lockdown(ctx, data, component, language, guild_id).await?;
+        return Ok(true);
+    }
+
+    if custom_id == alt_accounts::HONEYPOT_CHANNEL_SELECT_ID {
+        save_honeypot_channel(ctx, data, component, language, guild_id, access).await?;
+        return Ok(true);
+    }
+
+    if custom_id == anti_raid::LIMITS_ID {
+        match load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await {
+            Ok(Some(CategoryView::AntiRaid { state, .. })) => {
+                component
+                    .create_response(
+                        &ctx.http,
+                        serenity::CreateInteractionResponse::Modal(anti_raid::limits_modal(
+                            language,
+                            state.limits,
+                        )),
+                    )
+                    .await?;
+            }
+            Ok(_) => {
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+            Err(error) => {
+                eprintln!("[config] lecture de l'anti-raid impossible ({guild_id}) : {error}");
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+        }
         return Ok(true);
     }
 
@@ -290,13 +352,13 @@ pub async fn handle_component(
 
     if custom_id == anti_raid::MIN_AGE_ID {
         match load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await {
-            Ok(Some(CategoryView::AntiRaid { min_age_days, .. })) => {
+            Ok(Some(CategoryView::AntiRaid { state, .. })) => {
                 component
                     .create_response(
                         &ctx.http,
                         serenity::CreateInteractionResponse::Modal(anti_raid::min_age_modal(
                             language,
-                            min_age_days,
+                            state.min_age_days,
                         )),
                     )
                     .await?;
@@ -448,6 +510,11 @@ async fn save_module_toggle(
     match view {
         Ok(view) => {
             update_dashboard(ctx, component, language, category_id, view.as_ref()).await?;
+            // Doubles comptes activés : le cache des membres est préchauffé
+            // sans attendre le prochain démarrage.
+            if toggle.module == ProtectionModule::AntiDoubleAccount && toggle.enabled {
+                prewarm_members(ctx, data.protection.member_prewarm(), guild_id);
+            }
         }
         Err(error) => {
             eprintln!(
@@ -543,8 +610,8 @@ async fn handle_bad_words(
 }
 
 /// Traite la soumission des modals du tableau de bord (seuils Anti-Spam,
-/// mots interdits personnalisés, âge minimal des comptes, liste noire,
-/// libération d'un membre).
+/// mots interdits personnalisés, âge minimal des comptes, seuil de
+/// l'anti-raid, liste noire, libération d'un membre).
 ///
 /// Le droit est revérifié à la soumission : la liste noire et la libération
 /// exigent le propriétaire ou `ADMINISTRATOR`.
@@ -564,6 +631,7 @@ pub async fn handle_modal(
         anti_spam::LIMITS_MODAL_ID,
         bad_words::MODAL_ID,
         anti_raid::MIN_AGE_MODAL_ID,
+        anti_raid::LIMITS_MODAL_ID,
     ]
     .contains(&custom_id)
     {
@@ -576,7 +644,11 @@ pub async fn handle_modal(
     let access =
         access::interaction_access(ctx, modal.guild_id, modal.member.as_ref(), modal.user.id);
     let Some(guild_id) = modal.guild_id.filter(|_| access.allows(required)) else {
-        let denied = denied_key(required, access, release);
+        let denied = denied_key(
+            required,
+            access,
+            release.then_some(TextKey::ConfigQuarantineAccessDenied),
+        );
         respond_ephemeral_modal(ctx, modal, text(language, denied)).await?;
         return Ok(true);
     };
@@ -593,6 +665,9 @@ pub async fn handle_modal(
     }
     if custom_id == anti_raid::MIN_AGE_MODAL_ID {
         return save_min_age(ctx, data, modal, language, guild_id, access).await;
+    }
+    if custom_id == anti_raid::LIMITS_MODAL_ID {
+        return save_anti_raid_limits(ctx, data, modal, language, guild_id, access).await;
     }
 
     let Some((threshold, window_seconds)) = anti_spam::submitted_limits(&modal.data.components)
@@ -770,6 +845,147 @@ async fn save_min_age(
     }
 
     Ok(true)
+}
+
+/// Valide (2 à 50 arrivées, 5 à 120 s) et enregistre le seuil de
+/// l'anti-raid, puis réaffiche la catégorie Anti-Raid. Une valeur refusée ne
+/// modifie rien.
+async fn save_anti_raid_limits(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+) -> Result<bool, Error> {
+    let Some(limits) = anti_raid::submitted_limits(&modal.data.components) else {
+        respond_ephemeral_modal(
+            ctx,
+            modal,
+            text(language, TextKey::ConfigAntiRaidInvalidLimits),
+        )
+        .await?;
+        return Ok(true);
+    };
+
+    let saved = run_database(&data.database, move |database| {
+        database.set_anti_raid_limits(guild_id, limits.threshold, limits.window_seconds)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            update_dashboard_from_modal(
+                ctx,
+                modal,
+                language,
+                anti_raid::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!("[config] enregistrement de l'anti-raid impossible ({guild_id}) : {error}");
+            respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+    Ok(true)
+}
+
+/// Salon piège choisi (en bascule), puis réaffichage de sa catégorie.
+async fn save_honeypot_channel(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+) -> Result<(), Error> {
+    let Some(selected) = alt_accounts::selected_channel(&component.data.kind) else {
+        component
+            .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+            .await?;
+        return Ok(());
+    };
+
+    let saved = run_database(&data.database, move |database| {
+        let current = database
+            .find_guild_config(guild_id)?
+            .and_then(|config| config.honeypot_channel_id);
+        database.set_honeypot_channel(guild_id, alt_accounts::toggled_honeypot(current, selected))
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, alt_accounts::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            update_dashboard(
+                ctx,
+                component,
+                language,
+                alt_accounts::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!("[config] enregistrement du salon piège impossible ({guild_id}) : {error}");
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Levée manuelle du verrouillage (propriétaire ou `ADMINISTRATOR`), avec la
+/// même restauration que la levée à l'échéance. Réponse différée : un appel
+/// par salon enregistré. Si des salons restent verrouillés, la minuterie
+/// réessaie toutes les minutes.
+async fn lift_lockdown(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+) -> Result<(), Error> {
+    component
+        .create_response(
+            &ctx.http,
+            serenity::CreateInteractionResponse::Defer(
+                serenity::CreateInteractionResponseMessage::new().ephemeral(true),
+            ),
+        )
+        .await?;
+
+    let runtime = LockdownRuntime::from_data(data);
+    let lifted = lockdown::lift(ctx, &runtime, guild_id, LiftTrigger::Staff).await;
+    let content = match lifted {
+        Ok(Some(outcome)) => {
+            if outcome.pending {
+                lockdown::arm(ctx, &runtime, guild_id);
+            }
+            anti_raid::lift_summary(language, &outcome)
+        }
+        Ok(None) => text(language, TextKey::ConfigLockdownLiftNothing).to_owned(),
+        Err(error) => {
+            eprintln!("[config] levée du verrouillage impossible ({guild_id}) : {error}");
+            text(language, TextKey::ConfigSaveFailed).to_owned()
+        }
+    };
+    component
+        .edit_response(
+            &ctx.http,
+            serenity::EditInteractionResponse::new().content(content),
+        )
+        .await?;
+    Ok(())
 }
 
 /// Quarantaine : création ou sélection du rôle, ouverture du modal de
@@ -990,10 +1206,17 @@ async fn followup_ephemeral(
     Ok(())
 }
 
-/// Message de refus selon le droit manquant.
-fn denied_key(required: Right, access: Access, quarantine: bool) -> TextKey {
+/// Message de refus selon le droit manquant ; `specific` précise le refus
+/// d'une action réservée au propriétaire et aux administrateurs.
+fn denied_key(required: Right, access: Access, specific: Option<TextKey>) -> TextKey {
+    match (required, specific) {
+        (Right::Whitelist, Some(key)) if access.config => key,
+        _ => denied_key_default(required, access),
+    }
+}
+
+fn denied_key_default(required: Right, access: Access) -> TextKey {
     match required {
-        Right::Whitelist if access.config && quarantine => TextKey::ConfigQuarantineAccessDenied,
         Right::Whitelist if access.config => TextKey::ConfigWhitelistAccessDenied,
         Right::Blacklist if access.config => TextKey::ConfigBlacklistAccessDenied,
         _ => TextKey::ConfigAccessDenied,
@@ -1122,6 +1345,35 @@ async fn load_view(
             })
         }
         anti_raid::CATEGORY_ID => {
+            let (config, modules, lockdown) = run_database(&data.database, move |database| {
+                Ok((
+                    database.find_guild_config(guild_id)?,
+                    database.enabled_modules(guild_id)?,
+                    database.lockdown_state(guild_id)?,
+                ))
+            })
+            .await?;
+            Some(CategoryView::AntiRaid {
+                state: AntiRaidState {
+                    modules,
+                    min_age_days: config
+                        .as_ref()
+                        .map_or(DEFAULT_MIN_ACCOUNT_AGE_DAYS, |guild_config| {
+                            guild_config.new_account_min_age_days
+                        }),
+                    limits: config
+                        .as_ref()
+                        .map_or_else(JoinBurstLimits::default, |guild_config| {
+                            guild_config.anti_raid
+                        }),
+                    lockdown,
+                    quarantine_role_id: config
+                        .and_then(|guild_config| guild_config.quarantine_role_id),
+                },
+                access,
+            })
+        }
+        alt_accounts::CATEGORY_ID => {
             let (config, modules) = run_database(&data.database, move |database| {
                 Ok((
                     database.find_guild_config(guild_id)?,
@@ -1129,15 +1381,10 @@ async fn load_view(
                 ))
             })
             .await?;
-            Some(CategoryView::AntiRaid {
+            Some(CategoryView::AltAccounts {
                 modules,
-                min_age_days: config
-                    .as_ref()
-                    .map_or(DEFAULT_MIN_ACCOUNT_AGE_DAYS, |guild_config| {
-                        guild_config.new_account_min_age_days
-                    }),
-                quarantine_role_id: config.and_then(|guild_config| guild_config.quarantine_role_id),
-                access,
+                honeypot_channel_id: config
+                    .and_then(|guild_config| guild_config.honeypot_channel_id),
             })
         }
         _ => None,
@@ -1260,19 +1507,19 @@ fn build_embed(
                 ) => embed.fields(access_control::state_fields(
                     language, exemptions, blacklist, *access,
                 )),
+                (anti_raid::CATEGORY_ID, Some(CategoryView::AntiRaid { state, .. })) => {
+                    embed.fields(anti_raid::state_fields(language, state))
+                }
                 (
-                    anti_raid::CATEGORY_ID,
-                    Some(CategoryView::AntiRaid {
+                    alt_accounts::CATEGORY_ID,
+                    Some(CategoryView::AltAccounts {
                         modules,
-                        min_age_days,
-                        quarantine_role_id,
-                        ..
+                        honeypot_channel_id,
                     }),
-                ) => embed.fields(anti_raid::state_fields(
+                ) => embed.fields(alt_accounts::state_fields(
                     language,
                     *modules,
-                    *min_age_days,
-                    *quarantine_role_id,
+                    *honeypot_channel_id,
                 )),
                 _ => embed.field(
                     text(language, TextKey::ConfigFieldState),
@@ -1324,13 +1571,11 @@ fn build_components(
         (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
             rows.extend(access_control::selects(language, *access));
         }
-        (
-            Some(anti_raid::CATEGORY_ID),
-            Some(CategoryView::AntiRaid {
-                modules, access, ..
-            }),
-        ) => {
-            rows.extend(anti_raid::buttons(language, *modules, *access));
+        (Some(anti_raid::CATEGORY_ID), Some(CategoryView::AntiRaid { state, access })) => {
+            rows.extend(anti_raid::buttons(language, state.modules, *access));
+        }
+        (Some(alt_accounts::CATEGORY_ID), Some(CategoryView::AltAccounts { modules, .. })) => {
+            rows.extend(alt_accounts::components(language, *modules));
         }
         _ => {}
     }

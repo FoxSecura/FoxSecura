@@ -6,10 +6,11 @@
 //!
 //! Arrivée : une seule lecture de contexte (cache de la guilde), puis la
 //! chaîne de la V1 (`foxsecura::protection::member_join`) : liste noire →
-//! anti-bot → nouveaux comptes → usurpation d'identité → pseudos hoistés. Un
-//! résultat terminal (membre banni, expulsé ou mis en quarantaine, liste
-//! noire) arrête la chaîne. Un ban de nouveau compte non appliqué déclenche
-//! la quarantaine de repli.
+//! anti-raid → anti-bot → nouveaux comptes → doubles comptes → usurpation
+//! d'identité → pseudos hoistés. Un résultat terminal (membre banni, expulsé ou mis en
+//! quarantaine, liste noire) arrête la chaîne. Un ban de nouveau compte non
+//! appliqué déclenche la quarantaine de repli. Une rafale d'arrivées
+//! verrouille le serveur et met en quarantaine le membre qui arrive.
 //!
 //! Mise à jour : seul l'anti-pseudo hoisté s'exécute, si le nom affiché a
 //! changé et qu'il est hoisté ; le contexte n'est lu qu'à ce moment-là. Un
@@ -19,19 +20,30 @@
 //! Les erreurs sont journalisées et jamais propagées ; l'arrivée du bot
 //! lui-même est ignorée.
 
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::MemberGuardContext;
 use foxsecura::i18n::{DEFAULT_LANGUAGE, Language};
+use foxsecura::protection::anti_raid::anti_double_account::AccountIdentity;
 use foxsecura::protection::anti_raid::anti_new_account::{
     AntiNewAccountInput, DEFAULT_MIN_ACCOUNT_AGE_DAYS,
 };
+use foxsecura::protection::anti_raid::join_burst::{JoinBurstLimits, JoinEvent};
+use foxsecura::protection::lockdown::LockdownReason;
 use foxsecura::protection::member_join::anti_bot::{
     ANTI_BOT_SANCTION, AntiBotPlan, anti_bot_audit_reason, anti_bot_response,
     authorized_bot_response, plan_anti_bot,
 };
+use foxsecura::protection::member_join::anti_raid::{
+    ANTI_RAID_QUARANTINE, anti_raid_audit_reason, anti_raid_response,
+};
 use foxsecura::protection::member_join::blacklist::{
     BLACKLIST_BAN, blacklist_audit_reason, blacklist_response,
+};
+use foxsecura::protection::member_join::double_account::{
+    DOUBLE_ACCOUNT_QUARANTINE, double_account_audit_reason, double_account_response, identity_name,
+    needs_member_prewarm, plan_double_account,
 };
 use foxsecura::protection::member_join::hoisting::{
     anti_hoisting_audit_reason, hoisting_response, plan_nickname_fix,
@@ -54,6 +66,7 @@ use foxsecura::protection::shared::{
 };
 use poise::serenity_prelude as serenity;
 
+use super::lockdown;
 use super::quarantine::{self, QuarantineTarget};
 use super::sanction::{self, NicknameRequest, SanctionRequest};
 use super::{bot_assigned_roles, incident_log, unix_duration};
@@ -68,6 +81,9 @@ struct MemberFacts<'a> {
     display_name: &'a str,
     /// Nom d'utilisateur, nom global et pseudo (usurpation d'identité).
     names: Vec<&'a str>,
+    /// Nom comparé et hash d'avatar (doubles comptes).
+    identity_name: &'a str,
+    avatar: Option<String>,
     joined_at: Duration,
 }
 
@@ -94,6 +110,8 @@ pub async fn handle_join(ctx: &serenity::Context, data: &AppData, member: &seren
         .into_iter()
         .flatten()
         .collect(),
+        identity_name: identity_name(&member.user.name, member.user.global_name.as_deref()),
+        avatar: member.user.avatar.map(|hash| hash.to_string()),
         joined_at: member.joined_at.and_then(unix_duration).unwrap_or_else(now),
     };
     let Some(context) = read_context(data, facts.target).await else {
@@ -104,8 +122,10 @@ pub async fn handle_join(ctx: &serenity::Context, data: &AppData, member: &seren
     while let Some(step) = chain.next_step() {
         let result = match step {
             JoinStep::Blacklist => blacklist(ctx, data, &context, &facts).await,
+            JoinStep::AntiRaid => anti_raid(ctx, data, &context, &facts).await,
             JoinStep::AntiBot => anti_bot(ctx, data, &context, &facts).await,
             JoinStep::AntiNewAccount => new_account(ctx, data, &context, &facts).await,
+            JoinStep::AntiDoubleAccount => double_account(ctx, data, &context, &facts).await,
             JoinStep::AntiImpersonation => impersonation(ctx, data, &context, &facts).await,
             JoinStep::AntiNicknameHoisting => hoisting(ctx, data, &context, &facts).await,
         };
@@ -157,8 +177,10 @@ pub async fn handle_update(
         is_guild_owner: is_guild_owner(ctx, event.guild_id, event.user.id),
         roles: event.roles.iter().map(|role| role.get()).collect(),
         display_name: current,
-        // Usurpation : analysée seulement à l'arrivée.
+        // Usurpation et doubles comptes : analysés seulement à l'arrivée.
         names: Vec::new(),
+        identity_name: current,
+        avatar: None,
         joined_at: unix_duration(event.joined_at).unwrap_or_else(now),
     };
     let Some(context) = read_context(data, facts.target).await else {
@@ -189,6 +211,59 @@ async fn blacklist(
         context,
         facts,
         blacklist_response(language(context), facts.target, &outcome),
+    )
+    .await
+}
+
+/// Anti-raid : une rafale d'arrivées verrouille le serveur et met en
+/// quarantaine le membre qui arrive, en parallèle.
+async fn anti_raid(
+    ctx: &serenity::Context,
+    data: &AppData,
+    context: &MemberGuardContext,
+    facts: &MemberFacts<'_>,
+) -> ModuleResult {
+    let limits = context
+        .guild_config
+        .as_ref()
+        .map_or_else(JoinBurstLimits::default, |config| config.anti_raid);
+    let burst = data.protection.join_bursts().detect(
+        limits.config(true),
+        JoinEvent::new(
+            facts.target.guild_id,
+            facts.target.user_id,
+            u64::try_from(facts.joined_at.as_millis()).unwrap_or(u64::MAX),
+        ),
+    );
+    if !burst.triggered() {
+        return ModuleResult::NOT_DETECTED;
+    }
+
+    let whitelist_exempt = whitelist_exempt(context, facts);
+    let target = quarantine_target(facts, whitelist_exempt);
+    let (lockdown, quarantine) = tokio::join!(
+        lockdown::apply(ctx, data, facts.target.guild_id, LockdownReason::AntiRaid),
+        quarantine::quarantine(
+            ctx,
+            data,
+            &target,
+            ANTI_RAID_QUARANTINE,
+            anti_raid_audit_reason(),
+        ),
+    );
+    publish(
+        ctx,
+        data,
+        context,
+        facts,
+        anti_raid_response(
+            language(context),
+            facts.target,
+            &burst,
+            limits,
+            &lockdown,
+            &quarantine,
+        ),
     )
     .await
 }
@@ -270,6 +345,84 @@ async fn new_account(
         }
     };
     publish(ctx, data, context, facts, response).await
+}
+
+/// Doubles comptes : quarantaine d'un membre qui a le nom affiché et
+/// l'avatar personnalisé d'un membre en cache.
+async fn double_account(
+    ctx: &serenity::Context,
+    data: &AppData,
+    context: &MemberGuardContext,
+    facts: &MemberFacts<'_>,
+) -> ModuleResult {
+    // Sans avatar personnalisé, aucune correspondance possible : le cache
+    // n'est même pas parcouru.
+    let Some(avatar) = facts.avatar.as_deref() else {
+        return ModuleResult::NOT_DETECTED;
+    };
+    let whitelist_exempt = whitelist_exempt(context, facts);
+    let cached = cached_identities(ctx, facts);
+    let identities: Vec<AccountIdentity<'_>> = cached
+        .iter()
+        .map(|(user_id, name, avatar)| {
+            AccountIdentity::new(*user_id, Some(name.as_str()), Some(avatar.as_str()))
+        })
+        .collect();
+    let Some(detection) = plan_double_account(
+        AccountIdentity::new(
+            facts.target.user_id,
+            Some(facts.identity_name),
+            Some(avatar),
+        ),
+        &identities,
+        facts.is_bot,
+        facts.is_guild_owner,
+        whitelist_exempt,
+    ) else {
+        return ModuleResult::NOT_DETECTED;
+    };
+
+    let outcome = quarantine::quarantine(
+        ctx,
+        data,
+        &quarantine_target(facts, whitelist_exempt),
+        DOUBLE_ACCOUNT_QUARANTINE,
+        double_account_audit_reason(),
+    )
+    .await;
+    publish(
+        ctx,
+        data,
+        context,
+        facts,
+        double_account_response(language(context), facts.target, &detection, &outcome),
+    )
+    .await
+}
+
+/// Identités des membres **en cache** qui ont un avatar personnalisé :
+/// `(identifiant, nom comparé, hash d'avatar)`. Jamais de lecture par
+/// l'API : pendant un raid, un fetch complet par arrivée serait limité.
+fn cached_identities(
+    ctx: &serenity::Context,
+    facts: &MemberFacts<'_>,
+) -> Vec<(u64, String, String)> {
+    let Some(guild) = ctx
+        .cache
+        .guild(serenity::GuildId::new(facts.target.guild_id))
+    else {
+        return Vec::new();
+    };
+    guild
+        .members
+        .values()
+        .filter(|member| member.user.id.get() != facts.target.user_id && !member.user.bot)
+        .filter_map(|member| {
+            let avatar = member.user.avatar?.to_string();
+            let name = identity_name(&member.user.name, member.user.global_name.as_deref());
+            Some((member.user.id.get(), name.to_owned(), avatar))
+        })
+        .collect()
 }
 
 /// Usurpation d'identité : quarantaine d'un membre qui arrive avec le nom du
@@ -466,6 +619,59 @@ async fn publish(
     )
     .await;
     response.result
+}
+
+/// Écart entre deux demandes de membres : la passerelle accepte 120 commandes
+/// par minute et par shard, le préchauffage n'en prend qu'une par seconde.
+const PREWARM_SPACING: Duration = Duration::from_secs(1);
+
+/// Guilde reçue (`GUILD_CREATE`, notamment au démarrage) : préchauffe le
+/// cache des membres si les doubles comptes sont actifs et que le cache est
+/// incomplet.
+///
+/// Les membres sont demandés par la passerelle (intent `GUILD_MEMBERS`),
+/// jamais par l'API REST, une guilde à la fois : au mieux, sans garantie de
+/// délai. Les membres reçus alimentent le cache de serenity.
+pub async fn handle_guild_create(ctx: &serenity::Context, data: &AppData, guild: &serenity::Guild) {
+    let guild_id = guild.id.get();
+    let (member_count, cached) = (guild.member_count, guild.members.len());
+    // Cache déjà complet (petite guilde) : aucune lecture en base.
+    if !needs_member_prewarm(true, member_count, cached) {
+        return;
+    }
+    let enabled = match run_database(&data.database, move |database| {
+        database.enabled_modules(guild_id)
+    })
+    .await
+    {
+        Ok(modules) => modules.contains(ProtectionModule::AntiDoubleAccount),
+        Err(error) => {
+            eprintln!("[member] modules de la guilde {guild_id} illisibles : {error}");
+            return;
+        }
+    };
+    if needs_member_prewarm(enabled, member_count, cached) {
+        prewarm_members(ctx, data.protection.member_prewarm(), guild_id);
+    }
+}
+
+/// Demande les membres d'une guilde, à son tour (une demande par seconde au
+/// plus, toutes guildes confondues).
+pub fn prewarm_members(ctx: &serenity::Context, gate: &Arc<tokio::sync::Mutex<()>>, guild_id: u64) {
+    let ctx = ctx.clone();
+    let gate = Arc::clone(gate);
+    tokio::spawn(async move {
+        let _turn = gate.lock().await;
+        ctx.shard.chunk_guild(
+            serenity::GuildId::new(guild_id),
+            None,
+            false,
+            serenity::ChunkGuildFilter::None,
+            None,
+        );
+        println!("[member] membres de la guilde {guild_id} demandés (doubles comptes)");
+        tokio::time::sleep(PREWARM_SPACING).await;
+    });
 }
 
 /// Une seule lecture par événement, servie par le cache de la guilde.

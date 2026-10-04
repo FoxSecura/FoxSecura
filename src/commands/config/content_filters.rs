@@ -38,13 +38,21 @@ const BUTTONS_PER_ROW: usize = 5;
 
 /// Modules des arrivées de membres, affichés dans la catégorie Anti-Raid.
 pub const ANTI_RAID_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiRaid,
     ProtectionModule::AntiBot,
     ProtectionModule::AntiNewAccount,
     ProtectionModule::AntiImpersonation,
     ProtectionModule::AntiNicknameHoisting,
 ];
 
+/// Modules de la catégorie « Doubles comptes et salon piège ».
+pub const ALT_ACCOUNT_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiDoubleAccount,
+    ProtectionModule::Honeypot,
+];
+
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
+pub const ALT_ACCOUNT_CATEGORY_ID: &str = "anti_double_account";
 pub const ANTI_RAID_CATEGORY_ID: &str = "anti_raid";
 
 /// Demande d'activation ou de désactivation d'un module.
@@ -73,6 +81,8 @@ impl ModuleToggle {
             AUTOMOD_CATEGORY_ID
         } else if ANTI_RAID_MODULES.contains(&self.module) {
             ANTI_RAID_CATEGORY_ID
+        } else if ALT_ACCOUNT_MODULES.contains(&self.module) {
+            ALT_ACCOUNT_CATEGORY_ID
         } else {
             super::anti_spam::CATEGORY_ID
         }
@@ -198,6 +208,9 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiNewAccount => TextKey::ModuleAntiNewAccount,
         ProtectionModule::AntiNicknameHoisting => TextKey::ModuleAntiNicknameHoisting,
         ProtectionModule::AntiImpersonation => TextKey::ModuleAntiImpersonation,
+        ProtectionModule::AntiRaid => TextKey::ModuleAntiRaid,
+        ProtectionModule::Honeypot => TextKey::ModuleHoneypot,
+        ProtectionModule::AntiDoubleAccount => TextKey::ModuleAntiDoubleAccount,
     }
 }
 
@@ -212,6 +225,7 @@ mod tests {
                 .iter()
                 .chain(AUTOMOD_MODULES)
                 .chain(ANTI_RAID_MODULES)
+                .chain(ALT_ACCOUNT_MODULES)
                 .filter(|candidate| **candidate == module)
                 .count();
             assert_eq!(count, 1, "{module}");

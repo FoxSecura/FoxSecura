@@ -73,6 +73,10 @@ impl App {
                         Arc::clone(&data.database),
                         Arc::clone(data.protection.quarantine_locks()),
                     );
+                    pipeline::lockdown::spawn_resume(
+                        ctx.clone(),
+                        pipeline::lockdown::LockdownRuntime::from_data(&data),
+                    );
                     Ok(data)
                 })
             })

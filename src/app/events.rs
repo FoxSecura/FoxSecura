@@ -34,6 +34,9 @@ pub async fn handle(
         } => {
             pipeline::member::handle_update(ctx, data, old_if_available.as_ref(), event).await;
         }
+        serenity::FullEvent::GuildCreate { guild, .. } => {
+            pipeline::member::handle_guild_create(ctx, data, guild).await;
+        }
         serenity::FullEvent::ChannelCreate { channel } => {
             pipeline::quarantine::handle_channel_create(ctx, data, channel).await;
         }

@@ -348,7 +348,12 @@ fn detect_module(
         ProtectionModule::AntiBot
         | ProtectionModule::AntiNewAccount
         | ProtectionModule::AntiNicknameHoisting
-        | ProtectionModule::AntiImpersonation => None,
+        | ProtectionModule::AntiImpersonation
+        | ProtectionModule::AntiDoubleAccount
+        | ProtectionModule::AntiRaid
+        // Honeypot : traité avant les filtres de contenu, par le salon et non
+        // par le contenu.
+        | ProtectionModule::Honeypot => None,
     }
 }
 

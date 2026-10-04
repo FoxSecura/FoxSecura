@@ -430,7 +430,7 @@ fn role_lock_reason() -> String {
 }
 
 /// Écrit l'overwrite d'une cible (`PUT`), avec la raison d'audit log.
-async fn put_overwrite(
+pub(super) async fn put_overwrite(
     ctx: &serenity::Context,
     channel_id: u64,
     target: OverwriteTarget,
@@ -476,7 +476,7 @@ pub(super) fn discord_failure(error: serenity::Error) -> DiscordFailure {
     }
 }
 
-fn convert_channel(channel: &serenity::GuildChannel) -> ChannelFacts {
+pub(super) fn convert_channel(channel: &serenity::GuildChannel) -> ChannelFacts {
     ChannelFacts {
         id: channel.id.get(),
         parent_id: channel.parent_id.map(serenity::ChannelId::get),

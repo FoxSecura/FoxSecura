@@ -133,14 +133,14 @@ catalog! {
         de: "Verwaltung vertrauenswürdiger Zugriffe und Einschränkungen."
     },
     CategoryAntiDoubleAccount => {
-        en: "Anti-alt account",
-        fr: "Anti-double compte",
-        de: "Schutz vor Zweitkonten"
+        en: "Alt accounts & honeypot",
+        fr: "Doubles comptes et salon piège",
+        de: "Zweitkonten & Honeypot"
     },
     CategoryAntiDoubleAccountDescription => {
-        en: "Verification and protection against alternate accounts.",
-        fr: "Vérification et protection contre les doubles comptes.",
-        de: "Prüfung und Schutz vor Zweitkonten."
+        en: "Alternate accounts and a trap channel against automated accounts.",
+        fr: "Doubles comptes et salon piège contre les comptes automatisés.",
+        de: "Zweitkonten und ein Fallenkanal gegen automatisierte Konten."
     },
     CategoryAutomod => {
         en: "AutoMod",
@@ -1148,9 +1148,9 @@ catalog! {
         de: "Beitritte von Mitgliedern"
     },
     ConfigMemberProtectionNotice => {
-        en: "Applied when a member joins, in this order: blacklist (always active, see Access control), anti-bot (kicks bots missing from the whitelist), new accounts (ban and 7-day purge; if the ban fails, quarantine, or a 10-minute timeout without a usable quarantine role), impersonation (a name matching the owner or a member with Administrator or Manage Server: quarantine), hoisted nicknames (rename, also on name changes). A ban, kick or quarantine stops the chain. FoxSecura's role must be above members; permissions: Kick Members, Ban Members, Timeout Members, Manage Nicknames, Manage Roles. Whitelisted members and the owner are never banned or quarantined. A false positive hits a legitimate member: review every incident. The Server Members intent is required.",
-        fr: "Appliqué à l'arrivée d'un membre, dans cet ordre : liste noire (toujours active, voir Contrôle d'accès), anti-bot (expulse les bots absents de la liste blanche), nouveaux comptes (ban et purge de 7 jours ; ban impossible : quarantaine, ou timeout de 10 minutes sans rôle de quarantaine utilisable), usurpation (nom identique à celui du propriétaire ou d'un membre avec Administrateur ou Gérer le serveur : quarantaine), pseudos hoistés (renommage, aussi lors d'un changement de nom). Un ban, une expulsion ou une quarantaine arrête la chaîne. Le rôle de FoxSecura doit être au-dessus des membres ; permissions : Expulser, Bannir, Exclure temporairement, Gérer les pseudos, Gérer les rôles. La liste blanche et le propriétaire ne sont jamais bannis ni mis en quarantaine. Un faux positif touche un membre légitime : examinez chaque incident. L'intent Server Members est requis.",
-        de: "Beim Beitritt eines Mitglieds in dieser Reihenfolge: Blacklist (immer aktiv, siehe Zugriffskontrolle), Anti-Bot (kickt Bots, die nicht auf der Whitelist stehen), neue Konten (Bann und 7 Tage Nachrichten löschen; scheitert der Bann: Quarantäne, ohne nutzbare Quarantäne-Rolle 10 Minuten Timeout), Identitätsdiebstahl (Name wie der des Inhabers oder eines Mitglieds mit Administrator oder Server verwalten: Quarantäne), gehoistete Spitznamen (Umbenennung, auch bei Namensänderungen). Bann, Kick oder Quarantäne beenden die Kette. Die Rolle von FoxSecura muss über den Mitgliedern liegen; Rechte: Kicken, Bannen, Timeout, Spitznamen verwalten, Rollen verwalten. Whitelist und Inhaber werden nie gebannt oder unter Quarantäne gestellt. Ein Fehlalarm trifft ein legitimes Mitglied: Jeden Vorfall prüfen. Der Server-Members-Intent ist erforderlich."
+        en: "On join, in this order: blacklist (always active), anti-raid (see Lockdown), anti-bot (kicks bots missing from the whitelist), new accounts (ban and 7-day purge; otherwise quarantine, or a 10-minute timeout), alt accounts, impersonation (name of the owner or of a member with Administrator or Manage Server: quarantine), hoisted nicknames (rename, also on name changes). A ban, kick or quarantine stops the chain. FoxSecura's role must be above members; permissions: Kick Members, Ban Members, Timeout Members, Manage Nicknames, Manage Roles. Whitelisted members and the owner are never banned or quarantined. A false positive hits a legitimate member: review every incident. The Server Members intent is required.",
+        fr: "À l'arrivée, dans cet ordre : liste noire (toujours active), anti-raid (voir Verrouillage), anti-bot (expulse les bots absents de la liste blanche), nouveaux comptes (ban et purge de 7 jours ; sinon quarantaine, ou timeout de 10 minutes), doubles comptes, usurpation (nom du propriétaire ou d'un membre avec Administrateur ou Gérer le serveur : quarantaine), pseudos hoistés (renommage, aussi lors d'un changement de nom). Un ban, une expulsion ou une quarantaine arrête la chaîne. Le rôle de FoxSecura doit être au-dessus des membres ; permissions : Expulser, Bannir, Exclure temporairement, Gérer les pseudos, Gérer les rôles. La liste blanche et le propriétaire ne sont jamais bannis ni mis en quarantaine. Un faux positif touche un membre légitime : examinez chaque incident. L'intent Server Members est requis.",
+        de: "Beim Beitritt in dieser Reihenfolge: Blacklist (immer aktiv), Anti-Raid (siehe Sperre), Anti-Bot (kickt Bots, die nicht auf der Whitelist stehen), neue Konten (Bann und 7 Tage Nachrichten löschen; sonst Quarantäne oder 10 Minuten Timeout), Zweitkonten, Identitätsdiebstahl (Name des Inhabers oder eines Mitglieds mit Administrator oder Server verwalten: Quarantäne), gehoistete Spitznamen (Umbenennung, auch bei Namensänderungen). Bann, Kick oder Quarantäne beenden die Kette. Die Rolle von FoxSecura muss über den Mitgliedern liegen; Rechte: Kicken, Bannen, Timeout, Spitznamen verwalten, Rollen verwalten. Whitelist und Inhaber werden nie gebannt oder unter Quarantäne gestellt. Ein Fehlalarm trifft ein legitimes Mitglied: Jeden Vorfall prüfen. Der Server-Members-Intent ist erforderlich."
     },
     ConfigQuarantineRole => {
         en: "Quarantine role",
@@ -1336,5 +1336,230 @@ catalog! {
         en: "Blacklist scope",
         fr: "Portée de la liste noire",
         de: "Geltungsbereich der Blacklist"
+    },
+    LockdownLiftSummary => {
+        en: "Temporary lockdown lifted",
+        fr: "Verrouillage temporaire levé",
+        de: "Temporäre Sperre aufgehoben"
+    },
+    LockdownLiftStaffSummary => {
+        en: "Temporary lockdown lifted by staff",
+        fr: "Verrouillage temporaire levé par l'équipe",
+        de: "Temporäre Sperre vom Team aufgehoben"
+    },
+    LockdownLiftRecommendationDone => {
+        en: "Every channel got its original Send Messages permission for @everyone and its original slowmode back.",
+        fr: "Chaque salon a retrouvé la permission Envoyer des messages d'origine de @everyone et son ancien mode lent.",
+        de: "Jeder Kanal hat die ursprüngliche Berechtigung Nachrichten senden für @everyone und seinen alten Slowmode zurückerhalten."
+    },
+    LockdownLiftRecommendationPending => {
+        en: "Some channels are still locked: FoxSecura retries every minute. Check that it still has Manage Channels on them.",
+        fr: "Des salons restent verrouillés : FoxSecura réessaie toutes les minutes. Vérifiez qu'il a toujours Gérer les salons sur ces salons.",
+        de: "Einige Kanäle sind noch gesperrt: FoxSecura versucht es jede Minute erneut. Prüfen, ob es dort noch Kanäle verwalten hat."
+    },
+    ModuleAntiRaid => {
+        en: "Anti-raid (join bursts)",
+        fr: "Anti-raid (rafales d'arrivées)",
+        de: "Anti-Raid (Beitrittswellen)"
+    },
+    AntiRaidSummary => {
+        en: "Join burst: server locked down and member quarantined",
+        fr: "Rafale d'arrivées : serveur verrouillé et membre mis en quarantaine",
+        de: "Beitrittswelle: Server gesperrt und Mitglied unter Quarantäne"
+    },
+    AntiRaidEvidenceLockdown => {
+        en: "Lockdown",
+        fr: "Verrouillage",
+        de: "Sperre"
+    },
+    AntiRaidLockdownApplied => {
+        en: "applied: {locked} channels locked, {failed} failed, {total} in total",
+        fr: "posé : {locked} salons modifiés, {failed} en échec, {total} au total",
+        de: "aktiv: {locked} Kanäle gesperrt, {failed} fehlgeschlagen, {total} insgesamt"
+    },
+    AntiRaidLockdownAlreadyActive => {
+        en: "already active",
+        fr: "déjà actif",
+        de: "bereits aktiv"
+    },
+    AntiRaidLockdownFailed => {
+        en: "failed: {locked} channels locked, {failed} failed, {total} in total",
+        fr: "en échec : {locked} salons modifiés, {failed} en échec, {total} au total",
+        de: "fehlgeschlagen: {locked} Kanäle gesperrt, {failed} fehlgeschlagen, {total} insgesamt"
+    },
+    AntiRaidRecommendationQuarantined => {
+        en: "Check the members who joined just before: they are not quarantined. The server stays locked for 10 minutes; lift it early in /config if this was a legitimate wave.",
+        fr: "Vérifiez les membres arrivés juste avant : ils ne sont pas mis en quarantaine. Le serveur reste verrouillé 10 minutes ; levez-le plus tôt dans /config s'il s'agissait d'une vague légitime.",
+        de: "Die kurz zuvor beigetretenen Mitglieder prüfen: Sie sind nicht unter Quarantäne. Der Server bleibt 10 Minuten gesperrt; bei einer legitimen Welle in /config früher aufheben."
+    },
+    AntiRaidRecommendationFailed => {
+        en: "The member could not be quarantined or timed out: check the quarantine role, Manage Roles and Moderate Members, then review the recent joins by hand.",
+        fr: "Le membre n'a pu être ni mis en quarantaine ni exclu temporairement : vérifiez le rôle de quarantaine, Gérer les rôles et Exclure temporairement des membres, puis examinez les arrivées récentes à la main.",
+        de: "Das Mitglied konnte weder unter Quarantäne gestellt noch mit Timeout belegt werden: Quarantänerolle, Rollen verwalten und Mitglieder moderieren prüfen, dann die letzten Beitritte von Hand prüfen."
+    },
+    ModuleHoneypot => {
+        en: "Honeypot channel",
+        fr: "Salon piège (honeypot)",
+        de: "Honeypot-Kanal"
+    },
+    HoneypotSummary => {
+        en: "Message posted in the honeypot channel",
+        fr: "Message posté dans le salon piège",
+        de: "Nachricht im Honeypot-Kanal gepostet"
+    },
+    HoneypotRecommendationQuarantined => {
+        en: "The author is quarantined and their dangerous roles were removed (not given back). Check the account: only automated accounts write in a channel hidden from members.",
+        fr: "L'auteur est en quarantaine et ses rôles dangereux ont été retirés (non rendus). Examinez le compte : seuls des comptes automatisés écrivent dans un salon caché aux membres.",
+        de: "Der Autor ist unter Quarantäne, seine gefährlichen Rollen wurden entfernt (nicht zurückgegeben). Konto prüfen: Nur automatisierte Konten schreiben in einen für Mitglieder verborgenen Kanal."
+    },
+    HoneypotRecommendationUnknownPermissions => {
+        en: "The author's permissions could not be established from the cache: the message was deleted but nobody was quarantined, to avoid a false positive on the staff. Check the author by hand.",
+        fr: "Les permissions de l'auteur n'ont pas pu être établies d'après le cache : le message a été supprimé mais personne n'a été mis en quarantaine, pour éviter un faux positif sur l'équipe. Vérifiez l'auteur à la main.",
+        de: "Die Berechtigungen des Autors ließen sich aus dem Cache nicht ermitteln: Die Nachricht wurde gelöscht, aber niemand unter Quarantäne gestellt, um einen Fehlalarm beim Team zu vermeiden. Autor von Hand prüfen."
+    },
+    ModuleAntiDoubleAccount => {
+        en: "Alt accounts",
+        fr: "Doubles comptes",
+        de: "Zweitkonten"
+    },
+    DoubleAccountSummary => {
+        en: "Likely alternate account of a member",
+        fr: "Double compte probable d'un membre",
+        de: "Wahrscheinliches Zweitkonto eines Mitglieds"
+    },
+    DoubleAccountEvidenceMatch => {
+        en: "Same name and avatar as member",
+        fr: "Même nom et même avatar que le membre",
+        de: "Gleicher Name und Avatar wie Mitglied"
+    },
+    DoubleAccountRecommendationReview => {
+        en: "Review the duplicate: compare both accounts, then release the member from /config if this is a coincidence.",
+        fr: "Examinez le doublon : comparez les deux comptes, puis libérez le membre depuis /config s'il s'agit d'une coïncidence.",
+        de: "Das Duplikat prüfen: beide Konten vergleichen und das Mitglied bei einem Zufall über /config freigeben."
+    },
+    ConfigAntiRaidLimits => {
+        en: "Anti-raid threshold",
+        fr: "Seuil de l'anti-raid",
+        de: "Anti-Raid-Schwelle"
+    },
+    ConfigAntiRaidLimitsValue => {
+        en: "{threshold} joins in {window} s",
+        fr: "{threshold} arrivées en {window} s",
+        de: "{threshold} Beitritte in {window} s"
+    },
+    ConfigAntiRaidLimitsButton => {
+        en: "Edit anti-raid threshold",
+        fr: "Modifier le seuil anti-raid",
+        de: "Anti-Raid-Schwelle ändern"
+    },
+    ConfigAntiRaidLimitsModalTitle => {
+        en: "Anti-raid threshold",
+        fr: "Seuil de l'anti-raid",
+        de: "Anti-Raid-Schwelle"
+    },
+    ConfigAntiRaidThresholdInput => {
+        en: "Joins (2 to 50)",
+        fr: "Arrivées (2 à 50)",
+        de: "Beitritte (2 bis 50)"
+    },
+    ConfigAntiRaidWindowInput => {
+        en: "Window in seconds (5 to 120)",
+        fr: "Fenêtre en secondes (5 à 120)",
+        de: "Zeitfenster in Sekunden (5 bis 120)"
+    },
+    ConfigAntiRaidInvalidLimits => {
+        en: "Invalid values: the threshold must be between 2 and 50 joins and the window between 5 and 120 seconds. Nothing was changed.",
+        fr: "Valeurs invalides : le seuil doit être compris entre 2 et 50 arrivées et la fenêtre entre 5 et 120 secondes. Rien n'a été modifié.",
+        de: "Ungültige Werte: Die Schwelle muss zwischen 2 und 50 Beitritten und das Zeitfenster zwischen 5 und 120 Sekunden liegen. Es wurde nichts geändert."
+    },
+    ConfigLockdown => {
+        en: "Server lockdown",
+        fr: "Verrouillage du serveur",
+        de: "Serversperre"
+    },
+    ConfigLockdownTitle => {
+        en: "Lockdown",
+        fr: "Verrouillage",
+        de: "Sperre"
+    },
+    ConfigLockdownInactive => {
+        en: "Inactive",
+        fr: "Inactif",
+        de: "Inaktiv"
+    },
+    ConfigLockdownActive => {
+        en: "Active, lifted {time}",
+        fr: "Actif, levée prévue {time}",
+        de: "Aktiv, Aufhebung {time}"
+    },
+    ConfigLockdownLifting => {
+        en: "Being lifted",
+        fr: "Levée en cours",
+        de: "Wird aufgehoben"
+    },
+    ConfigLockdownRetry => {
+        en: "Lift unfinished, next attempt {time}",
+        fr: "Levée inachevée, nouvelle tentative {time}",
+        de: "Aufhebung unvollständig, nächster Versuch {time}"
+    },
+    ConfigLockdownNotice => {
+        en: "A join burst denies Send Messages to @everyone on every channel except threads, then sets a 10 s slowmode (never lowering a stricter one), for 10 minutes. The original state is saved first and restored exactly, even after a restart; failed channels stay locked and are retried every minute. Cost: up to two API calls per channel each way, slower during a rate limit. A false positive locks the server for 10 minutes: lift it with the button (owner and administrators). Requires Manage Channels.",
+        fr: "Une rafale d'arrivées refuse Envoyer des messages à @everyone sur tous les salons sauf les fils, puis pose un mode lent de 10 s (sans jamais réduire un mode lent plus strict), pour 10 minutes. L'état d'origine est enregistré d'abord et restauré exactement, même après un redémarrage ; les salons en échec restent verrouillés et sont retentés toutes les minutes. Coût : jusqu'à deux appels API par salon dans chaque sens, plus lent pendant une limitation de débit. Un faux positif verrouille le serveur 10 minutes : levez-le avec le bouton (propriétaire et administrateurs). Requiert Gérer les salons.",
+        de: "Eine Beitrittswelle verweigert @everyone Nachrichten senden in allen Kanälen außer Threads und setzt 10 Minuten lang einen Slowmode von 10 s (ein strengerer wird nie gesenkt). Der Ursprungszustand wird zuerst gespeichert und exakt wiederhergestellt, auch nach einem Neustart; fehlgeschlagene Kanäle bleiben gesperrt und werden jede Minute erneut versucht. Kosten: bis zu zwei API-Aufrufe pro Kanal in jede Richtung, langsamer bei Rate-Limits. Ein Fehlalarm sperrt den Server 10 Minuten: mit der Schaltfläche aufheben (Inhaber und Administratoren). Benötigt Kanäle verwalten."
+    },
+    ConfigLockdownLiftButton => {
+        en: "Lift lockdown",
+        fr: "Lever le verrouillage",
+        de: "Sperre aufheben"
+    },
+    ConfigLockdownAccessDenied => {
+        en: "Lifting the lockdown is reserved for the server owner and administrators (Manage Server is not enough).",
+        fr: "La levée du verrouillage est réservée au propriétaire du serveur et aux administrateurs (Gérer le serveur ne suffit pas).",
+        de: "Das Aufheben der Sperre ist dem Serverinhaber und Administratoren vorbehalten (Server verwalten reicht nicht)."
+    },
+    ConfigLockdownLiftNothing => {
+        en: "No lockdown to lift.",
+        fr: "Aucun verrouillage à lever.",
+        de: "Keine Sperre aufzuheben."
+    },
+    ConfigLockdownLiftDone => {
+        en: "Lockdown lifted: every channel got its original permissions and slowmode back.",
+        fr: "Verrouillage levé : chaque salon a retrouvé ses permissions et son mode lent d'origine.",
+        de: "Sperre aufgehoben: Jeder Kanal hat seine ursprünglichen Berechtigungen und seinen Slowmode zurück."
+    },
+    ConfigLockdownLiftPending => {
+        en: "Lift unfinished: some channels are still locked, FoxSecura retries every minute.",
+        fr: "Levée inachevée : des salons restent verrouillés, FoxSecura réessaie toutes les minutes.",
+        de: "Aufhebung unvollständig: Einige Kanäle sind noch gesperrt, FoxSecura versucht es jede Minute erneut."
+    },
+    ConfigLockdownLiftUnresolved => {
+        en: "The server is not available to FoxSecura yet: the lift will be retried in a minute.",
+        fr: "Le serveur n'est pas encore disponible pour FoxSecura : la levée sera retentée dans une minute.",
+        de: "Der Server ist für FoxSecura noch nicht verfügbar: Die Aufhebung wird in einer Minute erneut versucht."
+    },
+    ConfigHoneypotChannel => {
+        en: "Trap channel",
+        fr: "Salon piège",
+        de: "Fallenkanal"
+    },
+    ConfigHoneypotNotConfigured => {
+        en: "Not configured",
+        fr: "Non configuré",
+        de: "Nicht konfiguriert"
+    },
+    ConfigHoneypotSelect => {
+        en: "Choose the trap channel (choose it again to remove it)",
+        fr: "Choisir le salon piège (le rechoisir le retire)",
+        de: "Fallenkanal wählen (erneut wählen entfernt ihn)"
+    },
+    ConfigHoneypotNotice => {
+        en: "Keep the trap channel out of real members' way (collapsed category, explicit name) but readable and writable by @everyone, or bots cannot post either: only automated accounts write there. A message there is deleted and its author quarantined with their dangerous roles removed, without timeout fallback. Exempt: owner, Administrator, Manage Server, whitelist. If the author's permissions cannot be read from the cache, the message is only deleted and reported. An ignored channel is never watched. Requires Manage Messages and Manage Roles.",
+        fr: "Cachez le salon piège aux vrais membres (catégorie repliée, nom explicite) sans le leur interdire : s'il n'est pas lisible et ouvert à l'écriture pour @everyone, les robots non plus ne peuvent pas y écrire. Seuls des comptes automatisés y écrivent. Un message y est supprimé et son auteur mis en quarantaine avec retrait de ses rôles dangereux, sans repli timeout. Exemptés : propriétaire, Administrateur, Gérer le serveur, liste blanche. Si les permissions de l'auteur ne peuvent pas être lues dans le cache, le message est seulement supprimé et signalé. Un salon ignoré n'est jamais surveillé. Requiert Gérer les messages et Gérer les rôles.",
+        de: "Den Fallenkanal vor echten Mitgliedern verstecken (eingeklappte Kategorie, eindeutiger Name), aber für @everyone lesbar und beschreibbar lassen, sonst können auch Bots nicht schreiben: Nur automatisierte Konten schreiben dort. Eine Nachricht dort wird gelöscht und ihr Autor unter Quarantäne gestellt, gefährliche Rollen werden entfernt, ohne Timeout als Ersatz. Ausgenommen: Inhaber, Administrator, Server verwalten, Whitelist. Lassen sich die Berechtigungen des Autors nicht aus dem Cache lesen, wird die Nachricht nur gelöscht und gemeldet. Ein ignorierter Kanal wird nie überwacht. Benötigt Nachrichten verwalten und Rollen verwalten."
+    },
+    ConfigDoubleAccountNotice => {
+        en: "A joining member with the same display name and custom avatar as a member in FoxSecura's cache is quarantined, or timed out for 10 minutes without a usable quarantine role. Only the cache is compared, never a full member fetch; it is warmed up at startup for servers where the module is on (best effort). Owner, whitelist and bots are never checked. Requires Manage Roles, Moderate Members and the Server Members intent.",
+        fr: "Un membre qui arrive avec le même nom affiché et le même avatar personnalisé qu'un membre du cache de FoxSecura est mis en quarantaine, ou exclu 10 minutes sans rôle de quarantaine utilisable. Seul le cache est comparé, jamais une lecture complète des membres ; il est préchauffé au démarrage pour les serveurs où le module est actif (au mieux). Le propriétaire, la liste blanche et les bots ne sont jamais vérifiés. Requiert Gérer les rôles, Exclure temporairement et l'intent Server Members.",
+        de: "Ein beitretendes Mitglied mit gleichem Anzeigenamen und eigenem Avatar wie ein Mitglied im Cache von FoxSecura wird unter Quarantäne gestellt oder ohne nutzbare Quarantäne-Rolle 10 Minuten mit Timeout belegt. Verglichen wird nur der Cache, nie ein vollständiger Abruf der Mitglieder; er wird beim Start für Server mit aktivem Modul vorgewärmt (nach Möglichkeit). Inhaber, Whitelist und Bots werden nie geprüft. Benötigt Rollen verwalten, Mitglieder moderieren und den Server-Members-Intent."
     }
 }
