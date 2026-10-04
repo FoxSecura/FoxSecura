@@ -14,7 +14,7 @@ Si un secret est accidentellement publié, sa suppression de Git ne suffit pas :
 
 ## Permissions minimales
 
-N'accordez au bot que les permissions nécessaires aux protections effectivement activées. Certaines fonctions anti-nuke nécessiteront des permissions puissantes, mais cela ne justifie pas d'accorder `Administrator` par défaut.
+N'accordez au bot que les permissions nécessaires aux protections effectivement activées. L'anti-nuke exige `VIEW_AUDIT_LOG`, `MANAGE_ROLES` et `MANAGE_CHANNELS` (voir ci-dessous), mais cela ne justifie pas d'accorder `Administrator` par défaut.
 
 La hiérarchie Discord s'applique toujours : FoxSecura ne peut pas sanctionner un membre ou modifier un rôle placé au-dessus de son rôle le plus élevé.
 
@@ -80,11 +80,11 @@ La quarantaine retire à un membre l'accès aux salons (rôle de quarantaine et 
 
 ## Verrouillage temporaire et anti-raid
 
-Une rafale d'arrivées (5 en 20 s par défaut) **verrouille tout le serveur** pendant 10 minutes : refus de `SEND_MESSAGES` à `@everyone` sur chaque salon sauf les fils, et mode lent de 10 s. C'est l'action automatique la plus large de FoxSecura.
+Une rafale d'arrivées (5 en 20 s par défaut) **verrouille tout le serveur** pendant 10 minutes (15 minutes avec un mode lent de 30 s pour le mode panique de l'anti-nuke) : refus de `SEND_MESSAGES` à `@everyone` sur chaque salon sauf les fils, et mode lent de 10 s. C'est l'action automatique la plus large de FoxSecura.
 
 - **Faux positif = serveur verrouillé 10 minutes.** Une vague d'arrivées légitime (annonce, partenariat, lien partagé sur un autre réseau) suffit. Réglez seuil (2 à 50) et fenêtre (5 à 120 s) selon le trafic habituel, suivez les salons de logs `member` et `server`, et levez le verrouillage depuis `/config` (bouton « Lever le verrouillage ») : la levée manuelle suit exactement la restauration de l'échéance. Les membres arrivés à partir du seuil sont aussi en quarantaine : libérez-les. Ceux arrivés **avant** le seuil ne sont pas mis en quarantaine (V1) : examinez-les.
 - **Levée réservée** au propriétaire et à `ADMINISTRATOR` : rouvrir l'écriture pendant un raid est aussi sensible que de libérer un membre. `MANAGE_GUILD` voit l'état du verrouillage mais pas le bouton.
-- **Restauration exacte et sûre** : l'état d'origine (`SEND_MESSAGES` de `@everyone` à trois états, ancien mode lent) est enregistré en base **avant** toute modification. Un plantage pendant la pose ou la levée laisse de quoi restaurer ; au redémarrage, les verrouillages expirés sont levés tout de suite et les autres réarmés. Une valeur enregistrée illisible se restaure en « absent » (le salon retombe sur les permissions des rôles), **jamais** en « autorisé ». Un verrouillage en cours (actif, en levée ou en attente) n'est jamais relancé, pour ne pas écraser ces états d'origine.
+- **Restauration exacte et sûre** : l'état d'origine (`SEND_MESSAGES` de `@everyone` à trois états, ancien mode lent) est enregistré en base **avant** toute modification, ainsi que le mode lent posé (migration 9) : la levée ne rend l'ancien mode lent que si le salon porte encore celui du verrouillage, quelle que soit sa valeur (10 ou 30 s). Un plantage pendant la pose ou la levée laisse de quoi restaurer ; au redémarrage, les verrouillages expirés sont levés tout de suite et les autres réarmés. Une valeur enregistrée illisible se restaure en « absent » (le salon retombe sur les permissions des rôles), **jamais** en « autorisé ». Un verrouillage en cours (actif, en levée ou en attente) n'est jamais relancé, pour ne pas écraser ces états d'origine.
 - **Échecs** : sans `MANAGE_CHANNELS`, rien n'est posé ni enregistré (`failed` / `missing_permission`). Un salon que FoxSecura n'a pas pu rendre **reste verrouillé** et est retenté toutes les minutes : vérifiez ses permissions dans ce salon. Un salon supprimé entre-temps n'est pas un échec.
 - **Coût et limitation de débit** : jusqu'à deux appels API par salon dans chaque sens, faits un par un. Sur un gros serveur, la pose prend du temps pendant une limitation de débit ; la quarantaine du membre est lancée en parallèle, sans l'attendre.
 - **Portée** : seul `@everyone` est visé ; un rôle autorisé explicitement à écrire dans un salon le peut encore (voulu pour l'équipe). Ne donnez pas cette autorisation à un rôle attribué à tous les membres.
@@ -125,6 +125,16 @@ Un échec d'analyse ne doit pas devenir automatiquement une sanction. Une action
 ## Anti-Nuke
 
 Les mécanismes de lockdown, rollback de permissions, suppression de webhooks ou restauration de ressources peuvent eux-mêmes causer des dégâts s'ils sont déclenchés à tort. Ils doivent donc avoir : seuils explicites, exemptions limitées, preuve d'incident, idempotence lorsque possible et mécanisme de restauration documenté.
+
+Branché en tranche 8 : rafales par auteur (bans, expulsions, exclusions, débannissements, créations de salons et de rôles, emojis et stickers, attributions de rôles) et mode panique, à partir des entrées du journal d'audit poussées par Discord.
+
+- **Permissions** : `VIEW_AUDIT_LOG` est indispensable. Sans elle, Discord n'envoie **aucune** entrée du journal d'audit et l'anti-nuke ne voit rien ; FoxSecura le signale une fois par guilde dans ses logs locaux, sans autre alerte. `MANAGE_ROLES` (quarantaine de l'auteur, retrait de ses rôles dangereux ; rôle de FoxSecura au-dessus) et `MANAGE_CHANNELS` (verrouillage du mode panique) sont nécessaires à la réponse.
+- **Auteurs jamais confinés** : propriétaire, FoxSecura lui-même (ses propres sanctions ne sont jamais comptées : auteur = bot, et défense en profondeur sur la raison `FoxSecura …`) et liste blanche (incident `warning`, aucun confinement, aucun signal au mode panique). Une raison `FoxSecura …` écrite par un modérateur ne l'exempte **pas**.
+- **Aucune annulation en masse** : les bans, expulsions, exclusions et créations déjà faits ne sont **jamais annulés automatiquement** (V1). Un débannissement de masse annulerait aussi les bans légitimes de la fenêtre ; l'équipe revoit chaque action dans le journal d'audit.
+- **Faux positif = modérateur légitime en quarantaine** : une modération intense atteint le seuil ; le modérateur perd ses rôles dangereux, **non rendus** à la libération (V1). Mettez l'équipe sur liste blanche ou relevez les seuils (2 à 20).
+- **Faux positif du mode panique = serveur verrouillé 15 minutes** (mode lent de 30 s) : trois modules différents en 30 s suffisent par défaut. Levée manuelle depuis `/config` → Anti-Raid.
+- **Rejeu** : une entrée de plus de 5 minutes (reconnexion) est ignorée, une entrée déjà traitée n'est jamais recomptée.
+- **Mono-instance** : dédoublonnage, compteurs, pauses de 30 s et signaux du mode panique vivent en mémoire (bornés à 10 000 entrées) : perdus au redémarrage, jamais partagés. Deux instances sur la même guilde compteraient chacune la moitié d'une rafale, et chacune pourrait mettre l'auteur en quarantaine.
 
 ## Modération IA
 

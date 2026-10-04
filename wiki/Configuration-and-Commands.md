@@ -46,6 +46,7 @@ Les **listes blanche et noire**, la **quarantaine** (rôle de quarantaine, libé
 | Créer ou choisir le rôle de quarantaine, libérer un membre | oui | oui | non | non |
 | Lever le verrouillage du serveur | oui | oui | non | non |
 | Anti-raid (interrupteur, seuil), doubles comptes, honeypot et salon piège | oui | oui | oui | non |
+| Protection serveur : interrupteurs de l'anti-nuke et du mode panique, seuils | oui | oui | oui | non |
 
 ### Catégorie Anti-Spam
 
@@ -131,6 +132,31 @@ Protections des arrivées de membres (voir [Modules de protection](Protection-Mo
 
 Identifiants internes : `foxsecura:config:anti_raid:min_age` et le modal `foxsecura:config:anti_raid:min_age_modal` ; anti-raid : `foxsecura:config:anti_raid:limits` et le modal `…:limits_modal` ; levée du verrouillage : `foxsecura:config:anti_raid:lockdown_lift` ; quarantaine : `foxsecura:config:anti_raid:quarantine_create`, `…:quarantine_role` (sélecteur), `…:quarantine_release` et le modal `…:quarantine_release_modal`.
 
+### Catégorie Protection serveur
+
+Anti-nuke et mode panique (voir [Modules de protection](Protection-Modules#anti-nuke)) :
+
+| Réglage | Stockage | Défaut | Bornes |
+| --- | --- | --- | --- |
+| Huit modules de rafales (`anti_mass_ban`, `anti_mass_kick`, `anti_mass_timeout`, `anti_mass_unban`, `anti_mass_channel_create`, `anti_mass_role_create`, `anti_emoji_sticker_nuke`, `anti_mass_role_grant`) | `guild_protection_modules` | désactivés | on/off |
+| Mode panique (`panic_mode`) | `guild_protection_modules` | désactivé | on/off |
+| Seuil des bans (20 s) | `guild_configs.anti_nuke_ban_threshold` (migration 9) | 3 | 2 à 20 |
+| Seuil des débannissements (20 s) | `guild_configs.anti_nuke_unban_threshold` | 5 | 2 à 20 |
+| Seuil partagé des créations de salons et de rôles (20 s) | `guild_configs.anti_nuke_create_threshold` | 5 | 2 à 20 |
+| Seuil des emojis et stickers (20 s) | `guild_configs.anti_nuke_emoji_sticker_threshold` | 5 | 2 à 20 |
+| Seuil des attributions de rôles (20 s) | `guild_configs.anti_nuke_role_grant_threshold` | 5 | 2 à 20 |
+| Expulsions et exclusions temporaires (30 s) | — | 3 | fixe (V1) |
+| Seuil du mode panique (modules distincts en 30 s) | `guild_configs.panic_mode_threshold` | 3 | 2 à 10 |
+
+- Interrupteurs identiques aux autres catégories (`foxsecura:config:module:<clé>:on|off`), droit `Right::Config`. Activer un module de rafales sans `VIEW_AUDIT_LOG` le signale dans les logs locaux (une fois par guilde).
+- **Seuils des rafales** ouvre un modal prérempli de cinq champs (limite Discord) ; **Seuil du mode panique** un modal d'un champ. Une valeur absente, non numérique ou hors bornes est refusée **sans écriture** ; contraintes `CHECK` en base.
+- L'état du verrouillage est affiché ; la **levée manuelle** reste dans la catégorie Anti-Raid (propriétaire ou `ADMINISTRATOR`).
+- Droits revérifiés à chaque composant et à chaque modal ; chaque écriture invalide le cache de la guilde : le réglage s'applique dès l'entrée du journal d'audit suivante.
+
+> ⚠️ Avant d'activer : un faux positif met un **modérateur légitime en quarantaine** (rôles dangereux retirés, non rendus) et le mode panique peut **verrouiller le serveur 15 minutes**. Les actions déjà faites ne sont **jamais annulées**. Compteurs en mémoire, mono-instance.
+
+Identifiants internes : `foxsecura:config:server_protection:thresholds` et le modal `…:thresholds_modal` ; `foxsecura:config:server_protection:panic` et le modal `…:panic_modal`.
+
 ### Catégorie Doubles comptes et salon piège
 
 L'identifiant de catégorie reste `anti_double_account`.
@@ -175,7 +201,7 @@ Identifiants internes : `foxsecura:config:access_control:whitelist_users`, `foxs
 
 ## Important : interface et configuration persistée
 
-Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 8 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, la liste noire, les salons ignorés, l'activation des filtres de contenu et des modules d'arrivée, l'âge minimal des comptes, les mots interdits (liste intégrée, mots personnalisés), le rôle de quarantaine, l'état d'origine des overwrites posés par la quarantaine, les libérations en attente, le seuil et la fenêtre de l'anti-raid, le salon piège, et les verrouillages en cours avec l'état d'origine de chaque salon verrouillé. Les autres catégories affichent encore un état de substitution.
+Le tableau de bord est plus large que le modèle SQLite actuellement persisté. La base de données version 9 stocke la langue d'une guild, les salons associés aux types de logs, les réglages Anti-Spam, la liste blanche, la liste noire, les salons ignorés, l'activation des filtres de contenu et des modules d'arrivée, l'âge minimal des comptes, les mots interdits (liste intégrée, mots personnalisés), le rôle de quarantaine, l'état d'origine des overwrites posés par la quarantaine, les libérations en attente, le seuil et la fenêtre de l'anti-raid, le salon piège, les verrouillages en cours avec le mode lent posé et l'état d'origine de chaque salon verrouillé, ainsi que l'activation et les seuils de l'anti-nuke et du mode panique. Les autres catégories affichent encore un état de substitution.
 
 Cela signifie qu'une catégorie visible dans `/config` peut représenter une **surface d'interface prévue** avant que son stockage et son exécution soient entièrement branchés. Les futures PR doivent éviter de présenter un réglage comme actif tant que les trois couches suivantes ne sont pas reliées :
 
@@ -208,7 +234,7 @@ Les secrets liés à de futurs fournisseurs externes doivent suivre la même phi
 La configuration par défaut active :
 
 - `GUILDS` ;
-- `GUILD_MODERATION` ;
+- `GUILD_MODERATION` : bans et entrées du journal d'audit poussées par Discord (`GUILD_AUDIT_LOG_ENTRY_CREATE`, anti-nuke). Ces entrées exigent en plus la permission **`VIEW_AUDIT_LOG`** : sans elle, Discord n'en envoie aucune ;
 - `GUILDS` sert aussi à la quarantaine (`CHANNEL_CREATE` réapplique le verrou du rôle aux nouveaux salons), au verrouillage (état des salons et de l'overwrite de `@everyone` en cache) et au préchauffage des membres (`GUILD_CREATE`) ;
 - `GUILD_MEMBERS` (privilégié : **Server Members Intent**) : arrivées et mises à jour de membres (liste noire, anti-raid, anti-bot, nouveaux comptes, doubles comptes, usurpation d'identité, pseudos hoistés, rôle de quarantaine retiré à la main), cache des membres (noms protégés de l'usurpation, identités des doubles comptes) et demande des membres d'une guilde par la passerelle (préchauffage) ;
 - `GUILD_MESSAGES` : créations et modifications de messages (honeypot, anti-spam, filtres de contenu) ;
@@ -240,9 +266,13 @@ Permissions nécessaires aux fonctionnalités branchées :
 | Quarantaine : verrou du rôle et du membre (overwrites) | `MANAGE_ROLES` (« Gérer les permissions » d'un salon), `MANAGE_CHANNELS`, et chaque permission refusée (`VIEW_CHANNEL`, `SEND_MESSAGES`, `CONNECT`, `SPEAK`…) | catégories et salons verrouillés |
 | Quarantaine : repli timeout (nouveaux comptes, anti-raid, doubles comptes) | `MODERATE_MEMBERS` | serveur |
 | Verrouillage temporaire (anti-raid) : refus d'écrire à `@everyone` | `MANAGE_ROLES` (« Gérer les permissions » des salons) et `SEND_MESSAGES` dans chaque salon | tous les salons sauf les fils |
-| Verrouillage temporaire : mode lent de 10 s | `MANAGE_CHANNELS` (vérifié avant la pose, sinon rien n'est enregistré) | salons texte, vocaux, conférences, forums |
+| Verrouillage temporaire : mode lent (10 s anti-raid, 30 s mode panique) | `MANAGE_CHANNELS` (vérifié avant la pose, sinon rien n'est enregistré) | salons texte, vocaux, conférences, forums |
 | Honeypot : suppression du message | `MANAGE_MESSAGES` | salon piège |
 | Honeypot : quarantaine avec retrait des rôles dangereux | `MANAGE_ROLES`, rôle de FoxSecura au-dessus des rôles retirés | serveur |
+| Anti-nuke : recevoir les entrées du journal d'audit | `VIEW_AUDIT_LOG` (« Voir les logs du serveur ») ; sans elle, aucune détection, signalé dans les logs locaux | serveur |
+| Anti-nuke : quarantaine de l'auteur, retrait de ses rôles dangereux | `MANAGE_ROLES`, rôle de FoxSecura au-dessus des rôles retirés | serveur |
+| Mode panique : verrouillage de 15 minutes, mode lent de 30 s | `MANAGE_CHANNELS` et `MANAGE_ROLES` (comme le verrouillage de l'anti-raid) | tous les salons sauf les fils |
+| Envoi des incidents de l'anti-nuke | `VIEW_CHANNEL`, `SEND_MESSAGES` | salons de logs `member`, `role` et `server` |
 | Pseudos hoistés (renommage) | `MANAGE_NICKNAMES` | serveur |
 | Envoi des incidents des arrivées | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `member` |
 | Toute sanction ou tout renommage | **rôle de FoxSecura au-dessus** du rôle le plus haut du membre visé | Paramètres du serveur → Rôles |
