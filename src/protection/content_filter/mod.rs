@@ -353,7 +353,17 @@ fn detect_module(
         | ProtectionModule::AntiRaid
         // Honeypot : traité avant les filtres de contenu, par le salon et non
         // par le contenu.
-        | ProtectionModule::Honeypot => None,
+        | ProtectionModule::Honeypot
+        // Anti-nuke : entrées du journal d'audit, jamais des messages.
+        | ProtectionModule::AntiMassBan
+        | ProtectionModule::AntiMassKick
+        | ProtectionModule::AntiMassTimeout
+        | ProtectionModule::AntiMassUnban
+        | ProtectionModule::AntiMassChannelCreate
+        | ProtectionModule::AntiMassRoleCreate
+        | ProtectionModule::AntiEmojiStickerNuke
+        | ProtectionModule::AntiMassRoleGrant
+        | ProtectionModule::PanicMode => None,
     }
 }
 

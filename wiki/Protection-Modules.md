@@ -26,34 +26,69 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Usurpation d'identité (`anti_impersonation`), **quarantaine** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut |
 | Quarantaine (`quarantine`) : rôle, verrou des salons, libération | **oui** : usurpation, repli des nouveaux comptes, anti-raid, doubles comptes, honeypot, `CHANNEL_CREATE`, `GUILD_MEMBER_UPDATE`, maintenance toutes les 5 minutes | `/config` → Anti-Raid, rôle non configuré par défaut |
 | Anti-raid, rafales d'arrivées (`anti_raid`), **verrouillage + quarantaine** | **oui**, `GUILD_MEMBER_ADD` | `/config` → Anti-Raid, désactivé par défaut, 5 arrivées en 20 s |
-| Verrouillage temporaire (`lockdown`) | **oui** : anti-raid, minuterie de levée, reprise au démarrage | posé par l'anti-raid ; levée manuelle dans `/config` → Anti-Raid |
+| Verrouillage temporaire (`lockdown`) | **oui** : anti-raid, mode panique, minuterie de levée, reprise au démarrage | posé par l'anti-raid et le mode panique ; levée manuelle dans `/config` → Anti-Raid |
 | Doubles comptes (`anti_double_account`), **quarantaine** | **oui**, `GUILD_MEMBER_ADD` ; préchauffage sur `GUILD_CREATE` | `/config` → Doubles comptes et salon piège, désactivé par défaut |
 | Honeypot (`honeypot`), **suppression + quarantaine** | **oui**, `MESSAGE_CREATE` | `/config` → Doubles comptes et salon piège, désactivé, aucun salon par défaut |
-| Tous les autres modules | non (moteurs testés isolément) | — |
+| Anti-nuke, rafales par auteur (`anti_mass_ban`, `anti_mass_kick`, `anti_mass_timeout`, `anti_mass_unban`, `anti_mass_channel_create`, `anti_mass_role_create`, `anti_emoji_sticker_nuke`, `anti_mass_role_grant`), **quarantaine de l'auteur** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` | `/config` → Protection serveur, désactivés par défaut |
+| Mode panique (`panic_mode`), **verrouillage 15 minutes** | **oui**, signaux des incidents critiques de l'anti-nuke | `/config` → Protection serveur, désactivé par défaut, 3 modules distincts en 30 s |
+| Tous les autres modules (dont suppressions de salons et de rôles, permissions, intégrité du serveur, rôle limité) | non (moteurs testés isolément, tranche 9) | — |
 
 ## Anti-Nuke
 
-`anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur.
+`anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur. La tranche 8 branche le **socle des journaux d'audit**, les **rafales par auteur** et le **mode panique** ; les autres briques (suppressions de salons et de rôles, permissions dangereuses, édition du serveur, URL personnalisée, applications externes, règles AutoMod, webhooks, rôle limité) restent des moteurs testés isolément, prévus pour la tranche 9.
 
-### Garde d'actions
+### Socle des journaux d'audit (branché au runtime)
 
-`action_guard.rs` fournit une base de contrôle pour des actions sensibles. L'objectif architectural est de distinguer l'observation, l'autorisation, le seuil de rafale et la réaction.
+FoxSecura consomme l'événement poussé **`GUILD_AUDIT_LOG_ENTRY_CREATE`** (intent `GUILD_MODERATION`) : l'auteur, l'action, la cible, les changements et la raison arrivent avec l'entrée. La V1 relisait le journal d'audit après coup et devait deviner l'auteur ; la V2 n'en a pas besoin et ne fait aucun appel à l'API pour cela.
 
-### Actions sur les membres
+- **Permission `VIEW_AUDIT_LOG` indispensable** : sans elle, Discord n'envoie **aucune** entrée et l'anti-nuke est aveugle sans erreur visible. FoxSecura le signale **une fois par guilde** dans les logs locaux (à la réception de la guilde et à l'activation d'un module), si un module de rafales est actif.
+- **Gardes** (`anti_nuke::audit`), dans l'ordre : entrée de **plus de 5 minutes** ignorée (rejeu après une reconnexion ; l'âge se déduit du snowflake de l'entrée) → entrée **déjà traitée** ignorée (dédoublonnage borné à 10 000 identifiants en mémoire) → entrée **sans auteur** ignorée → **propriétaire** ignoré → **bot lui-même** ignoré, ce qui couvre toutes ses propres sanctions (quarantaines, bans de la liste noire, verrouillages).
+- **Défense en profondeur** : une entrée du bot dont la raison suit la convention `FoxSecura <module>: …` (`is_foxsecura_audit_reason`) n'est **jamais comptée** (`FoxSecuraAction`). La raison seule ne prouve rien (un modérateur peut l'écrire) : elle ne vaut qu'avec l'auteur.
+- **Une seule lecture de contexte** par entrée retenue, servie par le cache de la guilde (modules, seuils, liste blanche). Les erreurs sont journalisées et jamais propagées.
 
-Le dépôt contient des modules pour détecter des rafales de : bans, kicks, timeouts et unbans. Ces protections partagent la notion de burst plutôt que d'implémenter chacune un compteur incompatible.
+### Rafales par auteur (branchées au runtime)
 
-### Actions sur les ressources
+Fenêtre glissante par **(guilde, auteur, clé d'action)**, sur le détecteur partagé `ActionBurstDetector`. Déclenchement quand `nombre >= seuil`. Après un déclenchement, la clé est remise à zéro et mise en **pause 30 s** : le reste de la même rafale ne produit pas un incident par action (V1). Une rafale qui continue après la pause recommence à compter. Les clés sont isolées : un auteur ne cumule jamais avec un autre, les bans ne cumulent pas avec les expulsions.
 
-Des modules existent pour : suppression de salon, suppression de rôle, créations massives de salons, créations massives de rôles, attribution massive de rôles et destruction d'emojis/stickers.
+| Module | Entrées du journal d'audit | Seuil par défaut | Fenêtre |
+| --- | --- | --- | --- |
+| `anti_mass_ban` | `MemberBanAdd` | 3, réglable 2 à 20 | 20 s |
+| `anti_mass_kick` | `MemberKick` | 3, fixe (V1) | 30 s |
+| `anti_mass_timeout` | `MemberUpdate` dont `communication_disabled_until` passe à une date future (la levée d'un timeout ne compte pas) | 3, fixe (V1) | 30 s |
+| `anti_mass_unban` | `MemberBanRemove` | 5, réglable 2 à 20 | 20 s |
+| `anti_mass_channel_create` / `anti_mass_role_create` | `ChannelCreate` / `RoleCreate` | 5, **seuil partagé**, réglable 2 à 20 | 20 s |
+| `anti_emoji_sticker_nuke` | `EmojiCreate`, `EmojiDelete`, `StickerCreate`, `StickerDelete` (une seule clé de comptage) | 5, réglable 2 à 20 | 20 s |
+| `anti_mass_role_grant` | `MemberRoleUpdate` avec au moins un rôle **ajouté** (`$add` ; les retraits ne comptent pas) | 5, réglable 2 à 20 | 20 s |
 
-### Intégrité du serveur
+Seuils persistés dans `guild_configs` (migration 9) avec contraintes `CHECK`.
 
-La famille `server_integrity` contient des gardes pour : applications externes, permissions, édition du serveur, changement de vanity URL, règles AutoMod et un `server_guard` commun.
+### Réponse à une rafale
 
-### Panic mode et rôle limité
+- **Auteur exempté** (liste blanche par identifiant ou par rôle ; le rôle de quarantaine n'exempte jamais) : incident `warning` avec `ignore_exempt_member`, **sans confinement**. L'équipe garde la visibilité ; aucun signal au mode panique.
+- Sinon : **quarantaine de l'auteur avec retrait de ses rôles dangereux, sans repli timeout** (V1, `FoxSecura Anti-Nuke: burst of <module>`). Rôles lus dans le cache, sinon par l'API (un appel). Un auteur **introuvable** (parti du serveur, lecture impossible) donne une quarantaine `skipped` avec le code `executor_unavailable`.
+- Incident **`critical`** (type `member` pour les bans, expulsions, exclusions et débannissements ; `role` pour les créations et attributions de rôles ; `server` pour les créations de salons, emojis et stickers) : nombre observé, seuil et fenêtre ; **dernière cible** rendue par `inline_literal` (un nom de salon ou de rôle ne peut ni notifier, ni injecter de formatage) ; rôles dangereux retirés ; recommandation de **revoir les permissions de l'auteur**. Chaque incident critique envoie un **signal au mode panique**.
 
-Le projet contient également un `panic_mode` et une logique `limit_role`. Ces briques sont destinées aux réponses de confinement et doivent toujours être traitées comme actions sensibles : permissions minimales, réversibilité et journalisation sont obligatoires avant activation opérationnelle.
+> ⚠️ **Aucune annulation en masse.** Les bans, expulsions, exclusions et créations déjà faits ne sont **jamais annulés automatiquement** (V1). Un débannissement de masse annulerait aussi les bans légitimes de la fenêtre ; une suppression de masse effacerait des salons voulus. L'équipe revoit les actions une par une à partir du journal d'audit.
+
+> ⚠️ **Faux positif = modérateur légitime mis en quarantaine.** Une modération intense (vague de bans après un raid, réorganisation des rôles) atteint le seuil : le modérateur perd ses rôles dangereux, qui **ne lui sont pas rendus** à la libération. Ajoutez l'équipe à la liste blanche (elle reste visible dans les logs) ou relevez les seuils ; libérez depuis `/config` → Anti-Raid.
+
+### Mode panique (branché au runtime)
+
+Corrélation **par guilde** des signaux envoyés par les incidents critiques de l'anti-nuke, sur **30 s**. On compte les **types de modules distincts**, pas le nombre brut de signaux : c'est ce qui sépare une prise de contrôle coordonnée (bans, créations de rôles, attributions…) d'un seul module bruyant. Seuil par défaut **3**, réglable de **2 à 10** (migration 9).
+
+- Au seuil, si **aucun verrouillage n'est déjà actif** : verrouillage temporaire de **15 minutes avec un mode lent de 30 s** (`FoxSecura Panic Mode: correlated nuke signals detected`), puis remise à zéro des signaux de la guilde. Incident `critical`, type `server`, avec les modules corrélés et l'état du verrouillage.
+- Un verrouillage déjà actif (anti-raid, panique précédente) n'est **ni relancé ni prolongé** ; les signaux sont gardés.
+- Levée à l'échéance ou manuelle (`/config` → Anti-Raid), avec la même restauration exacte que l'anti-raid.
+
+> ⚠️ **Faux positif = serveur verrouillé 15 minutes.** Trois modules qui réagissent en même temps (par exemple un modérateur qui bannit, crée des rôles et en attribue) verrouillent tout le serveur. Levez le verrouillage depuis `/config` si c'était légitime.
+
+**Permissions** : `VIEW_AUDIT_LOG` (entrées), `MANAGE_ROLES` (quarantaine et retrait des rôles dangereux, rôle de FoxSecura au-dessus des rôles retirés ; overwrites du verrouillage), `MANAGE_CHANNELS` (verrouillage du mode panique).
+
+**Limites (mono-instance)** : dédoublonnage, compteurs, pauses et signaux vivent dans le processus : perdus au redémarrage (une rafale en cours repart de zéro), jamais partagés entre plusieurs instances. Chaque structure est bornée (10 000 entrées). Une entrée rejouée après une coupure de plus de 5 minutes est ignorée.
+
+### Briques non branchées (tranche 9)
+
+`action_guard.rs` (`evaluate_executor_action`), les modules de suppression de salons et de rôles, `server_integrity` (applications externes, permissions, édition du serveur, URL personnalisée, règles AutoMod, `server_guard`) et `limit_role` restent des moteurs testés isolément. Ils réutiliseront le socle des journaux d'audit, la quarantaine de l'auteur et le mode panique.
 
 ## Anti-Raid
 
@@ -152,17 +187,17 @@ Limites : verrous par membre en mémoire (**mono-instance**) ; état des salons 
 - **Limite V1** : les membres arrivés **avant** le seuil ne sont **pas** mis en quarantaine ; l'incident rappelle de les examiner.
 - **État en mémoire** : 10 000 guildes au plus (balayage des guildes sans arrivée depuis 120 s, puis oubli de celle dont la dernière arrivée est la plus ancienne), 50 horodatages au plus par guilde. **Mono-instance** : perdu au redémarrage, non partagé entre plusieurs processus.
 
-**Verrouillage temporaire** (`protection::lockdown`, effets dans `src/app/pipeline/lockdown.rs`) : sous-système réutilisable (il servira aussi au futur mode panique), calqué sur la quarantaine : cœur pur derrière un trait d'effets, opérations **sérialisées par guilde**, état d'origine enregistré **avant** chaque modification.
+**Verrouillage temporaire** (`protection::lockdown`, effets dans `src/app/pipeline/lockdown.rs`) : sous-système partagé par l'anti-raid (**10 minutes, mode lent de 10 s**) et le mode panique de l'anti-nuke (**15 minutes, mode lent de 30 s**). La durée et le mode lent sont portés par la requête (`LockdownRequest::for_reason`). Calqué sur la quarantaine : cœur pur derrière un trait d'effets, opérations **sérialisées par guilde**, état d'origine enregistré **avant** chaque modification.
 
 1. **Salons candidats** : tous les salons portant des overwrites, c'est-à-dire tous sauf les fils (catégories comprises).
 2. Sans `MANAGE_CHANNELS` (d'après le cache) : `failed` / `missing_permission`, **rien n'est enregistré**.
-3. La ligne de verrouillage de la guilde (`guild_lockdowns` : raison, état, levée prévue) est insérée **si aucune n'existe** : un verrouillage actif, en cours de levée ou en attente de nouvelle tentative n'est **jamais** relancé (`skipped` / déjà actif), pour ne pas écraser les états d'origine encore attendus.
-4. Pour chaque salon : enregistrement (`guild_lockdown_channels`) de l'ancien `SEND_MESSAGES` de `@everyone` **à trois états** (autorisé, refusé, absent ; le refus prime si les deux bits sont présents) et de l'ancien mode lent (`NULL` sans mode lent), **puis** refus de `SEND_MESSAGES` à `@everyone` (les autres bits de l'overwrite sont conservés ; aucun appel s'il est déjà refusé), **puis** mode lent de **10 s** sur les salons qui l'acceptent (texte, vocal, conférence, forum). Un mode lent déjà plus strict n'est **jamais réduit**. Seul le refus d'écrire compte pour dire qu'un salon est verrouillé ; un échec du mode lent ne le déverrouille pas.
+3. La ligne de verrouillage de la guilde (`guild_lockdowns` : raison, état, levée prévue, **mode lent posé** depuis la migration 9) est insérée **si aucune n'existe** : un verrouillage actif, en cours de levée ou en attente de nouvelle tentative n'est **jamais** relancé (`skipped` / déjà actif), pour ne pas écraser les états d'origine encore attendus.
+4. Pour chaque salon : enregistrement (`guild_lockdown_channels`) de l'ancien `SEND_MESSAGES` de `@everyone` **à trois états** (autorisé, refusé, absent ; le refus prime si les deux bits sont présents) et de l'ancien mode lent (`NULL` sans mode lent), **puis** refus de `SEND_MESSAGES` à `@everyone` (les autres bits de l'overwrite sont conservés ; aucun appel s'il est déjà refusé), **puis** le mode lent de la requête (10 s pour l'anti-raid, 30 s pour le mode panique) sur les salons qui l'acceptent (texte, vocal, conférence, forum). Un mode lent déjà plus strict n'est **jamais réduit**. Seul le refus d'écrire compte pour dire qu'un salon est verrouillé ; un échec du mode lent ne le déverrouille pas.
 5. Salon dont le refus échoue : sa ligne est supprimée. **Aucun salon verrouillé** : la ligne de guilde est supprimée et le résultat est `failed`.
-6. **Levée** à l'échéance (**10 minutes**, minuterie tokio calculée sur l'horloge murale, relue au plus tard toutes les 60 s) : restauration **exacte** de `SEND_MESSAGES` (absent redevient absent ; un overwrite redevenu vide est supprimé), **puis** de l'ancien mode lent (seulement si le salon a encore le mode lent du verrouillage : un mode lent changé par l'équipe entre-temps est conservé). Les salons restaurés perdent leur ligne ; ceux en échec **restent verrouillés** et sont retentés **toutes les 60 s**. Un salon disparu n'a plus rien à restaurer, ce qui n'est pas un échec. Une levée est **idempotente**. Une valeur enregistrée illisible se restaure en **« absent »**, jamais en « autorisé ».
+6. **Levée** à l'échéance (**10 minutes** pour l'anti-raid, **15 minutes** pour le mode panique, minuterie tokio calculée sur l'horloge murale, relue au plus tard toutes les 60 s) : restauration **exacte** de `SEND_MESSAGES` (absent redevient absent ; un overwrite redevenu vide est supprimé), **puis** de l'ancien mode lent (seulement si le salon a encore le mode lent **enregistré avec la ligne de verrouillage** : un mode lent changé par l'équipe entre-temps est conservé ; les lignes antérieures à la migration 9 valent 10 s). Les salons restaurés perdent leur ligne ; ceux en échec **restent verrouillés** et sont retentés **toutes les 60 s**. Un salon disparu n'a plus rien à restaurer, ce qui n'est pas un échec. Une levée est **idempotente**. Une valeur enregistrée illisible se restaure en **« absent »**, jamais en « autorisé ».
 7. **Reprise au démarrage** : les verrouillages persistés sont relus ; ceux qui ont expiré (ou dont la levée a été interrompue) sont levés tout de suite, les autres réarmés. Une guilde pas encore résoluble (salons illisibles par l'API et absents du cache) est retentée une minute plus tard, sans rien toucher.
 8. **Levée manuelle** (nouveauté V2, absente de la V1) : bouton « Lever le verrouillage » de `/config` → Anti-Raid, propriétaire ou `ADMINISTRATOR` ; même procédure de restauration ; si des salons restent verrouillés, la minuterie réessaie toutes les minutes.
-9. Raisons d'audit log : `FoxSecura Anti-Raid: temporary lockdown` et `FoxSecura Anti-Raid: lockdown restore` (convention `FoxSecura <module>: …`). Incident de levée (type `server`) publié quand la levée aboutit ou au premier échec, jamais à chaque nouvelle tentative.
+9. Raisons d'audit log : `FoxSecura Anti-Raid: temporary lockdown` et `FoxSecura Anti-Raid: lockdown restore`, `FoxSecura Panic Mode: correlated nuke signals detected` et `FoxSecura Panic Mode: lockdown restore` (convention `FoxSecura <module>: …`). Incident de levée (type `server`) publié quand la levée aboutit ou au premier échec, jamais à chaque nouvelle tentative.
 
 **Coût en appels API** : une lecture de la liste des salons (`GET /guilds/{id}/channels`, l'état réel des overwrites et du mode lent : le cache peut retarder sur les modifications que FoxSecura vient de faire, et une pose juste après une levée enregistrerait sinon « refusé » comme état d'origine ; repli sur le cache si l'appel échoue), puis jusqu'à **deux appels par salon** à la pose (refus, mode lent) et autant à la levée, faits un par un. Un serveur de 500 salons demande jusqu'à 1 000 appels dans chaque sens ; pendant une **limitation de débit**, serenity attend la fin de la fenêtre et reprend : la pose est plus lente, pas abandonnée, et les salons déjà traités sont déjà verrouillés.
 

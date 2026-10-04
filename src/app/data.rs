@@ -1,9 +1,13 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use foxsecura::database::{Database, DatabaseError};
+use foxsecura::protection::anti_nuke::audit::AuditEntryDedup;
+use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
+use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
@@ -44,6 +48,10 @@ pub struct ProtectionState {
     lockdown_locks: Arc<GuildLocks>,
     lockdown_timers: Arc<LockdownTimers>,
     member_prewarm: Arc<tokio::sync::Mutex<()>>,
+    audit_dedup: Mutex<AuditEntryDedup>,
+    nuke_bursts: Mutex<NukeBurstTracker>,
+    panic_mode: Mutex<PanicModeDetector>,
+    audit_permission_warnings: Mutex<HashSet<u64>>,
 }
 
 impl ProtectionState {
@@ -93,6 +101,44 @@ impl ProtectionState {
     /// fois, toutes guildes confondues.
     pub fn member_prewarm(&self) -> &Arc<tokio::sync::Mutex<()>> {
         &self.member_prewarm
+    }
+
+    /// Entrées du journal d'audit déjà traitées (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants.
+    pub fn audit_dedup(&self) -> MutexGuard<'_, AuditEntryDedup> {
+        self.audit_dedup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales de l'anti-nuke par auteur, avec leurs pauses (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn nuke_bursts(&self) -> MutexGuard<'_, NukeBurstTracker> {
+        self.nuke_bursts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Signaux du mode panique, par guilde (fenêtre de 30 s, bornés).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages et des clés de modules.
+    pub fn panic_mode(&self) -> MutexGuard<'_, PanicModeDetector> {
+        self.panic_mode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Guildes déjà signalées pour l'absence de `VIEW_AUDIT_LOG` depuis le
+    /// démarrage (une entrée par guilde au plus).
+    pub fn audit_permission_warnings(&self) -> MutexGuard<'_, HashSet<u64>> {
+        self.audit_permission_warnings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Minuteries de levée armées (au plus une par guilde).

@@ -36,12 +36,16 @@ pub async fn handle(
         }
         serenity::FullEvent::GuildCreate { guild, .. } => {
             pipeline::member::handle_guild_create(ctx, data, guild).await;
+            pipeline::anti_nuke::handle_guild_create(ctx, data, guild.id.get()).await;
         }
         serenity::FullEvent::ChannelCreate { channel } => {
             pipeline::quarantine::handle_channel_create(ctx, data, channel).await;
         }
         serenity::FullEvent::CategoryCreate { category } => {
             pipeline::quarantine::handle_channel_create(ctx, data, category).await;
+        }
+        serenity::FullEvent::GuildAuditLogEntryCreate { entry, guild_id } => {
+            pipeline::anti_nuke::handle_audit_entry(ctx, data, *guild_id, entry).await;
         }
         serenity::FullEvent::InteractionCreate { interaction } => {
             if let Err(error) = crate::commands::handle_interaction(ctx, data, interaction).await {

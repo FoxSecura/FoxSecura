@@ -8,7 +8,7 @@ use crate::protection::{
     shared::{ActionBurstDetector, ActionBurstResult},
 };
 
-pub const SPEC: NukeActionSpec = NukeActionSpec::new("timeout", 3, Duration::from_secs(20));
+pub const SPEC: NukeActionSpec = NukeActionSpec::new("timeout", 3, Duration::from_secs(30));
 
 pub fn detect_mass_timeout(
     detector: &mut ActionBurstDetector,

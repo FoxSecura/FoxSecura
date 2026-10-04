@@ -69,6 +69,22 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Action V1 : quarantaine avec repli timeout ; incident `Warning` si le membre est contenu, `Critical` sinon, avec la recommandation d'examiner le doublon ; terminal si contenu.
 - Préchauffage du cache des membres sur `GUILD_CREATE` (donc au démarrage) et à l'activation du module, pour les guildes où il est actif et dont le cache est incomplet : demande par la passerelle (intent `GUILD_MEMBERS` déjà présent), séquentielle, une par seconde au plus, au mieux.
 
+### Anti-nuke et mode panique
+
+- Socle des journaux d'audit : FoxSecura consomme l'événement poussé `GUILD_AUDIT_LOG_ENTRY_CREATE` (intent `GUILD_MODERATION`, déjà demandé) ; auteur, action, cible, changements et raison arrivent avec l'entrée, sans relecture du journal après coup comme dans la V1.
+- **Nouvelle permission requise : `VIEW_AUDIT_LOG`.** Sans elle, Discord n'envoie aucune entrée et l'anti-nuke ne voit rien ; l'absence est signalée une fois par guilde dans les logs locaux quand un module de rafales est actif.
+- Gardes : entrée de plus de 5 minutes ignorée (âge déduit du snowflake), entrée déjà traitée ignorée (dédoublonnage borné à 10 000 identifiants), entrée sans auteur, du propriétaire ou du bot ignorée ; défense en profondeur : une entrée du bot avec une raison `FoxSecura …` n'est jamais comptée. Une seule lecture de contexte par entrée, via le cache de guilde.
+- Rafales par auteur (fenêtre glissante par guilde, auteur et clé d'action, sur `ActionBurstDetector`), déclenchement quand `nombre >= seuil`, puis pause de 30 s pour la même clé : `anti_mass_ban` (3, 2 à 20, 20 s), `anti_mass_kick` et `anti_mass_timeout` (3 fixe, 30 s ; seul un timeout vers une date future compte), `anti_mass_unban` (5, 2 à 20, 20 s), `anti_mass_channel_create` et `anti_mass_role_create` (5, seuil partagé, 2 à 20, 20 s), `anti_emoji_sticker_nuke` (5, une seule clé pour emojis et stickers créés ou supprimés, 20 s), `anti_mass_role_grant` (5, rôles ajoutés seulement, 20 s).
+- Réponse : auteur de la liste blanche → incident `warning` avec `ignore_exempt_member`, sans confinement ; sinon **quarantaine de l'auteur avec retrait des rôles dangereux, sans repli timeout** (`FoxSecura Anti-Nuke: burst of <module>`) ; auteur introuvable → quarantaine `skipped` / `executor_unavailable`. Incident `critical` (type `member`, `role` ou `server`) avec nombre observé, seuil, fenêtre et dernière cible rendue par `inline_literal`.
+- **Les actions déjà faites ne sont jamais annulées en masse** (V1) : un débannissement de masse annulerait aussi les bans légitimes.
+- Mode panique (`panic_mode`) : chaque incident critique de l'anti-nuke envoie un signal ; au-delà de 3 **types de modules distincts** en 30 s (réglable de 2 à 10), et si aucun verrouillage n'est actif, verrouillage de **15 minutes avec un mode lent de 30 s** (`FoxSecura Panic Mode: correlated nuke signals detected`), remise à zéro des signaux et incident `critical` de type `server`.
+- Verrouillage généralisé : durée et mode lent portés par `LockdownRequest` (`LockdownRequest::for_reason`), mode lent posé enregistré avec la ligne de verrouillage, levée comparée à cette valeur (un salon passé à 30 s n'y reste plus bloqué). L'anti-raid garde 10 minutes et 10 s.
+- Migration 9 : `guild_configs.anti_nuke_ban_threshold` (3), `anti_nuke_unban_threshold` (5), `anti_nuke_create_threshold` (5), `anti_nuke_emoji_sticker_threshold` (5), `anti_nuke_role_grant_threshold` (5), bornes 2 à 20 ; `guild_configs.panic_mode_threshold` (3, 2 à 10) ; `guild_lockdowns.slowmode_seconds` (10 pour les lignes existantes).
+- `/config` → Protection serveur : interrupteurs des huit modules et du mode panique, modals des seuils, état du verrouillage.
+- **Faux positifs** : un modérateur légitime peut être mis en quarantaine (rôles dangereux non rendus) et le serveur verrouillé 15 minutes : voir le wiki Sécurité.
+- État en mémoire **mono-instance** (dédoublonnage, compteurs, pauses, signaux), perdu au redémarrage.
+- Permissions : `VIEW_AUDIT_LOG`, `MANAGE_ROLES`, `MANAGE_CHANNELS`. Aucune nouvelle crate.
+
 ### Configuration (`/config`)
 
 - Catégorie Anti-Raid : interrupteur `anti_raid`, modal du seuil et de la fenêtre (bornes validées, refus sans écriture), état du verrouillage (inactif, actif avec levée prévue, levée en cours, nouvelle tentative), bouton « Lever le verrouillage » (`Right::Whitelist`).

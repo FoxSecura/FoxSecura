@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
+use crate::protection::anti_nuke::settings::AntiNukeSettingsError;
 use crate::protection::anti_raid::join_burst::JoinBurstLimitsError;
 use crate::protection::anti_spam::message_flood::MessageFloodConfigError;
 use crate::protection::automod::bad_words::CustomWordsError;
@@ -162,6 +163,8 @@ pub enum DatabaseError {
     InvalidAntiRaidLimits(JoinBurstLimitsError),
     /// État de verrouillage inconnu (base écrite hors de FoxSecura).
     InvalidLockdownStatus(String),
+    /// Seuil de l'anti-nuke ou du mode panique hors des bornes.
+    InvalidAntiNukeSettings(AntiNukeSettingsError),
 }
 
 impl fmt::Display for DatabaseError {
@@ -213,6 +216,7 @@ impl fmt::Display for DatabaseError {
                 )
             }
             Self::InvalidAntiRaidLimits(error) => error.fmt(formatter),
+            Self::InvalidAntiNukeSettings(error) => error.fmt(formatter),
             Self::InvalidLockdownStatus(value) => {
                 write!(
                     formatter,
@@ -235,6 +239,7 @@ impl Error for DatabaseError {
             Self::InvalidAntiSpamConfig(error) => Some(error),
             Self::InvalidCustomWords(error) => Some(error),
             Self::InvalidAntiRaidLimits(error) => Some(error),
+            Self::InvalidAntiNukeSettings(error) => Some(error),
             Self::LockPoisoned
             | Self::InvalidLanguage(_)
             | Self::InvalidLogType(_)
@@ -266,6 +271,12 @@ impl From<MessageFloodConfigError> for DatabaseError {
 impl From<JoinBurstLimitsError> for DatabaseError {
     fn from(error: JoinBurstLimitsError) -> Self {
         Self::InvalidAntiRaidLimits(error)
+    }
+}
+
+impl From<AntiNukeSettingsError> for DatabaseError {
+    fn from(error: AntiNukeSettingsError) -> Self {
+        Self::InvalidAntiNukeSettings(error)
     }
 }
 

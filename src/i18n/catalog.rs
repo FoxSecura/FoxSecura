@@ -1561,5 +1561,180 @@ catalog! {
         en: "A joining member with the same display name and custom avatar as a member in FoxSecura's cache is quarantined, or timed out for 10 minutes without a usable quarantine role. Only the cache is compared, never a full member fetch; it is warmed up at startup for servers where the module is on (best effort). Owner, whitelist and bots are never checked. Requires Manage Roles, Moderate Members and the Server Members intent.",
         fr: "Un membre qui arrive avec le même nom affiché et le même avatar personnalisé qu'un membre du cache de FoxSecura est mis en quarantaine, ou exclu 10 minutes sans rôle de quarantaine utilisable. Seul le cache est comparé, jamais une lecture complète des membres ; il est préchauffé au démarrage pour les serveurs où le module est actif (au mieux). Le propriétaire, la liste blanche et les bots ne sont jamais vérifiés. Requiert Gérer les rôles, Exclure temporairement et l'intent Server Members.",
         de: "Ein beitretendes Mitglied mit gleichem Anzeigenamen und eigenem Avatar wie ein Mitglied im Cache von FoxSecura wird unter Quarantäne gestellt oder ohne nutzbare Quarantäne-Rolle 10 Minuten mit Timeout belegt. Verglichen wird nur der Cache, nie ein vollständiger Abruf der Mitglieder; er wird beim Start für Server mit aktivem Modul vorgewärmt (nach Möglichkeit). Inhaber, Whitelist und Bots werden nie geprüft. Benötigt Rollen verwalten, Mitglieder moderieren und den Server-Members-Intent."
+        },
+    ModuleAntiMassBan => {
+        en: "Mass bans",
+        fr: "Bannissements de masse",
+        de: "Massenbanns"
+    },
+    ModuleAntiMassKick => {
+        en: "Mass kicks",
+        fr: "Expulsions de masse",
+        de: "Massenkicks"
+    },
+    ModuleAntiMassTimeout => {
+        en: "Mass timeouts",
+        fr: "Exclusions temporaires de masse",
+        de: "Massen-Timeouts"
+    },
+    ModuleAntiMassUnban => {
+        en: "Mass unbans",
+        fr: "Débannissements de masse",
+        de: "Massen-Entbannungen"
+    },
+    ModuleAntiMassChannelCreate => {
+        en: "Mass channel creation",
+        fr: "Création de salons en masse",
+        de: "Massenerstellung von Kanälen"
+    },
+    ModuleAntiMassRoleCreate => {
+        en: "Mass role creation",
+        fr: "Création de rôles en masse",
+        de: "Massenerstellung von Rollen"
+    },
+    ModuleAntiEmojiStickerNuke => {
+        en: "Emoji and sticker nuke",
+        fr: "Nuke d'emojis et de stickers",
+        de: "Emoji- und Sticker-Nuke"
+    },
+    ModuleAntiMassRoleGrant => {
+        en: "Mass role grants",
+        fr: "Attribution de rôles en masse",
+        de: "Massenvergabe von Rollen"
+    },
+    ModulePanicMode => {
+        en: "Panic mode",
+        fr: "Mode panique",
+        de: "Panikmodus"
+        },
+    AntiNukeSummary => {
+        en: "Burst of sensitive actions by the same author",
+        fr: "Rafale d'actions sensibles par un même auteur",
+        de: "Serie sensibler Aktionen durch denselben Urheber"
+    },
+    PanicModeSummary => {
+        en: "Panic mode: several anti-nuke protections fired at once, server locked down",
+        fr: "Mode panique : plusieurs protections anti-nuke ont réagi en même temps, serveur verrouillé",
+        de: "Panikmodus: Mehrere Anti-Nuke-Schutzfunktionen haben gleichzeitig ausgelöst, Server gesperrt"
+        },
+    AntiNukeExemptSummary => {
+        en: "Burst of sensitive actions by a whitelisted author: no containment",
+        fr: "Rafale d'actions sensibles par un auteur de la liste blanche : aucun confinement",
+        de: "Serie sensibler Aktionen durch einen Urheber auf der Whitelist: keine Eindämmung"
+    },
+    AntiNukeEvidenceTarget => {
+        en: "Last target",
+        fr: "Dernière cible",
+        de: "Letztes Ziel"
+    },
+    AntiNukeRecommendation => {
+        en: "Review the author's permissions and roles. Actions already taken (bans, kicks, timeouts, creations) are never undone automatically: review them one by one. Release the author from /config if this was legitimate.",
+        fr: "Revoyez les permissions et les rôles de l'auteur. Les actions déjà faites (bans, expulsions, exclusions, créations) ne sont jamais annulées automatiquement : revoyez-les une par une. Libérez l'auteur depuis /config si c'était légitime.",
+        de: "Überprüfe die Berechtigungen und Rollen des Urhebers. Bereits ausgeführte Aktionen (Banns, Kicks, Timeouts, Erstellungen) werden nie automatisch rückgängig gemacht: Prüfe sie einzeln. Gib den Urheber über /config frei, falls es legitim war."
+    },
+    AntiNukeRecommendationExempt => {
+        en: "Whitelisted author: confirm with them that these actions were intended, and review their permissions.",
+        fr: "Auteur de la liste blanche : confirmez avec lui que ces actions étaient voulues, et revoyez ses permissions.",
+        de: "Urheber auf der Whitelist: Kläre mit ihm, ob diese Aktionen beabsichtigt waren, und überprüfe seine Berechtigungen."
+        },
+    PanicModeEvidenceModules => {
+        en: "Correlated modules",
+        fr: "Modules corrélés",
+        de: "Korrelierte Module"
+    },
+    PanicModeRecommendation => {
+        en: "The server is locked down for 15 minutes (30 s slowmode). Check the anti-nuke incidents above, review the permissions of every author, then lift the lockdown from /config once the server is safe.",
+        fr: "Le serveur est verrouillé 15 minutes (mode lent de 30 s). Consultez les incidents anti-nuke précédents, revoyez les permissions de chaque auteur, puis levez le verrouillage depuis /config une fois le serveur sûr.",
+        de: "Der Server ist 15 Minuten gesperrt (30 s Slowmode). Prüfe die vorherigen Anti-Nuke-Vorfälle, überprüfe die Berechtigungen jedes Urhebers und hebe die Sperre über /config auf, sobald der Server sicher ist."
+    },
+    PanicModeRecommendationFailed => {
+        en: "The lockdown could not be applied (see the action status, usually Manage Channels is missing): lock the server down by hand and review the permissions of every author.",
+        fr: "Le verrouillage n'a pas pu être posé (voir l'état de l'action, souvent Gérer les salons manquant) : verrouillez le serveur à la main et revoyez les permissions de chaque auteur.",
+        de: "Die Sperre konnte nicht gesetzt werden (siehe Aktionsstatus, meist fehlt Kanäle verwalten): Sperre den Server manuell und überprüfe die Berechtigungen jedes Urhebers."
+        },
+    ConfigAntiNuke => {
+        en: "Anti-nuke",
+        fr: "Anti-nuke",
+        de: "Anti-Nuke"
+    },
+    ConfigAntiNukeThresholds => {
+        en: "Burst thresholds (actions by one author)",
+        fr: "Seuils des rafales (actions d'un même auteur)",
+        de: "Schwellenwerte (Aktionen eines Urhebers)"
+    },
+    ConfigAntiNukeThresholdsValue => {
+        en: "Bans: {ban} in 20 s · Unbans: {unban} in 20 s · Channel and role creation: {create} in 20 s · Emojis and stickers: {emoji} in 20 s · Role grants: {grant} in 20 s · Kicks and timeouts: {fixed} in 30 s (fixed)",
+        fr: "Bans : {ban} en 20 s · Débannissements : {unban} en 20 s · Créations de salons et de rôles : {create} en 20 s · Emojis et stickers : {emoji} en 20 s · Attributions de rôles : {grant} en 20 s · Expulsions et exclusions : {fixed} en 30 s (fixe)",
+        de: "Banns: {ban} in 20 s · Entbannungen: {unban} in 20 s · Kanal- und Rollenerstellung: {create} in 20 s · Emojis und Sticker: {emoji} in 20 s · Rollenvergaben: {grant} in 20 s · Kicks und Timeouts: {fixed} in 30 s (fest)"
+    },
+    ConfigPanicThresholdValue => {
+        en: "{threshold} different modules within 30 s: 15-minute lockdown, 30 s slowmode",
+        fr: "{threshold} modules différents en 30 s : verrouillage de 15 minutes, mode lent de 30 s",
+        de: "{threshold} verschiedene Module in 30 s: 15 Minuten Sperre, 30 s Slowmode"
+    },
+    ConfigAntiNukeNoticeTitle => {
+        en: "Before enabling",
+        fr: "Avant d'activer",
+        de: "Vor dem Aktivieren"
+    },
+    ConfigAntiNukeNotice => {
+        en: "Requires View Audit Log (without it Discord sends nothing and the anti-nuke stays blind), Manage Roles and Manage Channels, with FoxSecura's role above the roles to remove. The author of a burst is quarantined and loses their dangerous roles, without timeout fallback; whitelisted authors, the owner and FoxSecura itself are never contained. Actions already taken (bans, kicks, creations) are never undone. A false positive quarantines a legitimate moderator (release them from Anti-Raid) and panic mode can lock the server for 15 minutes. Counters live in memory: lost on restart, never shared between instances.",
+        fr: "Requiert Voir les logs du serveur (sans elle, Discord n'envoie rien et l'anti-nuke est aveugle), Gérer les rôles et Gérer les salons, avec le rôle de FoxSecura au-dessus des rôles à retirer. L'auteur d'une rafale est mis en quarantaine et perd ses rôles dangereux, sans repli timeout ; la liste blanche, le propriétaire et FoxSecura ne sont jamais confinés. Les actions déjà faites (bans, expulsions, créations) ne sont jamais annulées. Un faux positif met en quarantaine un modérateur légitime (libération dans Anti-Raid) et le mode panique peut verrouiller le serveur 15 minutes. Les compteurs sont en mémoire : perdus au redémarrage, jamais partagés entre instances.",
+        de: "Benötigt Audit-Log anzeigen (ohne sie sendet Discord nichts und der Anti-Nuke ist blind), Rollen verwalten und Kanäle verwalten, mit der Rolle von FoxSecura über den zu entfernenden Rollen. Der Urheber einer Serie wird unter Quarantäne gestellt und verliert seine gefährlichen Rollen, ohne Timeout als Ersatz; Whitelist, Inhaber und FoxSecura werden nie eingedämmt. Bereits ausgeführte Aktionen (Banns, Kicks, Erstellungen) werden nie rückgängig gemacht. Ein Fehlalarm stellt einen legitimen Moderator unter Quarantäne (Freigabe unter Anti-Raid) und der Panikmodus kann den Server 15 Minuten sperren. Zähler liegen im Speicher: beim Neustart verloren, nie zwischen Instanzen geteilt."
+    },
+    ConfigAntiNukeThresholdsButton => {
+        en: "Burst thresholds",
+        fr: "Seuils des rafales",
+        de: "Schwellenwerte"
+    },
+    ConfigPanicThresholdButton => {
+        en: "Panic mode threshold",
+        fr: "Seuil du mode panique",
+        de: "Schwelle des Panikmodus"
+    },
+    ConfigAntiNukeThresholdsModalTitle => {
+        en: "Anti-nuke thresholds (2 to 20)",
+        fr: "Seuils de l'anti-nuke (2 à 20)",
+        de: "Anti-Nuke-Schwellen (2 bis 20)"
+    },
+    ConfigAntiNukeBanInput => {
+        en: "Bans in 20 s",
+        fr: "Bans en 20 s",
+        de: "Banns in 20 s"
+    },
+    ConfigAntiNukeUnbanInput => {
+        en: "Unbans in 20 s",
+        fr: "Débannissements en 20 s",
+        de: "Entbannungen in 20 s"
+    },
+    ConfigAntiNukeCreateInput => {
+        en: "Channel or role creations in 20 s",
+        fr: "Créations de salons ou de rôles en 20 s",
+        de: "Kanal- oder Rollenerstellungen in 20 s"
+    },
+    ConfigAntiNukeEmojiStickerInput => {
+        en: "Emoji or sticker changes in 20 s",
+        fr: "Emojis ou stickers modifiés en 20 s",
+        de: "Emoji- oder Sticker-Änderungen in 20 s"
+    },
+    ConfigAntiNukeRoleGrantInput => {
+        en: "Role grants in 20 s",
+        fr: "Attributions de rôles en 20 s",
+        de: "Rollenvergaben in 20 s"
+    },
+    ConfigPanicThresholdInput => {
+        en: "Different modules in 30 s (2 to 10)",
+        fr: "Modules différents en 30 s (2 à 10)",
+        de: "Verschiedene Module in 30 s (2 bis 10)"
+    },
+    ConfigAntiNukeInvalidThresholds => {
+        en: "Invalid thresholds: enter whole numbers from 2 to 20. Nothing was changed.",
+        fr: "Seuils invalides : saisissez des nombres entiers de 2 à 20. Rien n'a été modifié.",
+        de: "Ungültige Schwellen: Gib ganze Zahlen von 2 bis 20 ein. Nichts wurde geändert."
+    },
+    ConfigPanicInvalidThreshold => {
+        en: "Invalid threshold: enter a whole number from 2 to 10. Nothing was changed.",
+        fr: "Seuil invalide : saisissez un nombre entier de 2 à 10. Rien n'a été modifié.",
+        de: "Ungültige Schwelle: Gib eine ganze Zahl von 2 bis 10 ein. Nichts wurde geändert."
     }
 }

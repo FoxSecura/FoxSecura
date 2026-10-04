@@ -61,6 +61,9 @@ pub struct LockdownState {
     pub status: LockdownStatus,
     /// Levée prévue, ou prochaine tentative, en secondes Unix.
     pub lift_at: u64,
+    /// Mode lent posé par ce verrouillage (migration 9 ; 10 pour une ligne
+    /// antérieure).
+    pub slowmode_seconds: u16,
 }
 
 /// Suite donnée au réveil d'une minuterie.

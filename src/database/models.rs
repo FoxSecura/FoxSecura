@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_nuke::settings::AntiNukeSettings;
 use crate::protection::anti_raid::join_burst::JoinBurstLimits;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
 use crate::protection::automod::bad_words::BadWordsLanguage;
@@ -28,6 +29,8 @@ pub struct GuildConfig {
     pub anti_raid: JoinBurstLimits,
     /// Salon piège du honeypot (migration 8) ; `None` : non configuré.
     pub honeypot_channel_id: Option<u64>,
+    /// Seuils de l'anti-nuke et du mode panique (migration 9).
+    pub anti_nuke: AntiNukeSettings,
     pub created_at: i64,
     pub updated_at: i64,
 }

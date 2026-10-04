@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Interrupteurs des modules de protection, dans les catégories Anti-Spam,
-//! AutoMod et Anti-Raid du tableau de bord.
+//! AutoMod, Anti-Raid, Doubles comptes et Protection serveur du tableau de
+//! bord.
 //!
 //! L'état affiché est celui lu en base (`guild_protection_modules`). Chaque
 //! écriture invalide le cache de configuration de la guilde : le moteur
@@ -51,7 +52,22 @@ pub const ALT_ACCOUNT_MODULES: &[ProtectionModule] = &[
     ProtectionModule::Honeypot,
 ];
 
+/// Modules de l'anti-nuke et mode panique, affichés dans la catégorie
+/// « Protection serveur ».
+pub const ANTI_NUKE_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiMassBan,
+    ProtectionModule::AntiMassKick,
+    ProtectionModule::AntiMassTimeout,
+    ProtectionModule::AntiMassUnban,
+    ProtectionModule::AntiMassChannelCreate,
+    ProtectionModule::AntiMassRoleCreate,
+    ProtectionModule::AntiEmojiStickerNuke,
+    ProtectionModule::AntiMassRoleGrant,
+    ProtectionModule::PanicMode,
+];
+
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
+pub const ANTI_NUKE_CATEGORY_ID: &str = "server_protection";
 pub const ALT_ACCOUNT_CATEGORY_ID: &str = "anti_double_account";
 pub const ANTI_RAID_CATEGORY_ID: &str = "anti_raid";
 
@@ -83,6 +99,8 @@ impl ModuleToggle {
             ANTI_RAID_CATEGORY_ID
         } else if ALT_ACCOUNT_MODULES.contains(&self.module) {
             ALT_ACCOUNT_CATEGORY_ID
+        } else if ANTI_NUKE_MODULES.contains(&self.module) {
+            ANTI_NUKE_CATEGORY_ID
         } else {
             super::anti_spam::CATEGORY_ID
         }
@@ -211,6 +229,15 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiRaid => TextKey::ModuleAntiRaid,
         ProtectionModule::Honeypot => TextKey::ModuleHoneypot,
         ProtectionModule::AntiDoubleAccount => TextKey::ModuleAntiDoubleAccount,
+        ProtectionModule::AntiMassBan => TextKey::ModuleAntiMassBan,
+        ProtectionModule::AntiMassKick => TextKey::ModuleAntiMassKick,
+        ProtectionModule::AntiMassTimeout => TextKey::ModuleAntiMassTimeout,
+        ProtectionModule::AntiMassUnban => TextKey::ModuleAntiMassUnban,
+        ProtectionModule::AntiMassChannelCreate => TextKey::ModuleAntiMassChannelCreate,
+        ProtectionModule::AntiMassRoleCreate => TextKey::ModuleAntiMassRoleCreate,
+        ProtectionModule::AntiEmojiStickerNuke => TextKey::ModuleAntiEmojiStickerNuke,
+        ProtectionModule::AntiMassRoleGrant => TextKey::ModuleAntiMassRoleGrant,
+        ProtectionModule::PanicMode => TextKey::ModulePanicMode,
     }
 }
 
@@ -226,6 +253,7 @@ mod tests {
                 .chain(AUTOMOD_MODULES)
                 .chain(ANTI_RAID_MODULES)
                 .chain(ALT_ACCOUNT_MODULES)
+                .chain(ANTI_NUKE_MODULES)
                 .filter(|candidate| **candidate == module)
                 .count();
             assert_eq!(count, 1, "{module}");
@@ -235,6 +263,7 @@ mod tests {
         assert!(ANTI_SPAM_MODULES.len() <= 2 * BUTTONS_PER_ROW);
         assert!(AUTOMOD_MODULES.len() <= BUTTONS_PER_ROW);
         assert!(ANTI_RAID_MODULES.len() <= BUTTONS_PER_ROW);
+        assert!(ANTI_NUKE_MODULES.len() <= 2 * BUTTONS_PER_ROW);
     }
 
     #[test]
@@ -254,6 +283,10 @@ mod tests {
         assert_eq!(
             parse_toggle("foxsecura:config:module:anti_nuke:on"),
             Some(Err(UnknownModuleKey("anti_nuke".to_owned())))
+        );
+        assert_eq!(
+            parse_toggle("foxsecura:config:module:anti_channel_delete:on"),
+            Some(Err(UnknownModuleKey("anti_channel_delete".to_owned())))
         );
         assert!(matches!(
             parse_toggle("foxsecura:config:module:Malicious_Link:on"),

@@ -4,6 +4,7 @@
 mod access;
 mod access_control;
 mod alt_accounts;
+mod anti_nuke;
 mod anti_raid;
 mod anti_spam;
 mod bad_words;
@@ -18,6 +19,7 @@ use crate::app::pipeline::quarantine::{self, QuarantineRoleError, ReleaseTrigger
 use crate::app::{AppData, Error, run_database};
 use access::{Access, Right};
 use access_control::{BlacklistEdit, BlacklistRefusal, ListTarget};
+use anti_nuke::AntiNukeState;
 use anti_raid::{AntiRaidState, QuarantineAction};
 use bad_words::BadWordsAction;
 use content_filters::ModuleToggle;
@@ -121,6 +123,9 @@ enum CategoryView {
         modules: ModuleSet,
         honeypot_channel_id: Option<u64>,
     },
+    AntiNuke {
+        state: AntiNukeState,
+    },
 }
 
 /// Ouvre le tableau de bord de configuration FoxSecura.
@@ -184,6 +189,8 @@ pub async fn handle_component(
                 anti_raid::MIN_AGE_ID,
                 anti_raid::LIMITS_ID,
                 alt_accounts::HONEYPOT_CHANNEL_SELECT_ID,
+                anti_nuke::THRESHOLDS_ID,
+                anti_nuke::PANIC_ID,
             ]
             .contains(&custom_id) =>
         {
@@ -225,6 +232,39 @@ pub async fn handle_component(
 
     if custom_id == alt_accounts::HONEYPOT_CHANNEL_SELECT_ID {
         save_honeypot_channel(ctx, data, component, language, guild_id, access).await?;
+        return Ok(true);
+    }
+
+    if custom_id == anti_nuke::THRESHOLDS_ID || custom_id == anti_nuke::PANIC_ID {
+        match load_view(data, guild_id, anti_nuke::CATEGORY_ID, access).await {
+            Ok(Some(CategoryView::AntiNuke { state })) => {
+                let modal = if custom_id == anti_nuke::THRESHOLDS_ID {
+                    anti_nuke::thresholds_modal(language, state.settings.thresholds)
+                } else {
+                    anti_nuke::panic_modal(language, state.settings.panic_threshold)
+                };
+                component
+                    .create_response(&ctx.http, serenity::CreateInteractionResponse::Modal(modal))
+                    .await?;
+            }
+            Ok(_) => {
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+            Err(error) => {
+                eprintln!("[config] lecture de l'anti-nuke impossible ({guild_id}) : {error}");
+                respond_ephemeral_component(
+                    ctx,
+                    component,
+                    text(language, TextKey::ConfigSaveFailed),
+                )
+                .await?;
+            }
+        }
         return Ok(true);
     }
 
@@ -515,6 +555,11 @@ async fn save_module_toggle(
             if toggle.module == ProtectionModule::AntiDoubleAccount && toggle.enabled {
                 prewarm_members(ctx, data.protection.member_prewarm(), guild_id);
             }
+            // Anti-nuke activé sans VIEW_AUDIT_LOG : signalé tout de suite
+            // dans les logs locaux (une fois par guilde).
+            if toggle.enabled && content_filters::ANTI_NUKE_MODULES.contains(&toggle.module) {
+                crate::app::pipeline::anti_nuke::handle_guild_create(ctx, data, guild_id).await;
+            }
         }
         Err(error) => {
             eprintln!(
@@ -632,6 +677,8 @@ pub async fn handle_modal(
         bad_words::MODAL_ID,
         anti_raid::MIN_AGE_MODAL_ID,
         anti_raid::LIMITS_MODAL_ID,
+        anti_nuke::THRESHOLDS_MODAL_ID,
+        anti_nuke::PANIC_MODAL_ID,
     ]
     .contains(&custom_id)
     {
@@ -668,6 +715,9 @@ pub async fn handle_modal(
     }
     if custom_id == anti_raid::LIMITS_MODAL_ID {
         return save_anti_raid_limits(ctx, data, modal, language, guild_id, access).await;
+    }
+    if custom_id == anti_nuke::THRESHOLDS_MODAL_ID || custom_id == anti_nuke::PANIC_MODAL_ID {
+        return save_anti_nuke(ctx, data, modal, language, guild_id, access).await;
     }
 
     let Some((threshold, window_seconds)) = anti_spam::submitted_limits(&modal.data.components)
@@ -890,6 +940,69 @@ async fn save_anti_raid_limits(
         }
         Err(error) => {
             eprintln!("[config] enregistrement de l'anti-raid impossible ({guild_id}) : {error}");
+            respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+    Ok(true)
+}
+
+/// Seuils des rafales ou seuil du mode panique, validés (bornes V1) puis
+/// réaffichage de la catégorie. Une saisie refusée ne modifie rien.
+async fn save_anti_nuke(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+) -> Result<bool, Error> {
+    let saved = if modal.data.custom_id == anti_nuke::THRESHOLDS_MODAL_ID {
+        let Some(thresholds) = anti_nuke::submitted_thresholds(&modal.data.components) else {
+            respond_ephemeral_modal(
+                ctx,
+                modal,
+                text(language, TextKey::ConfigAntiNukeInvalidThresholds),
+            )
+            .await?;
+            return Ok(true);
+        };
+        run_database(&data.database, move |database| {
+            database.set_anti_nuke_thresholds(guild_id, thresholds)
+        })
+        .await
+    } else {
+        let Some(threshold) = anti_nuke::submitted_panic_threshold(&modal.data.components) else {
+            respond_ephemeral_modal(
+                ctx,
+                modal,
+                text(language, TextKey::ConfigPanicInvalidThreshold),
+            )
+            .await?;
+            return Ok(true);
+        };
+        run_database(&data.database, move |database| {
+            database.set_panic_mode_threshold(guild_id, threshold)
+        })
+        .await
+    };
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, anti_nuke::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+
+    match view {
+        Ok(view) => {
+            update_dashboard_from_modal(
+                ctx,
+                modal,
+                language,
+                anti_nuke::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!("[config] enregistrement de l'anti-nuke impossible ({guild_id}) : {error}");
             respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
         }
     }
@@ -1387,6 +1500,25 @@ async fn load_view(
                     .and_then(|guild_config| guild_config.honeypot_channel_id),
             })
         }
+        anti_nuke::CATEGORY_ID => {
+            let (config, modules, lockdown) = run_database(&data.database, move |database| {
+                Ok((
+                    database.find_guild_config(guild_id)?,
+                    database.enabled_modules(guild_id)?,
+                    database.lockdown_state(guild_id)?,
+                ))
+            })
+            .await?;
+            Some(CategoryView::AntiNuke {
+                state: AntiNukeState {
+                    modules,
+                    settings: config
+                        .map(|guild_config| guild_config.anti_nuke)
+                        .unwrap_or_default(),
+                    lockdown,
+                },
+            })
+        }
         _ => None,
     })
 }
@@ -1521,6 +1653,9 @@ fn build_embed(
                     *modules,
                     *honeypot_channel_id,
                 )),
+                (anti_nuke::CATEGORY_ID, Some(CategoryView::AntiNuke { state })) => {
+                    embed.fields(anti_nuke::state_fields(language, state))
+                }
                 _ => embed.field(
                     text(language, TextKey::ConfigFieldState),
                     text(language, TextKey::ConfigStatePlaceholder),
@@ -1576,6 +1711,9 @@ fn build_components(
         }
         (Some(alt_accounts::CATEGORY_ID), Some(CategoryView::AltAccounts { modules, .. })) => {
             rows.extend(alt_accounts::components(language, *modules));
+        }
+        (Some(anti_nuke::CATEGORY_ID), Some(CategoryView::AntiNuke { state })) => {
+            rows.extend(anti_nuke::components(language, state.modules));
         }
         _ => {}
     }

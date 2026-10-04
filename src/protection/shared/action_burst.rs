@@ -135,6 +135,15 @@ impl ActionBurstDetector {
         }
     }
 
+    /// Oublie les actions comptées pour une clé (après un déclenchement).
+    pub fn forget(&mut self, guild_id: u64, executor_id: u64, action: &str) {
+        self.events.remove(&ActionBurstKey {
+            guild_id,
+            executor_id,
+            action: action.to_owned(),
+        });
+    }
+
     pub fn reset(&mut self) {
         self.events.clear();
         self.next_sweep_at = None;
