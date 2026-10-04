@@ -5,6 +5,9 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_nuke::settings::{
+    AntiNukeSettings, AntiNukeThresholds, validate_panic_threshold,
+};
 use crate::protection::anti_raid::anti_new_account::is_valid_min_account_age_days;
 use crate::protection::anti_raid::join_burst::JoinBurstLimits;
 use crate::protection::anti_spam::message_flood::MessageFloodConfig;
@@ -170,6 +173,68 @@ ON CONFLICT(guild_id) DO UPDATE SET
         read_guild_config(&connection, guild_id)
     }
 
+    /// Enregistre les seuils des rafales de l'anti-nuke (2 à 20). Une
+    /// valeur hors bornes ne modifie rien.
+    pub fn set_anti_nuke_thresholds(
+        &self,
+        guild_id: u64,
+        thresholds: AntiNukeThresholds,
+    ) -> Result<GuildConfig, DatabaseError> {
+        let thresholds = thresholds.validated()?;
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (
+    guild_id, anti_nuke_ban_threshold, anti_nuke_unban_threshold, anti_nuke_create_threshold,
+    anti_nuke_emoji_sticker_threshold, anti_nuke_role_grant_threshold
+)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+ON CONFLICT(guild_id) DO UPDATE SET
+    anti_nuke_ban_threshold = excluded.anti_nuke_ban_threshold,
+    anti_nuke_unban_threshold = excluded.anti_nuke_unban_threshold,
+    anti_nuke_create_threshold = excluded.anti_nuke_create_threshold,
+    anti_nuke_emoji_sticker_threshold = excluded.anti_nuke_emoji_sticker_threshold,
+    anti_nuke_role_grant_threshold = excluded.anti_nuke_role_grant_threshold,
+    updated_at = unixepoch()
+"#,
+            params![
+                guild_id.to_string(),
+                thresholds.ban,
+                thresholds.unban,
+                thresholds.create,
+                thresholds.emoji_sticker,
+                thresholds.role_grant
+            ],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
+    /// Enregistre le seuil du mode panique (2 à 10 types de modules
+    /// distincts). Une valeur hors bornes ne modifie rien.
+    pub fn set_panic_mode_threshold(
+        &self,
+        guild_id: u64,
+        threshold: u8,
+    ) -> Result<GuildConfig, DatabaseError> {
+        let threshold = validate_panic_threshold(threshold)?;
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, panic_mode_threshold)
+VALUES (?1, ?2)
+ON CONFLICT(guild_id) DO UPDATE SET
+    panic_mode_threshold = excluded.panic_mode_threshold,
+    updated_at = unixepoch()
+"#,
+            params![guild_id.to_string(), threshold],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
     /// Enregistre (ou efface, avec `None`) le salon piège du honeypot.
     pub fn set_honeypot_channel(
         &self,
@@ -324,7 +389,9 @@ pub(super) fn read_guild_config(
 SELECT guild_id, language, created_at, updated_at,
     anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
     bad_words_language, new_account_min_age_days, quarantine_role_id,
-    anti_raid_join_threshold, anti_raid_window_seconds, honeypot_channel_id
+    anti_raid_join_threshold, anti_raid_window_seconds, honeypot_channel_id,
+    anti_nuke_ban_threshold, anti_nuke_unban_threshold, anti_nuke_create_threshold,
+    anti_nuke_emoji_sticker_threshold, anti_nuke_role_grant_threshold, panic_mode_threshold
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -344,6 +411,14 @@ WHERE guild_id = ?1
                 row.get::<_, u32>(10)?,
                 row.get::<_, u32>(11)?,
                 row.get::<_, Option<String>>(12)?,
+                [
+                    row.get::<_, u8>(13)?,
+                    row.get::<_, u8>(14)?,
+                    row.get::<_, u8>(15)?,
+                    row.get::<_, u8>(16)?,
+                    row.get::<_, u8>(17)?,
+                    row.get::<_, u8>(18)?,
+                ],
             ))
         },
     )?;
@@ -360,6 +435,17 @@ WHERE guild_id = ?1
         quarantine_role_id: row.9.as_deref().map(parse_snowflake).transpose()?,
         anti_raid: JoinBurstLimits::validated(row.10, row.11)?,
         honeypot_channel_id: row.12.as_deref().map(parse_snowflake).transpose()?,
+        anti_nuke: AntiNukeSettings {
+            thresholds: AntiNukeThresholds {
+                ban: row.13[0],
+                unban: row.13[1],
+                create: row.13[2],
+                emoji_sticker: row.13[3],
+                role_grant: row.13[4],
+            },
+            panic_threshold: row.13[5],
+        }
+        .validated()?,
         created_at: row.2,
         updated_at: row.3,
     })

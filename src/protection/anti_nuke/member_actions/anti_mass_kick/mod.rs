@@ -8,7 +8,7 @@ use crate::protection::{
     shared::{ActionBurstDetector, ActionBurstResult},
 };
 
-pub const SPEC: NukeActionSpec = NukeActionSpec::new("kick", 3, Duration::from_secs(20));
+pub const SPEC: NukeActionSpec = NukeActionSpec::new("kick", 3, Duration::from_secs(30));
 
 pub fn detect_mass_kick(
     detector: &mut ActionBurstDetector,

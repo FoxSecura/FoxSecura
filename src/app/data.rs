@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use foxsecura::database::{Database, DatabaseError};
 use foxsecura::protection::anti_nuke::audit::AuditEntryDedup;
+use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
@@ -47,6 +48,7 @@ pub struct ProtectionState {
     lockdown_timers: Arc<LockdownTimers>,
     member_prewarm: Arc<tokio::sync::Mutex<()>>,
     audit_dedup: Mutex<AuditEntryDedup>,
+    nuke_bursts: Mutex<NukeBurstTracker>,
     audit_permission_warnings: Mutex<HashSet<u64>>,
 }
 
@@ -105,6 +107,16 @@ impl ProtectionState {
     /// identifiants.
     pub fn audit_dedup(&self) -> MutexGuard<'_, AuditEntryDedup> {
         self.audit_dedup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales de l'anti-nuke par auteur, avec leurs pauses (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn nuke_bursts(&self) -> MutexGuard<'_, NukeBurstTracker> {
+        self.nuke_bursts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

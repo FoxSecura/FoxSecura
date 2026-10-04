@@ -12,6 +12,9 @@ use foxsecura::database::{
 };
 use foxsecura::i18n::Language;
 use foxsecura::logs::LogType;
+use foxsecura::protection::anti_nuke::settings::{
+    AntiNukeSettings, AntiNukeSettingsError, AntiNukeThresholds,
+};
 use foxsecura::protection::anti_raid::join_burst::{JoinBurstLimits, JoinBurstLimitsError};
 use foxsecura::protection::anti_spam::message_flood::{
     MessageFloodConfig, MessageFloodConfigError,
@@ -279,8 +282,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_eight() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 8);
+fn latest_schema_version_is_nine() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 9);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -2120,17 +2123,9 @@ VALUES ('123', 'anti_new_account', 1);
     fs::remove_dir_all(directory).unwrap();
 }
 
-#[test]
-fn migrates_version_seven_database_without_data_loss() {
-    let directory = temporary_directory("migrate-v7");
-    let path = directory.join("foxsecura.sqlite3");
-
-    {
-        // Schéma v7 figé, tel que publié avant le verrouillage et l'anti-raid.
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection
-            .execute_batch(
-                r#"
+/// Schéma v7 figé, tel que publié avant le verrouillage et l'anti-raid,
+/// migrations 1 à 7 enregistrées.
+const V7_SCHEMA: &str = r#"
 CREATE TABLE schema_migrations (
     version INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL UNIQUE,
@@ -2260,6 +2255,20 @@ INSERT INTO schema_migrations (version, name) VALUES (4, 'protection_modules');
 INSERT INTO schema_migrations (version, name) VALUES (5, 'bad_words');
 INSERT INTO schema_migrations (version, name) VALUES (6, 'member_protection');
 INSERT INTO schema_migrations (version, name) VALUES (7, 'quarantine');
+"#;
+
+#[test]
+fn migrates_version_seven_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v7");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        // Schéma v7 figé, tel que publié avant le verrouillage et l'anti-raid.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(V7_SCHEMA).unwrap();
+        connection
+            .execute_batch(
+                r#"
 INSERT INTO guild_configs (
     guild_id, language, created_at, updated_at,
     anti_spam_enabled, anti_spam_message_threshold, anti_spam_window_seconds,
@@ -2278,7 +2287,7 @@ VALUES ('123', 'anti_impersonation', 1);
     }
 
     let database = Database::open(&path).unwrap();
-    assert_eq!(database.schema_version().unwrap(), 8);
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
 
     let config = database.find_guild_config(123).unwrap().unwrap();
     assert_eq!(config.language, Language::German);
@@ -2315,7 +2324,7 @@ VALUES ('123', 'anti_impersonation', 1);
     database.set_honeypot_channel(123, Some(900)).unwrap();
     drop(database);
     let reopened = Database::open(&path).unwrap();
-    assert_eq!(reopened.schema_version().unwrap(), 8);
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
     let config = reopened.find_guild_config(123).unwrap().unwrap();
     assert_eq!(
         (config.anti_raid.threshold, config.anti_raid.window_seconds),
@@ -2779,4 +2788,260 @@ fn quarantine_rows_cascade_when_guild_config_is_deleted() {
     assert!(database.pending_releases(10).unwrap().is_empty());
     drop(database);
     fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+// --- Anti-nuke (migration 9) ---
+
+/// Migration 8 telle que publiée (verrouillage et anti-raid).
+const V8_MIGRATION: &str = r#"
+ALTER TABLE guild_configs ADD COLUMN anti_raid_join_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_raid_join_threshold BETWEEN 2 AND 50);
+ALTER TABLE guild_configs ADD COLUMN anti_raid_window_seconds INTEGER NOT NULL DEFAULT 20
+    CHECK (anti_raid_window_seconds BETWEEN 5 AND 120);
+ALTER TABLE guild_configs ADD COLUMN honeypot_channel_id TEXT;
+
+CREATE TABLE guild_lockdowns (
+    guild_id TEXT PRIMARY KEY NOT NULL,
+    reason TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 64),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'lifting', 'retry')),
+    lift_at INTEGER NOT NULL CHECK (lift_at >= 0),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE TABLE guild_lockdown_channels (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    previous_send TEXT NOT NULL,
+    previous_slowmode INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+INSERT INTO schema_migrations (version, name) VALUES (8, 'lockdown_anti_raid');
+"#;
+
+#[test]
+fn migrates_version_eight_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v8");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(V7_SCHEMA).unwrap();
+        connection.execute_batch(V8_MIGRATION).unwrap();
+        connection
+            .execute_batch(
+                r#"
+INSERT INTO guild_configs (
+    guild_id, language, created_at, updated_at, anti_raid_join_threshold,
+    anti_raid_window_seconds, honeypot_channel_id, quarantine_role_id
+)
+VALUES ('123', 'en', 1000, 2000, 8, 30, '900', '500');
+INSERT INTO guild_protection_modules (guild_id, module_key, enabled)
+VALUES ('123', 'anti_raid', 1);
+INSERT INTO guild_lockdowns (guild_id, reason, status, lift_at)
+VALUES ('123', 'anti_raid', 'active', 4000);
+INSERT INTO guild_lockdown_channels (guild_id, channel_id, previous_send, previous_slowmode)
+VALUES ('123', '100', 'allow', 5);
+"#,
+            )
+            .unwrap();
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+
+    let config = database.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(config.language, Language::English);
+    assert_eq!((config.created_at, config.updated_at), (1000, 2000));
+    assert_eq!(
+        (config.anti_raid.threshold, config.anti_raid.window_seconds),
+        (8, 30)
+    );
+    assert_eq!(config.honeypot_channel_id, Some(900));
+    assert_eq!(config.quarantine_role_id, Some(500));
+    // Réglages de la migration 9 : valeurs par défaut de la V1.
+    assert_eq!(config.anti_nuke, AntiNukeSettings::default());
+    assert_eq!(
+        (
+            config.anti_nuke.thresholds.ban,
+            config.anti_nuke.thresholds.unban,
+            config.anti_nuke.thresholds.create,
+            config.anti_nuke.thresholds.emoji_sticker,
+            config.anti_nuke.thresholds.role_grant,
+            config.anti_nuke.panic_threshold,
+        ),
+        (3, 5, 5, 5, 5, 3)
+    );
+    assert!(
+        database
+            .enabled_modules(123)
+            .unwrap()
+            .contains(ProtectionModule::AntiRaid)
+    );
+    // Le verrouillage en cours est conservé.
+    let state = database.lockdown_state(123).unwrap().unwrap();
+    assert_eq!(state.lift_at, 4000);
+    assert_eq!(
+        database.lockdown_channels(123).unwrap(),
+        vec![(100, channel_state(PermissionState::Allow, Some(5)))]
+    );
+
+    database
+        .set_anti_nuke_thresholds(
+            123,
+            AntiNukeThresholds {
+                ban: 4,
+                ..AntiNukeThresholds::default()
+            },
+        )
+        .unwrap();
+    database.set_panic_mode_threshold(123, 6).unwrap();
+    drop(database);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+    let config = reopened.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(config.anti_nuke.thresholds.ban, 4);
+    assert_eq!(config.anti_nuke.panic_threshold, 6);
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn anti_nuke_thresholds_are_bounded() {
+    let database = Database::open_in_memory().unwrap();
+    assert_eq!(
+        database.guild_config(1).unwrap().anti_nuke,
+        AntiNukeSettings::default()
+    );
+
+    for value in [2, 20, 7] {
+        let thresholds = AntiNukeThresholds {
+            ban: value,
+            unban: value,
+            create: value,
+            emoji_sticker: value,
+            role_grant: value,
+        };
+        let config = database.set_anti_nuke_thresholds(1, thresholds).unwrap();
+        assert_eq!(config.anti_nuke.thresholds, thresholds);
+    }
+    for value in [0, 1, 21, u8::MAX] {
+        let thresholds = AntiNukeThresholds {
+            role_grant: value,
+            ..AntiNukeThresholds::default()
+        };
+        assert!(matches!(
+            database.set_anti_nuke_thresholds(1, thresholds),
+            Err(DatabaseError::InvalidAntiNukeSettings(
+                AntiNukeSettingsError::ThresholdOutOfRange(refused)
+            )) if refused == value
+        ));
+    }
+    // Rien n'a été modifié par les refus.
+    assert_eq!(
+        database
+            .find_guild_config(1)
+            .unwrap()
+            .unwrap()
+            .anti_nuke
+            .thresholds
+            .ban,
+        7
+    );
+
+    for value in [2, 10] {
+        assert_eq!(
+            database
+                .set_panic_mode_threshold(1, value)
+                .unwrap()
+                .anti_nuke
+                .panic_threshold,
+            value
+        );
+    }
+    for value in [1, 11] {
+        assert!(matches!(
+            database.set_panic_mode_threshold(1, value),
+            Err(DatabaseError::InvalidAntiNukeSettings(
+                AntiNukeSettingsError::PanicThresholdOutOfRange(refused)
+            )) if refused == value
+        ));
+    }
+    assert_eq!(
+        database
+            .find_guild_config(1)
+            .unwrap()
+            .unwrap()
+            .anti_nuke
+            .panic_threshold,
+        10
+    );
+}
+
+#[test]
+fn anti_nuke_writes_invalidate_the_guild_cache() {
+    let database = Database::open_in_memory().unwrap();
+    database.member_guard_context(1, 2).unwrap();
+    database
+        .set_anti_nuke_thresholds(
+            1,
+            AntiNukeThresholds {
+                create: 9,
+                ..AntiNukeThresholds::default()
+            },
+        )
+        .unwrap();
+    let context = database.member_guard_context(1, 2).unwrap();
+    assert_eq!(context.guild_config.unwrap().anti_nuke.thresholds.create, 9);
+
+    database.set_panic_mode_threshold(1, 4).unwrap();
+    let context = database.member_guard_context(1, 2).unwrap();
+    assert_eq!(context.guild_config.unwrap().anti_nuke.panic_threshold, 4);
+
+    database
+        .set_protection_module(1, ProtectionModule::AntiMassBan, true)
+        .unwrap();
+    assert!(
+        database
+            .member_guard_context(1, 2)
+            .unwrap()
+            .enabled_modules
+            .contains(ProtectionModule::AntiMassBan)
+    );
+}
+
+#[test]
+fn out_of_range_thresholds_written_outside_foxsecura_are_refused_by_sqlite() {
+    // La contrainte `CHECK` protège aussi une écriture faite hors de
+    // FoxSecura : le seuil réglé ne peut pas retomber sous 2.
+    let directory = temporary_directory("anti-nuke-check");
+    let path = directory.join("foxsecura.sqlite3");
+    drop(Database::open(&path).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute("INSERT INTO guild_configs (guild_id) VALUES ('5')", [])
+        .unwrap();
+    for column in [
+        "anti_nuke_ban_threshold",
+        "anti_nuke_unban_threshold",
+        "anti_nuke_create_threshold",
+        "anti_nuke_emoji_sticker_threshold",
+        "anti_nuke_role_grant_threshold",
+        "panic_mode_threshold",
+    ] {
+        assert!(
+            connection
+                .execute(
+                    &format!("UPDATE guild_configs SET {column} = 1 WHERE guild_id = '5'"),
+                    [],
+                )
+                .is_err(),
+            "{column}"
+        );
+    }
+    drop(connection);
+    fs::remove_dir_all(directory).unwrap();
 }

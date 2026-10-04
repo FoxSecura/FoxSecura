@@ -4,7 +4,9 @@
 //! Famille des protections contre les actions destructrices et les nukes serveur.
 //!
 //! - [`audit`] : socle des journaux d'audit (gardes, dédoublonnage,
-//!   classement des entrées).
+//!   classement des entrées) ;
+//! - [`burst`] : rafales par auteur, avec pause après un déclenchement ;
+//! - [`settings`] : seuils réglables (migration 9).
 //!
 //! Les modules de détection hérités de l'archive (`server_integrity`,
 //! suppressions de salons et de rôles, `limit_role`) ne sont pas branchés :
@@ -13,12 +15,14 @@
 mod action_guard;
 
 pub mod audit;
+pub mod burst;
 
 pub mod limit_role;
 pub mod member_actions;
 pub mod panic_mode;
 pub mod resource_actions;
 pub mod server_integrity;
+pub mod settings;
 
 pub use action_guard::{
     ExecutorDecision, NukeActionInput, NukeActionSpec, detect_nuke_action, evaluate_executor_action,

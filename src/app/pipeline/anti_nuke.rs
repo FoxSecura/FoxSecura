@@ -4,7 +4,8 @@
 //! Anti-nuke au runtime : entrées du journal d'audit poussées par Discord
 //! (`GUILD_AUDIT_LOG_ENTRY_CREATE`).
 //!
-//! `entrée → gardes → classement → contexte (cache par guilde)`. Les
+//! `entrée → gardes → classement → contexte (cache par guilde) → rafale par
+//! auteur`. Les
 //! décisions sont dans `foxsecura::protection::anti_nuke` ; ce module ne fait
 //! que convertir l'événement et relever l'état du cache. Les erreurs sont
 //! journalisées et jamais propagées.
@@ -15,11 +16,14 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use foxsecura::database::MemberGuardContext;
 use foxsecura::protection::anti_nuke::audit::{
     AuditAction, AuditEntry, AuditGuardContext, classify_entry, screen_entry,
     should_warn_missing_audit_permission,
 };
+use foxsecura::protection::anti_nuke::burst::BurstVerdict;
 use foxsecura::protection::anti_nuke::is_anti_nuke_enabled;
+use foxsecura::protection::anti_nuke::settings::AntiNukeSettings;
 use poise::serenity_prelude::{
     self as serenity,
     audit_log::{
@@ -44,13 +48,59 @@ pub async fn handle_audit_entry(
         bot_id: ctx.cache.current_user().id.get(),
     };
     let screened = screen_entry(&entry, guard, &mut data.protection.audit_dedup());
-    let Ok(_author_id) = screened else {
+    let Ok(author_id) = screened else {
         return;
     };
-    let Some(_action) = classify_entry(&entry) else {
+    let Some(action) = classify_entry(&entry) else {
         return;
     };
-    // Le comptage par auteur arrive avec les rafales de l'anti-nuke.
+
+    let guild = guild_id.get();
+    let Some(context) = read_context(data, guild, author_id).await else {
+        return;
+    };
+    if !context.enabled_modules.contains(action.module()) {
+        return;
+    }
+    let thresholds = context
+        .guild_config
+        .as_ref()
+        .map_or_else(AntiNukeSettings::default, |config| config.anti_nuke)
+        .thresholds;
+    let verdict = data.protection.nuke_bursts().record(
+        guild,
+        author_id,
+        action,
+        usize::from(thresholds.for_action(action)),
+        guard.now,
+    );
+    let BurstVerdict::Triggered(burst) = verdict else {
+        return;
+    };
+    println!(
+        "[anti-nuke] rafale {} de {author_id} sur la guilde {guild} : {}/{} en {} s",
+        action.module(),
+        burst.count,
+        burst.threshold,
+        burst.window.as_secs()
+    );
+}
+
+/// Une seule lecture par entrée, servie par le cache de la guilde.
+async fn read_context(data: &AppData, guild_id: u64, author_id: u64) -> Option<MemberGuardContext> {
+    match run_database(&data.database, move |database| {
+        database.member_guard_context(guild_id, author_id)
+    })
+    .await
+    {
+        Ok(context) => Some(context),
+        Err(error) => {
+            eprintln!(
+                "[anti-nuke] contexte illisible pour la guilde {guild_id} (auteur {author_id}) : {error}"
+            );
+            None
+        }
+    }
 }
 
 /// Convertit l'entrée serenity : seuls les changements utiles sont relevés.

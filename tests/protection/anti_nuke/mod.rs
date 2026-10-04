@@ -3,6 +3,8 @@
 
 #[path = "audit.rs"]
 mod audit;
+#[path = "bursts.rs"]
+mod bursts;
 #[path = "limit_role.rs"]
 mod limit_role;
 #[path = "member_actions/mod.rs"]

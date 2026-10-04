@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 8;
+pub const LATEST_SCHEMA_VERSION: i64 = 9;
 
 struct Migration {
     version: i64,
@@ -261,6 +261,37 @@ CREATE TABLE guild_lockdown_channels (
     PRIMARY KEY (guild_id, channel_id),
     FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
 );
+"#,
+    },
+    Migration {
+        version: 9,
+        name: "anti_nuke",
+        // Anti-nuke : seuils réglables des rafales (bornes 2 à 20, valeurs
+        // de la V1), seuil partagé des créations de salons et de rôles, et
+        // seuil du mode panique (types de modules distincts, 2 à 10). Les
+        // expulsions et exclusions temporaires gardent leur seuil fixe (3).
+        //
+        // `guild_lockdowns.slowmode_seconds` : mode lent **posé** par le
+        // verrouillage (10 s pour l'anti-raid, 30 s pour le mode panique).
+        // La levée ne rend l'ancien mode lent que si le salon porte encore
+        // cette valeur. Les lignes existantes, toutes posées par l'anti-raid
+        // de la migration 8, prennent la valeur par défaut 10.
+        sql: r#"
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_ban_threshold INTEGER NOT NULL DEFAULT 3
+    CHECK (anti_nuke_ban_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_unban_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_unban_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_create_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_create_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_emoji_sticker_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_emoji_sticker_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_role_grant_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_role_grant_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN panic_mode_threshold INTEGER NOT NULL DEFAULT 3
+    CHECK (panic_mode_threshold BETWEEN 2 AND 10);
+
+ALTER TABLE guild_lockdowns ADD COLUMN slowmode_seconds INTEGER NOT NULL DEFAULT 10
+    CHECK (slowmode_seconds BETWEEN 0 AND 21600);
 "#,
     },
 ];
