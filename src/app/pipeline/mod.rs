@@ -9,6 +9,7 @@
 
 pub mod anti_nuke;
 mod anti_spam;
+pub mod auto_slowmode;
 mod content_filter;
 mod delete;
 pub mod ghost_ping;

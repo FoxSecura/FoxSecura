@@ -2096,5 +2096,35 @@ catalog! {
         en: "The timeout was not applied: check FoxSecura's Moderate Members permission and role position.",
         fr: "Le timeout n'a pas été appliqué : vérifiez la permission Modérer les membres et la position du rôle de FoxSecura.",
         de: "Der Timeout wurde nicht angewendet: Prüfe die Berechtigung Mitglieder moderieren und die Rollenposition von FoxSecura."
+    },
+    ModuleAutoSlowmode => {
+        en: "Auto slowmode",
+        fr: "Mode lent auto",
+        de: "Auto-Slowmode"
+    },
+    AutoSlowmodeSummary => {
+        en: "Message burst in a channel: 10-second slowmode applied temporarily.",
+        fr: "Rafale de messages dans un salon : mode lent de 10 secondes posé temporairement.",
+        de: "Nachrichtenflut in einem Kanal: 10-Sekunden-Slowmode vorübergehend gesetzt."
+    },
+    AutoSlowmodeEvidenceSlowmode => {
+        en: "Slowmode",
+        fr: "Mode lent",
+        de: "Slowmode"
+    },
+    AutoSlowmodeEvidenceLift => {
+        en: "Lifted after the last burst",
+        fr: "Levé après la dernière rafale",
+        de: "Aufgehoben nach der letzten Flut"
+    },
+    AutoSlowmodeRecommendation => {
+        en: "The previous slowmode is restored automatically 90 seconds after the burst ends, unless the staff changes it in the meantime.",
+        fr: "L'ancien mode lent est rendu automatiquement 90 secondes après la fin de la rafale, sauf si l'équipe le modifie entre-temps.",
+        de: "Der vorherige Slowmode wird 90 Sekunden nach Ende der Flut automatisch wiederhergestellt, sofern das Team ihn nicht zwischenzeitlich ändert."
+    },
+    AutoSlowmodeRecommendationFailed => {
+        en: "The slowmode was not applied: check FoxSecura's Manage Channels permission in this channel.",
+        fr: "Le mode lent n'a pas été posé : vérifiez la permission Gérer les salons de FoxSecura dans ce salon.",
+        de: "Der Slowmode wurde nicht gesetzt: Prüfe die Berechtigung Kanäle verwalten von FoxSecura in diesem Kanal."
     }
 }

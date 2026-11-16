@@ -480,7 +480,9 @@ fn detect_module(
         | ProtectionModule::AntiPingOwner
         | ProtectionModule::AntiSpamPing
         // Anti-ghost-ping : suppressions et modifications suivies à part.
-        | ProtectionModule::AntiGhostPing => None,
+        | ProtectionModule::AntiGhostPing
+        // Mode lent automatique : rafale par salon, avant la liste blanche.
+        | ProtectionModule::AutoSlowmode => None,
     }
 }
 

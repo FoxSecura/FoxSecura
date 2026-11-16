@@ -17,7 +17,9 @@ use foxsecura::protection::shared::{
 use poise::serenity_prelude as serenity;
 
 use super::ghost_ping::{self, ObservedMentions};
-use super::{anti_spam, bot_assigned_roles, content_filter, honeypot, unix_duration};
+use super::{
+    anti_spam, auto_slowmode, bot_assigned_roles, content_filter, honeypot, unix_duration,
+};
 use crate::app::{AppData, run_database};
 
 /// Modules de l'étape « mentions » de la chaîne.
@@ -194,6 +196,17 @@ async fn process(
         .guild_config
         .as_ref()
         .map_or(DEFAULT_LANGUAGE, |guild_config| guild_config.language);
+
+    // Mode lent automatique : réglage du salon, évalué avant la liste
+    // blanche ; le message continue ensuite dans la chaîne.
+    if event == MessageEvent::Created
+        && scope != MessageScope::IgnoredChannel
+        && context
+            .enabled_modules
+            .contains(ProtectionModule::AutoSlowmode)
+    {
+        auto_slowmode::observe(ctx, data, &guild_message);
+    }
 
     // Anti-ghost-ping : suivi à la création, comparaison à la modification,
     // avant toute suppression par la chaîne (marquée, donc jamais comptée).

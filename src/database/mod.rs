@@ -7,6 +7,7 @@
 //! les migrations décrivent le schéma, les modèles représentent les données et
 //! les repositories exposent les opérations utilisées par le reste du bot.
 
+mod auto_slowmode;
 mod bad_words;
 mod cache;
 mod client;

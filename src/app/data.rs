@@ -10,6 +10,7 @@ use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
 use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::anti_ghost_ping::{AntiGhostPingDetector, BotDeletionMarks};
+use foxsecura::protection::anti_spam::auto_slowmode::AutoSlowmodeDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
 use foxsecura::protection::content_filter::MentionBursts;
@@ -17,6 +18,7 @@ use foxsecura::protection::lockdown::{GuildLocks, LockdownTimers};
 use foxsecura::protection::quarantine::MemberLocks;
 
 use super::Error;
+use super::pipeline::auto_slowmode::SlowmodeInFlight;
 
 /// État partagé par les commandes et les événements.
 pub struct AppData {
@@ -47,6 +49,8 @@ pub struct ProtectionState {
     mention_bursts: Mutex<MentionBursts>,
     ghost_pings: Mutex<AntiGhostPingDetector>,
     bot_deletions: Mutex<BotDeletionMarks>,
+    auto_slowmode: Mutex<AutoSlowmodeDetector>,
+    slowmode_in_flight: Arc<SlowmodeInFlight>,
     join_bursts: Mutex<JoinBurstDetector>,
     bad_words: Mutex<BadWordsMatcherCache>,
     quarantine_locks: Arc<MemberLocks>,
@@ -101,6 +105,21 @@ impl ProtectionState {
         self.bot_deletions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales du mode lent automatique, par salon (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn auto_slowmode(&self) -> MutexGuard<'_, AutoSlowmodeDetector> {
+        self.auto_slowmode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Salons dont une pose de mode lent automatique est en cours.
+    pub fn slowmode_in_flight(&self) -> &Arc<SlowmodeInFlight> {
+        &self.slowmode_in_flight
     }
 
     /// Fenêtres glissantes des arrivées, par guilde (bornées).
