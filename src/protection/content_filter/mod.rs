@@ -17,6 +17,7 @@
 //! l'un de ses signaux). Les filtres passent avant l'anti-spam ; un message
 //! qu'ils retiennent n'est pas compté dans la fenêtre anti-spam.
 
+mod mentions;
 mod response;
 
 use std::time::Duration;
@@ -38,6 +39,7 @@ use crate::protection::shared::{
     MessageScope, ModuleSet, ProtectionDecision, ProtectionModule, extract_url_signals,
 };
 
+pub use mentions::{MentionBursts, MentionFacts, OWNER_PING_THRESHOLD, OWNER_PING_WINDOW};
 pub use response::{
     ANTI_SCAM_AUDIT_LABEL, ANTI_SCAM_BAN_PURGE, ANTI_SCAM_TIMEOUT, EXCERPT_MAX_CHARS, FollowUp,
     FollowUpOutcome, MAX_SCAM_SIGNALS, RevisionCheck, anti_scam_audit_reason, build_incident,
@@ -56,6 +58,14 @@ pub const CONTENT_FILTERS: [ProtectionModule; 9] = [
     ProtectionModule::AntiMassMention,
     ProtectionModule::BadWords,
 ];
+
+/// Position de l'étape « mentions » dans [`CONTENT_FILTERS`] : juste avant
+/// les mots interdits (V1).
+const MENTION_STAGE: usize = 8;
+const _: () = assert!(matches!(
+    CONTENT_FILTERS[MENTION_STAGE],
+    ProtectionModule::BadWords
+));
 
 /// Seuil de l'anti-mentions de masse (utilisateurs et rôles mentionnés),
 /// celui de la V1 : non réglable dans cette version.
@@ -187,6 +197,12 @@ pub enum ContentFinding {
     BadWord {
         word: String,
     },
+    /// Rafale de messages qui mentionnent le propriétaire du serveur.
+    OwnerPing {
+        count: usize,
+        threshold: usize,
+        window: Duration,
+    },
 }
 
 /// Premier filtre qui a déclenché.
@@ -209,14 +225,15 @@ pub enum MessageRoute {
     AntiSpam,
 }
 
-/// Choisit le traitement d'un message selon sa portée.
-///
-/// - Salon ignoré : rien.
-/// - Auteur exempté : filtres de contenu seulement (suppression, jamais de
-///   sanction, comme les corrections de contenu de la V1, mots interdits
-///   compris), pas d'anti-spam.
-/// - Sinon : filtres de contenu, puis anti-spam pour les créations seulement :
-///   une modification n'est pas un nouveau message.
+/// Rafales de mentions à évaluer pour une création (voir [`MentionBursts`]).
+#[derive(Debug)]
+pub struct MentionStage<'a> {
+    pub bursts: &'a mut MentionBursts,
+    pub facts: MentionFacts<'a>,
+}
+
+/// Choisit le traitement d'un message selon sa portée, sans étape
+/// « mentions » (voir [`route_message_with`]).
 pub fn route_message(
     scope: MessageScope,
     event: MessageEvent,
@@ -225,17 +242,56 @@ pub fn route_message(
     author: AuthorContext,
     bad_words: Option<&BadWordsMatcher>,
 ) -> MessageRoute {
+    route_message_with(scope, event, enabled, message, author, bad_words, None)
+}
+
+/// Choisit le traitement d'un message selon sa portée.
+///
+/// - Salon ignoré : rien.
+/// - Auteur exempté : filtres de contenu seulement (suppression, jamais de
+///   sanction, comme les corrections de contenu de la V1, mots interdits
+///   compris), ni étape « mentions », ni anti-spam.
+/// - Sinon : filtres de contenu jusqu'aux mentions de masse, puis, pour une
+///   création seulement, l'étape « mentions » (anti-ping du propriétaire,
+///   anti-spam de mentions), puis les mots interdits, puis l'anti-spam pour
+///   une création : une modification n'est pas un nouveau message.
+///
+/// Court-circuit : le premier module qui déclenche arrête la chaîne ; un
+/// message retenu n'est compté par aucune rafale suivante.
+pub fn route_message_with(
+    scope: MessageScope,
+    event: MessageEvent,
+    enabled: ModuleSet,
+    message: &MessageContent,
+    author: AuthorContext,
+    bad_words: Option<&BadWordsMatcher>,
+    mentions: Option<MentionStage<'_>>,
+) -> MessageRoute {
     if scope == MessageScope::IgnoredChannel {
         return MessageRoute::Skip;
     }
 
-    if let Some(detection) = detect_content(enabled, message, author, bad_words) {
+    let (before, after) = CONTENT_FILTERS.split_at(MENTION_STAGE);
+    if let Some(detection) = detect_filters(before, enabled, message, author, bad_words) {
         return MessageRoute::Filter(detection);
     }
 
-    match (scope, event) {
-        (MessageScope::Enforce, MessageEvent::Created) => MessageRoute::AntiSpam,
-        _ => MessageRoute::Skip,
+    let fresh = scope == MessageScope::Enforce && event == MessageEvent::Created;
+    if fresh
+        && let Some(stage) = mentions
+        && let Some(detection) = stage.bursts.detect(enabled, &stage.facts)
+    {
+        return MessageRoute::Filter(detection);
+    }
+
+    if let Some(detection) = detect_filters(after, enabled, message, author, bad_words) {
+        return MessageRoute::Filter(detection);
+    }
+
+    if fresh {
+        MessageRoute::AntiSpam
+    } else {
+        MessageRoute::Skip
     }
 }
 
@@ -251,8 +307,19 @@ pub fn detect_content(
     author: AuthorContext,
     bad_words: Option<&BadWordsMatcher>,
 ) -> Option<ContentDetection> {
-    CONTENT_FILTERS
-        .into_iter()
+    detect_filters(&CONTENT_FILTERS, enabled, message, author, bad_words)
+}
+
+fn detect_filters(
+    modules: &[ProtectionModule],
+    enabled: ModuleSet,
+    message: &MessageContent,
+    author: AuthorContext,
+    bad_words: Option<&BadWordsMatcher>,
+) -> Option<ContentDetection> {
+    modules
+        .iter()
+        .copied()
         .filter(|module| enabled.contains(*module))
         .find_map(|module| {
             detect_module(module, message, author, bad_words)
@@ -374,7 +441,9 @@ fn detect_module(
         | ProtectionModule::AntiServerEdit
         | ProtectionModule::AntiVanityChange
         | ProtectionModule::WebhookWatch
-        | ProtectionModule::LimitRole => None,
+        | ProtectionModule::LimitRole
+        // Étape « mentions » : rafales comptées par `MentionBursts`.
+        | ProtectionModule::AntiPingOwner => None,
     }
 }
 

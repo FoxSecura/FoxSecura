@@ -25,6 +25,7 @@ pub const ANTI_SPAM_MODULES: &[ProtectionModule] = &[
     ProtectionModule::MaliciousLink,
     ProtectionModule::AntiEveryone,
     ProtectionModule::AntiMassMention,
+    ProtectionModule::AntiPingOwner,
 ];
 
 /// Filtres affichés dans la catégorie AutoMod.
@@ -265,6 +266,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiVanityChange => TextKey::ModuleAntiVanityChange,
         ProtectionModule::WebhookWatch => TextKey::ModuleWebhookWatch,
         ProtectionModule::LimitRole => TextKey::ModuleLimitRole,
+        ProtectionModule::AntiPingOwner => TextKey::ModuleAntiPingOwner,
     }
 }
 

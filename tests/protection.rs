@@ -19,6 +19,8 @@ mod content_modules;
 mod lockdown;
 #[path = "protection/member_join.rs"]
 mod member_join;
+#[path = "protection/message_chain.rs"]
+mod message_chain;
 #[path = "protection/quarantine.rs"]
 mod quarantine;
 #[path = "protection/shared/mod.rs"]

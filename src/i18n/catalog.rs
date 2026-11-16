@@ -2016,5 +2016,15 @@ catalog! {
         en: "Role not found in FoxSecura's cache. Nothing was changed.",
         fr: "Rôle introuvable dans le cache de FoxSecura. Rien n'a été modifié.",
         de: "Rolle nicht im Cache von FoxSecura gefunden. Nichts wurde geändert."
+    },
+    ModuleAntiPingOwner => {
+        en: "Owner ping",
+        fr: "Ping du propriétaire",
+        de: "Owner-Ping"
+    },
+    AntiPingOwnerSummary => {
+        en: "Repeated mentions of the server owner: message deleted.",
+        fr: "Mentions répétées du propriétaire du serveur : message supprimé.",
+        de: "Wiederholte Erwähnungen des Serverbesitzers: Nachricht gelöscht."
     }
 }

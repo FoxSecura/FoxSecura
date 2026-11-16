@@ -11,6 +11,7 @@ use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
+use foxsecura::protection::content_filter::MentionBursts;
 use foxsecura::protection::lockdown::{GuildLocks, LockdownTimers};
 use foxsecura::protection::quarantine::MemberLocks;
 
@@ -42,6 +43,7 @@ impl AppData {
 #[derive(Default)]
 pub struct ProtectionState {
     message_flood: Mutex<MessageFloodTracker>,
+    mention_bursts: Mutex<MentionBursts>,
     join_bursts: Mutex<JoinBurstDetector>,
     bad_words: Mutex<BadWordsMatcherCache>,
     quarantine_locks: Arc<MemberLocks>,
@@ -62,6 +64,17 @@ impl ProtectionState {
     /// ne contient que des horodatages, toujours cohérents entre deux appels.
     pub fn message_flood(&self) -> MutexGuard<'_, MessageFloodTracker> {
         self.message_flood
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales de l'anti-ping du propriétaire et de l'anti-spam de mentions,
+    /// par auteur (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn mention_bursts(&self) -> MutexGuard<'_, MentionBursts> {
+        self.mention_bursts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

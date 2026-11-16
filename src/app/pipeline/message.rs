@@ -7,8 +7,8 @@ use foxsecura::i18n::DEFAULT_LANGUAGE;
 use foxsecura::protection::anti_raid::honeypot::{HoneypotRoute, route_honeypot};
 use foxsecura::protection::automod::bad_words::DEFAULT_BAD_WORDS_LANGUAGE;
 use foxsecura::protection::content_filter::{
-    AuthorContext, MessageContent, MessageEvent, MessageRoute, MessageUpdate, MissingFields,
-    route_message,
+    AuthorContext, MentionFacts, MentionStage, MessageContent, MessageEvent, MessageRoute,
+    MessageUpdate, MissingFields, route_message_with,
 };
 use foxsecura::protection::shared::{
     AuthorWhitelist, MessageSnapshot, ProtectionModule, is_author_exempt, message_scope,
@@ -19,6 +19,9 @@ use poise::serenity_prelude as serenity;
 use super::{anti_spam, bot_assigned_roles, content_filter, honeypot, unix_duration};
 use crate::app::{AppData, run_database};
 
+/// Modules de l'étape « mentions » de la chaîne.
+const MENTION_MODULES: [ProtectionModule; 1] = [ProtectionModule::AntiPingOwner];
+
 /// Message converti depuis un événement Discord, prêt pour le pipeline.
 struct InspectedMessage {
     snapshot: MessageSnapshot,
@@ -26,6 +29,32 @@ struct InspectedMessage {
     author: AuthorContext,
     /// `None` si Discord n'a pas joint le membre : aucune exemption par rôle.
     member_roles: Option<Vec<u64>>,
+    /// Mentions résolues par Discord (créations seulement : vides pour une
+    /// modification, que l'étape « mentions » n'analyse jamais).
+    mentions: Mentions,
+}
+
+/// Utilisateurs et rôles réellement mentionnés, dédoublonnés.
+#[derive(Debug, Clone, Default)]
+struct Mentions {
+    users: Vec<u64>,
+    roles: Vec<u64>,
+}
+
+impl Mentions {
+    fn of(message: &serenity::Message) -> Self {
+        let mut users: Vec<u64> = message.mentions.iter().map(|user| user.id.get()).collect();
+        let mut roles: Vec<u64> = message
+            .mention_roles
+            .iter()
+            .map(|role| role.get())
+            .collect();
+        users.sort_unstable();
+        users.dedup();
+        roles.sort_unstable();
+        roles.dedup();
+        Self { users, roles }
+    }
 }
 
 /// Création d'un message.
@@ -48,6 +77,7 @@ pub async fn handle(ctx: &serenity::Context, data: &AppData, message: &serenity:
             member,
         ),
         member_roles: member_roles(member),
+        mentions: Mentions::of(message),
     };
 
     process(ctx, data, inspected, MessageEvent::Created).await;
@@ -95,6 +125,7 @@ pub async fn handle_update(
         }),
         author: author_context(author.id, unix_duration(edited_at), member),
         member_roles: member_roles(member),
+        mentions: Mentions::default(),
     };
 
     process(ctx, data, inspected, MessageEvent::Edited).await;
@@ -206,14 +237,43 @@ async fn process(
                 .matcher(language, &context.custom_bad_words)
         });
 
-    match route_message(
-        scope,
-        event,
-        context.enabled_modules,
-        &inspected.content,
-        inspected.author,
-        bad_words.as_deref(),
-    ) {
+    // Étape « mentions » : verrou tenu pendant l'évaluation synchrone
+    // seulement, jamais à travers un `.await`.
+    let mention_modules = MENTION_MODULES
+        .iter()
+        .any(|module| context.enabled_modules.contains(*module));
+    let owner_id = mention_modules
+        .then(|| {
+            ctx.cache
+                .guild(serenity::GuildId::new(guild_id))
+                .map(|guild| guild.owner_id.get())
+        })
+        .flatten();
+    let route = {
+        let mut bursts = mention_modules.then(|| data.protection.mention_bursts());
+        let stage = bursts.as_deref_mut().map(|bursts| MentionStage {
+            bursts,
+            facts: MentionFacts {
+                guild_id,
+                author_id,
+                timestamp: guild_message.timestamp,
+                owner_id,
+                users: &inspected.mentions.users,
+                roles: &inspected.mentions.roles,
+            },
+        });
+        route_message_with(
+            scope,
+            event,
+            context.enabled_modules,
+            &inspected.content,
+            inspected.author,
+            bad_words.as_deref(),
+            stage,
+        )
+    };
+
+    match route {
         MessageRoute::Skip => {}
         MessageRoute::Filter(detection) => {
             content_filter::run(

@@ -52,11 +52,12 @@ pub enum ProtectionModule {
     AntiVanityChange,
     WebhookWatch,
     LimitRole,
+    AntiPingOwner,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 35] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -91,6 +92,7 @@ impl ProtectionModule {
         Self::AntiVanityChange,
         Self::WebhookWatch,
         Self::LimitRole,
+        Self::AntiPingOwner,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -130,6 +132,7 @@ impl ProtectionModule {
             Self::AntiVanityChange => "anti_vanity_change",
             Self::WebhookWatch => "webhook_watch",
             Self::LimitRole => "limit_role",
+            Self::AntiPingOwner => "anti_ping_owner",
         }
     }
 
