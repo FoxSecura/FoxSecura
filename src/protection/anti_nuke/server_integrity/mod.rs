@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Intégrité du serveur : retour en arrière des permissions dangereuses,
-//! réglages du serveur et URL personnalisée.
+//! réglages du serveur et URL personnalisée, surveillance des webhooks.
 //!
 //! Chaque module répond **unitairement** à une entrée du journal d'audit (ou
 //! à un événement Gateway corrélé), sans compteur de rafale. Les gardes du
@@ -20,3 +20,4 @@ pub mod anti_vanity_change;
 pub mod automod_rule_guard;
 pub mod outcome;
 pub mod server_guard;
+pub mod webhook_guard;

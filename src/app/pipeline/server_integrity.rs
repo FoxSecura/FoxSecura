@@ -7,6 +7,9 @@
 //!
 //! - `RoleUpdate` : anti-permissions (retour en arrière du bitfield, puis
 //!   quarantaine de l'auteur non exempté).
+//! - `WebhookCreate` / `WebhookUpdate` / `WebhookDelete` : suppression d'un
+//!   webhook créé ou modifié par un auteur non autorisé, alerte sur une
+//!   suppression.
 //! - `GuildUpdate` (événement Gateway, ancienne version du serveur d'après le
 //!   cache) : alertes server-edit et vanity, sans sanction ; l'auteur vient
 //!   de l'entrée d'audit `GuildUpdate` indexée par le socle.
@@ -33,6 +36,10 @@ use foxsecura::protection::anti_nuke::server_integrity::anti_server_edit::{
 };
 use foxsecura::protection::anti_nuke::server_integrity::anti_vanity_change::vanity_incident;
 use foxsecura::protection::anti_nuke::server_integrity::outcome::IntegrityActionResult;
+use foxsecura::protection::anti_nuke::server_integrity::webhook_guard::{
+    WebhookChange, WebhookIncidentInput, WebhookPlan, missing_manage_webhooks,
+    plan_webhook_response, webhook_incident, webhook_removal_reason,
+};
 use foxsecura::protection::shared::{ProtectionModule, audit_reason};
 use poise::serenity_prelude as serenity;
 
@@ -53,6 +60,10 @@ pub async fn handle_audit_entry(
     match entry.action {
         AuditAction::RoleUpdate => {
             role_update(ctx, data, entry, author_id).await;
+            true
+        }
+        AuditAction::WebhookCreate | AuditAction::WebhookUpdate | AuditAction::WebhookDelete => {
+            webhook_change(ctx, data, entry, author_id).await;
             true
         }
         _ => false,
@@ -159,6 +170,92 @@ async fn role_update(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry
         &context,
         guild_id,
         ProtectionModule::AntiPermissions,
+        &incident,
+    )
+    .await;
+}
+
+/// Webhook créé, modifié ou supprimé : suppression du webhook d'un auteur
+/// non autorisé, alerte seule pour une suppression.
+async fn webhook_change(
+    ctx: &serenity::Context,
+    data: &AppData,
+    entry: &AuditEntry,
+    author_id: u64,
+) {
+    let Some(change) = WebhookChange::from_audit(entry.action) else {
+        return;
+    };
+    let guild_id = entry.guild_id;
+    let Some(context) = read_context(data, guild_id, author_id).await else {
+        return;
+    };
+    if !context
+        .enabled_modules
+        .contains(ProtectionModule::WebhookWatch)
+    {
+        return;
+    }
+    let bot_id = ctx.cache.current_user().id.get();
+    let (owner_id, manage_webhooks) = match ctx.cache.guild(serenity::GuildId::new(guild_id)) {
+        Some(guild) => (
+            Some(guild.owner_id.get()),
+            guild
+                .members
+                .get(&serenity::UserId::new(bot_id))
+                .map(|member| {
+                    let permissions = guild.member_permissions(member);
+                    permissions.administrator() || permissions.manage_webhooks()
+                }),
+        ),
+        None => (None, None),
+    };
+    let whitelisted = anti_nuke::is_author_exempt(ctx, &context, guild_id, author_id).await;
+    let plan = plan_webhook_response(change, author_id, bot_id, owner_id, whitelisted);
+
+    let removal = match plan {
+        WebhookPlan::Ignore => return,
+        WebhookPlan::Alert => None,
+        WebhookPlan::Remove => Some(match (manage_webhooks, entry.target_id) {
+            (Some(false), _) => missing_manage_webhooks(),
+            (_, None) => IntegrityActionResult::Skipped {
+                failure_code: Some(foxsecura::logs::FailureCode::ResourceMissing),
+                details: "webhook_id_missing".to_owned(),
+            },
+            (_, Some(webhook_id)) => match ctx
+                .http
+                .delete_webhook(
+                    serenity::WebhookId::new(webhook_id),
+                    Some(&webhook_removal_reason()),
+                )
+                .await
+            {
+                Ok(()) => IntegrityActionResult::Applied,
+                Err(error) => IntegrityActionResult::from_failure(&discord_failure(error)),
+            },
+        }),
+    };
+    println!(
+        "[webhook-watch] {change:?} par {author_id} sur la guilde {guild_id} : webhook {:?}, suppression {removal:?}",
+        entry.target_id
+    );
+
+    let incident = webhook_incident(
+        language(&context),
+        WebhookIncidentInput {
+            change,
+            author_id,
+            webhook_id: entry.target_id,
+            webhook_name: entry.target_name.as_deref(),
+        },
+        removal.as_ref(),
+    );
+    publish_critical(
+        ctx,
+        data,
+        &context,
+        guild_id,
+        ProtectionModule::WebhookWatch,
         &incident,
     )
     .await;

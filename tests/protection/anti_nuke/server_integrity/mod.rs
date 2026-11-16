@@ -6,3 +6,4 @@ mod authorization;
 mod external_application;
 mod server_guard;
 mod server_settings;
+mod webhooks;

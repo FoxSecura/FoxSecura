@@ -557,7 +557,8 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::AutoRoleRestore
         | ProtectionModule::AntiPermissions
         | ProtectionModule::AntiServerEdit
-        | ProtectionModule::AntiVanityChange => {
+        | ProtectionModule::AntiVanityChange
+        | ProtectionModule::WebhookWatch => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }

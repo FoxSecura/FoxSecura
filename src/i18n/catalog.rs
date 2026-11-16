@@ -1881,5 +1881,40 @@ catalog! {
         en: "Discord does not let a bot take back a released custom URL: act now (contact Discord support if it was stolen) and remove Manage Server from the author.",
         fr: "Discord ne permet pas à un bot de reprendre une URL personnalisée libérée : agissez tout de suite (support Discord si elle a été volée) et retirez Gérer le serveur à l'auteur.",
         de: "Discord erlaubt einem Bot nicht, eine freigegebene eigene URL zurückzuholen: Handle sofort (Discord-Support kontaktieren, falls sie gestohlen wurde) und entziehe dem Urheber Server verwalten."
+    },
+    ModuleWebhookWatch => {
+        en: "Webhooks",
+        fr: "Webhooks",
+        de: "Webhooks"
+    },
+    WebhookWatchCreatedSummary => {
+        en: "Webhook created by an unauthorized author: webhook removed",
+        fr: "Webhook créé par un auteur non autorisé : webhook supprimé",
+        de: "Webhook von einem nicht autorisierten Urheber erstellt: Webhook entfernt"
+    },
+    WebhookWatchUpdatedSummary => {
+        en: "Webhook changed by an unauthorized author: webhook removed",
+        fr: "Webhook modifié par un auteur non autorisé : webhook supprimé",
+        de: "Webhook von einem nicht autorisierten Urheber geändert: Webhook entfernt"
+    },
+    WebhookWatchDeletedSummary => {
+        en: "Webhook deleted by an unauthorized author: alert only",
+        fr: "Webhook supprimé par un auteur non autorisé : alerte seule",
+        de: "Webhook von einem nicht autorisierten Urheber gelöscht: nur Warnung"
+    },
+    WebhookWatchEvidenceWebhook => {
+        en: "Webhook",
+        fr: "Webhook",
+        de: "Webhook"
+    },
+    WebhookWatchRecommendation => {
+        en: "Check with the author why they touched this webhook. Whitelist the members allowed to manage webhooks.",
+        fr: "Vérifiez avec l'auteur pourquoi il a touché ce webhook. Mettez sur la liste blanche les membres autorisés à gérer les webhooks.",
+        de: "Kläre mit dem Urheber, warum er diesen Webhook geändert hat. Setze Mitglieder, die Webhooks verwalten dürfen, auf die Whitelist."
+    },
+    WebhookWatchRecommendationFailed => {
+        en: "The unauthorized webhook is STILL active (see the action status, usually Manage Webhooks is missing): delete it by hand now, it can post as anyone.",
+        fr: "Le webhook non autorisé est TOUJOURS actif (voir l'état de l'action, souvent Gérer les webhooks manquant) : supprimez-le à la main maintenant, il peut publier sous n'importe quel nom.",
+        de: "Der nicht autorisierte Webhook ist IMMER NOCH aktiv (siehe Aktionsstatus, meist fehlt Webhooks verwalten): Lösche ihn jetzt manuell, er kann unter jedem Namen posten."
     }
 }
