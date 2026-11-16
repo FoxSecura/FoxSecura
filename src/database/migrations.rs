@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 9;
+pub const LATEST_SCHEMA_VERSION: i64 = 10;
 
 struct Migration {
     version: i64,
@@ -292,6 +292,21 @@ ALTER TABLE guild_configs ADD COLUMN panic_mode_threshold INTEGER NOT NULL DEFAU
 
 ALTER TABLE guild_lockdowns ADD COLUMN slowmode_seconds INTEGER NOT NULL DEFAULT 10
     CHECK (slowmode_seconds BETWEEN 0 AND 21600);
+"#,
+    },
+    Migration {
+        version: 10,
+        name: "limit_role",
+        // Rôle plafonné (`NULL` : non configuré ; jamais `@everyone`, qui
+        // porte l'identifiant de la guilde) et nombre maximal de membres qui
+        // le portent (5 par défaut, 1 à 1000). La validation d'un rôle
+        // existant (géré, non gérable, permission dangereuse) se fait côté
+        // Rust d'après le cache, avant l'écriture.
+        sql: r#"
+ALTER TABLE guild_configs ADD COLUMN limit_role_id TEXT
+    CHECK (limit_role_id IS NULL OR limit_role_id <> guild_id);
+ALTER TABLE guild_configs ADD COLUMN limit_role_max_members INTEGER NOT NULL DEFAULT 5
+    CHECK (limit_role_max_members BETWEEN 1 AND 1000);
 "#,
     },
 ];

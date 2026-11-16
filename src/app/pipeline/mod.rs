@@ -13,11 +13,14 @@ mod content_filter;
 mod delete;
 mod honeypot;
 mod incident_log;
+mod limit_role;
 pub mod lockdown;
 pub mod member;
 pub mod message;
 pub mod quarantine;
+pub mod restore;
 mod sanction;
+pub mod server_integrity;
 
 use std::time::Duration;
 

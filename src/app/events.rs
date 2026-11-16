@@ -38,11 +38,43 @@ pub async fn handle(
             pipeline::member::handle_guild_create(ctx, data, guild).await;
             pipeline::anti_nuke::handle_guild_create(ctx, data, guild.id.get()).await;
         }
+        serenity::FullEvent::GuildUpdate {
+            old_data_if_available,
+            new_data,
+        } => {
+            pipeline::server_integrity::handle_guild_update(
+                ctx,
+                data,
+                old_data_if_available.as_ref(),
+                new_data,
+            )
+            .await;
+        }
         serenity::FullEvent::ChannelCreate { channel } => {
             pipeline::quarantine::handle_channel_create(ctx, data, channel).await;
         }
         serenity::FullEvent::CategoryCreate { category } => {
             pipeline::quarantine::handle_channel_create(ctx, data, category).await;
+        }
+        serenity::FullEvent::ChannelDelete { channel, .. } => {
+            pipeline::restore::handle_channel_delete(ctx, data, channel).await;
+        }
+        serenity::FullEvent::CategoryDelete { category } => {
+            pipeline::restore::handle_channel_delete(ctx, data, category).await;
+        }
+        serenity::FullEvent::GuildRoleDelete {
+            guild_id,
+            removed_role_id,
+            removed_role_data_if_available,
+        } => {
+            pipeline::restore::handle_role_delete(
+                ctx,
+                data,
+                *guild_id,
+                *removed_role_id,
+                removed_role_data_if_available.as_ref(),
+            )
+            .await;
         }
         serenity::FullEvent::GuildAuditLogEntryCreate { entry, guild_id } => {
             pipeline::anti_nuke::handle_audit_entry(ctx, data, *guild_id, entry).await;

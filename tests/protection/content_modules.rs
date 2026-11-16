@@ -550,7 +550,16 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::AntiMassRoleCreate
         | ProtectionModule::AntiEmojiStickerNuke
         | ProtectionModule::AntiMassRoleGrant
-        | ProtectionModule::PanicMode => {
+        | ProtectionModule::PanicMode
+        | ProtectionModule::AntiChannelDelete
+        | ProtectionModule::AutoChannelRestore
+        | ProtectionModule::AntiRoleDelete
+        | ProtectionModule::AutoRoleRestore
+        | ProtectionModule::AntiPermissions
+        | ProtectionModule::AntiServerEdit
+        | ProtectionModule::AntiVanityChange
+        | ProtectionModule::WebhookWatch
+        | ProtectionModule::LimitRole => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }

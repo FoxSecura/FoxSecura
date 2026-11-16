@@ -363,7 +363,18 @@ fn detect_module(
         | ProtectionModule::AntiMassRoleCreate
         | ProtectionModule::AntiEmojiStickerNuke
         | ProtectionModule::AntiMassRoleGrant
-        | ProtectionModule::PanicMode => None,
+        | ProtectionModule::PanicMode
+        // Intégrité du serveur : événements Gateway et entrées du journal
+        // d'audit, jamais des messages.
+        | ProtectionModule::AntiChannelDelete
+        | ProtectionModule::AutoChannelRestore
+        | ProtectionModule::AntiRoleDelete
+        | ProtectionModule::AutoRoleRestore
+        | ProtectionModule::AntiPermissions
+        | ProtectionModule::AntiServerEdit
+        | ProtectionModule::AntiVanityChange
+        | ProtectionModule::WebhookWatch
+        | ProtectionModule::LimitRole => None,
     }
 }
 

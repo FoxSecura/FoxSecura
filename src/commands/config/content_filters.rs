@@ -66,7 +66,23 @@ pub const ANTI_NUKE_MODULES: &[ProtectionModule] = &[
     ProtectionModule::PanicMode,
 ];
 
+/// Modules de l'intégrité du serveur (restaurations, réglages, permissions,
+/// webhooks, rôle plafonné), affichés dans la catégorie « Intégrité du
+/// serveur ».
+pub const SERVER_INTEGRITY_MODULES: &[ProtectionModule] = &[
+    ProtectionModule::AntiChannelDelete,
+    ProtectionModule::AutoChannelRestore,
+    ProtectionModule::AntiRoleDelete,
+    ProtectionModule::AutoRoleRestore,
+    ProtectionModule::AntiPermissions,
+    ProtectionModule::AntiServerEdit,
+    ProtectionModule::AntiVanityChange,
+    ProtectionModule::WebhookWatch,
+    ProtectionModule::LimitRole,
+];
+
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
+pub const SERVER_INTEGRITY_CATEGORY_ID: &str = "server_integrity";
 pub const ANTI_NUKE_CATEGORY_ID: &str = "server_protection";
 pub const ALT_ACCOUNT_CATEGORY_ID: &str = "anti_double_account";
 pub const ANTI_RAID_CATEGORY_ID: &str = "anti_raid";
@@ -101,6 +117,8 @@ impl ModuleToggle {
             ALT_ACCOUNT_CATEGORY_ID
         } else if ANTI_NUKE_MODULES.contains(&self.module) {
             ANTI_NUKE_CATEGORY_ID
+        } else if SERVER_INTEGRITY_MODULES.contains(&self.module) {
+            SERVER_INTEGRITY_CATEGORY_ID
         } else {
             super::anti_spam::CATEGORY_ID
         }
@@ -238,6 +256,15 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiEmojiStickerNuke => TextKey::ModuleAntiEmojiStickerNuke,
         ProtectionModule::AntiMassRoleGrant => TextKey::ModuleAntiMassRoleGrant,
         ProtectionModule::PanicMode => TextKey::ModulePanicMode,
+        ProtectionModule::AntiChannelDelete => TextKey::ModuleAntiChannelDelete,
+        ProtectionModule::AutoChannelRestore => TextKey::ModuleAutoChannelRestore,
+        ProtectionModule::AntiRoleDelete => TextKey::ModuleAntiRoleDelete,
+        ProtectionModule::AutoRoleRestore => TextKey::ModuleAutoRoleRestore,
+        ProtectionModule::AntiPermissions => TextKey::ModuleAntiPermissions,
+        ProtectionModule::AntiServerEdit => TextKey::ModuleAntiServerEdit,
+        ProtectionModule::AntiVanityChange => TextKey::ModuleAntiVanityChange,
+        ProtectionModule::WebhookWatch => TextKey::ModuleWebhookWatch,
+        ProtectionModule::LimitRole => TextKey::ModuleLimitRole,
     }
 }
 
@@ -254,6 +281,7 @@ mod tests {
                 .chain(ANTI_RAID_MODULES)
                 .chain(ALT_ACCOUNT_MODULES)
                 .chain(ANTI_NUKE_MODULES)
+                .chain(SERVER_INTEGRITY_MODULES)
                 .filter(|candidate| **candidate == module)
                 .count();
             assert_eq!(count, 1, "{module}");
@@ -264,6 +292,7 @@ mod tests {
         assert!(AUTOMOD_MODULES.len() <= BUTTONS_PER_ROW);
         assert!(ANTI_RAID_MODULES.len() <= BUTTONS_PER_ROW);
         assert!(ANTI_NUKE_MODULES.len() <= 2 * BUTTONS_PER_ROW);
+        assert!(SERVER_INTEGRITY_MODULES.len() <= 2 * BUTTONS_PER_ROW);
     }
 
     #[test]
@@ -285,8 +314,8 @@ mod tests {
             Some(Err(UnknownModuleKey("anti_nuke".to_owned())))
         );
         assert_eq!(
-            parse_toggle("foxsecura:config:module:anti_channel_delete:on"),
-            Some(Err(UnknownModuleKey("anti_channel_delete".to_owned())))
+            parse_toggle("foxsecura:config:module:anti_mass_emoji:on"),
+            Some(Err(UnknownModuleKey("anti_mass_emoji".to_owned())))
         );
         assert!(matches!(
             parse_toggle("foxsecura:config:module:Malicious_Link:on"),

@@ -31,11 +31,16 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Honeypot (`honeypot`), **suppression + quarantaine** | **oui**, `MESSAGE_CREATE` | `/config` → Doubles comptes et salon piège, désactivé, aucun salon par défaut |
 | Anti-nuke, rafales par auteur (`anti_mass_ban`, `anti_mass_kick`, `anti_mass_timeout`, `anti_mass_unban`, `anti_mass_channel_create`, `anti_mass_role_create`, `anti_emoji_sticker_nuke`, `anti_mass_role_grant`), **quarantaine de l'auteur** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` | `/config` → Protection serveur, désactivés par défaut |
 | Mode panique (`panic_mode`), **verrouillage 15 minutes** | **oui**, signaux des incidents critiques de l'anti-nuke | `/config` → Protection serveur, désactivé par défaut, 3 modules distincts en 30 s |
-| Tous les autres modules (dont suppressions de salons et de rôles, permissions, intégrité du serveur, rôle limité) | non (moteurs testés isolément, tranche 9) | — |
+| Restauration des salons et rôles supprimés (`anti_channel_delete`, `auto_channel_restore`, `anti_role_delete`, `auto_role_restore`) | **oui**, `CHANNEL_DELETE`, `GUILD_ROLE_DELETE` + auteur d'audit | `/config` → Intégrité du serveur, désactivés par défaut |
+| Anti-permissions (`anti_permissions`), **retour en arrière + quarantaine** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` (`RoleUpdate`) | `/config` → Intégrité du serveur, désactivé par défaut |
+| Réglages du serveur (`anti_server_edit`) et URL personnalisée (`anti_vanity_change`), alertes | **oui**, `GUILD_UPDATE` + auteur d'audit | `/config` → Intégrité du serveur, désactivés par défaut |
+| Surveillance des webhooks (`webhook_watch`), **suppression du webhook** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` (`Webhook*`) | `/config` → Intégrité du serveur, désactivé par défaut |
+| Rôle plafonné (`limit_role`), **retrait du rôle** | **oui**, `GUILD_MEMBER_UPDATE` | `/config` → Intégrité du serveur, désactivé, aucun rôle par défaut |
+| Tous les autres modules (dont applications externes, règles AutoMod natives) | non (moteurs testés isolément) | — |
 
 ## Anti-Nuke
 
-`anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur. La tranche 8 branche le **socle des journaux d'audit**, les **rafales par auteur** et le **mode panique** ; les autres briques (suppressions de salons et de rôles, permissions dangereuses, édition du serveur, URL personnalisée, applications externes, règles AutoMod, webhooks, rôle limité) restent des moteurs testés isolément, prévus pour la tranche 9.
+`anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur. La tranche 8 branche le **socle des journaux d'audit**, les **rafales par auteur** et le **mode panique** ; la tranche 9 y ajoute l'**intégrité du serveur** (restauration des salons et rôles supprimés, permissions dangereuses, réglages du serveur, URL personnalisée, webhooks, rôle plafonné). Les applications externes et les règles AutoMod natives restent des moteurs testés isolément.
 
 ### Socle des journaux d'audit (branché au runtime)
 
@@ -86,9 +91,55 @@ Corrélation **par guilde** des signaux envoyés par les incidents critiques de 
 
 **Limites (mono-instance)** : dédoublonnage, compteurs, pauses et signaux vivent dans le processus : perdus au redémarrage (une rafale en cours repart de zéro), jamais partagés entre plusieurs instances. Chaque structure est bornée (10 000 entrées). Une entrée rejouée après une coupure de plus de 5 minutes est ignorée.
 
-### Briques non branchées (tranche 9)
+### Intégrité du serveur (branchée au runtime, tranche 9)
 
-`action_guard.rs` (`evaluate_executor_action`), les modules de suppression de salons et de rôles, `server_integrity` (applications externes, permissions, édition du serveur, URL personnalisée, règles AutoMod, `server_guard`) et `limit_role` restent des moteurs testés isolément. Ils réutiliseront le socle des journaux d'audit, la quarantaine de l'auteur et le mode panique.
+Réponses **unitaires** (aucune rafale, aucun seuil) appuyées sur le même socle : les gardes d'âge, de doublon, d'auteur absent, de propriétaire et de bot s'appliquent à tout. Les événements Gateway sans auteur (`CHANNEL_DELETE`, `GUILD_ROLE_DELETE`, `GUILD_UPDATE`) le retrouvent dans un **index borné** des entrées d'audit récentes (2 048 entrées, 5 minutes), corrélé par cible ; l'ordre des deux événements n'étant pas garanti, l'index est consulté trois fois, à 700 ms d'intervalle.
+
+#### Restauration des salons et rôles supprimés
+
+| Module | Réponse | Incident |
+| --- | --- | --- |
+| `anti_channel_delete` / `anti_role_delete` | restauration **et quarantaine** de l'auteur non exempté (rôles dangereux retirés, sans repli timeout) ; auteur exempté : restauration + `ignore_exempt_member` ; auteur non résolu : restauration sans sanction | `warning` si restauré, sinon `critical` (signal au mode panique) ; pointe le **nouvel** identifiant |
+| `auto_channel_restore` / `auto_role_restore` (actifs seulement si le mode anti correspondant est coupé) | restauration seule | `info`, **publié seulement en cas de succès** ; échec ou « rien à restaurer » : logs locaux uniquement |
+
+- Source : l'objet supprimé fourni par l'événement, **pas** de sauvegarde. Salons restaurés : catégories, texte, annonces, vocal, conférence, avec nom, type, catégorie parente (si elle existe encore), sujet, NSFW et **overwrites clonés** (`FoxSecura auto channel restore`). Rôles : nom, couleur, hoist, permissions, mentionnable ; position remise au mieux, échec ignoré (`FoxSecura auto role restore`) ; jamais `@everyone` ni un rôle géré.
+- Une suppression par le **propriétaire** ou par **FoxSecura** n'est jamais restaurée. Les suppressions n'alimentent aucun compteur de rafale (V1).
+- **Non restaurés** : messages, webhooks et fils d'un salon supprimé ; membres d'un rôle supprimé. Un rôle absent du cache au moment de la suppression ne peut pas être recréé (« rien à restaurer »).
+
+#### Anti-permissions (`anti_permissions`)
+
+- Sur `RoleUpdate` : `ajoutées = nouveau & !ancien`, restreint aux permissions dangereuses (`ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS`, `MENTION_EVERYONE`). Retirer une permission ou ré-ajouter une permission déjà présente ne déclenche rien.
+- Réponse : **ancien bitfield rétabli** (`FoxSecura Anti-Permissions rollback`), puis quarantaine de l'auteur non exempté. Auteur exempté : ni annulation ni confinement, incident `warning`.
+- Jamais sur `@everyone`, un rôle géré, **le rôle géré du bot** (ses scopes changent à la réinstallation) ni un rôle absent du cache. Pré-vérifications d'après le cache : `MANAGE_ROLES` manquant → `missing_permission` ; rôle au niveau ou au-dessus du rôle du bot → `role_hierarchy`.
+- Incident `critical` : ancien et nouveau bitfields (`ancien->nouveau`, valeurs numériques), permissions ajoutées, résultat du retour en arrière **distinct** de celui de la quarantaine. Un retour en arrière échoué laisse les permissions dangereuses en place : la recommandation le dit en clair.
+- **Anti-boucle** : le retour en arrière est un `RoleUpdate` du bot à raison FoxSecura, écarté par le socle ; aucun compteur supplémentaire.
+
+#### Réglages du serveur et URL personnalisée
+
+- `anti_server_edit` : sur `GUILD_UPDATE` (ancienne version d'après le cache), alerte `warning` listant les champs changés parmi **nom, icône, niveau de vérification, notifications par défaut** (`Changed: name, icon`). **Aucun retour en arrière** (il combattrait le propriétaire sur des modifications banales), aucune sanction, aucun signal au mode panique. Rien si aucun champ surveillé ne change ; rien sans ancienne version en cache.
+- `anti_vanity_change` : changement d'URL personnalisée → incident `critical` avec `ancien->nouveau` défangué (`discord[.]gg/…`, rendu par `inline_literal`), **alerte seule**, signal au mode panique. Auteur de la liste blanche : `warning`.
+- Auteur : entrée d'audit `GuildUpdate` si disponible ; propriétaire et bot → rien ; non résolu → alerte quand même.
+
+> ⚠️ **Limite de la vanity.** L'API de Discord ne permet pas à un bot de reprendre une URL personnalisée libérée ou volée. FoxSecura alerte pour que l'équipe réagisse (support Discord, retrait de `MANAGE_GUILD` à l'auteur).
+
+#### Surveillance des webhooks (`webhook_watch`)
+
+- Entrées `WebhookCreate` et `WebhookUpdate` d'un auteur non autorisé (ni le bot, ni le propriétaire, ni la liste blanche) → **suppression du webhook** (`FoxSecura Webhook Watch: unauthorized webhook removed`). `WebhookDelete` → alerte seule (`record_alert`).
+- `warning` ; `critical` si le webhook reste actif (`MANAGE_WEBHOOKS` manquant d'après le cache, refus ou indisponibilité de Discord). Webhook déjà introuvable → `skipped` / `resource_missing`, non critique.
+- Différence avec la V1 : la V1 relisait le journal après `WEBHOOKS_UPDATE` et alertait « auteur non résolu » ; la V2 consomme l'entrée poussée, et une entrée sans auteur est écartée par le socle (**aucun traitement**).
+
+#### Rôle plafonné (`limit_role`)
+
+- Réglages (migration 10) : `limit_role_id` (jamais `@everyone`) et `limit_role_max_members` (5 par défaut, 1 à 1000).
+- Sur `GUILD_MEMBER_UPDATE` : si le rôle vient d'être **ajouté** (ancien état connu par le cache) et que ses porteurs **dépassent** le plafond, il est retiré **au membre qui vient de le recevoir** (`FoxSecura Limit Role: cap exceeded`). Au plafond : rien. Jamais au propriétaire.
+- Comptage d'après le cache ; s'il est incomplet, hydratation par l'API (pages de 1000 membres, **25 appels au plus**, seulement quand le rôle plafonné vient d'être ajouté). Comptage incomplet malgré cela → **aucun retrait** (sûr par défaut).
+- Incident `warning` si retiré, `critical` si le retrait échoue, preuve observé/plafond. Aucune boucle : le retrait n'est jamais un ajout ; côté audit, c'est une action du bot.
+
+**Permissions** : `VIEW_AUDIT_LOG`, `MANAGE_CHANNELS` (recréer un salon et ses overwrites), `MANAGE_ROLES` (recréer un rôle, retour en arrière, quarantaine, rôle plafonné ; rôle de FoxSecura au-dessus), `MANAGE_WEBHOOKS` (supprimer un webhook).
+
+### Briques non branchées
+
+`action_guard.rs` (`evaluate_executor_action`), `server_integrity::anti_external_application`, `automod_rule_guard` (la V2 ne crée pas encore de règles AutoMod natives à protéger) et `server_guard` restent des moteurs testés isolément.
 
 ## Anti-Raid
 

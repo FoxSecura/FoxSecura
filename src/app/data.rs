@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use foxsecura::database::{Database, DatabaseError};
-use foxsecura::protection::anti_nuke::audit::AuditEntryDedup;
+use foxsecura::protection::anti_nuke::audit::{AuditEntryDedup, RecentAuditAuthors};
 use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
 use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
@@ -49,6 +49,7 @@ pub struct ProtectionState {
     lockdown_timers: Arc<LockdownTimers>,
     member_prewarm: Arc<tokio::sync::Mutex<()>>,
     audit_dedup: Mutex<AuditEntryDedup>,
+    audit_authors: Mutex<RecentAuditAuthors>,
     nuke_bursts: Mutex<NukeBurstTracker>,
     panic_mode: Mutex<PanicModeDetector>,
     audit_permission_warnings: Mutex<HashSet<u64>>,
@@ -109,6 +110,17 @@ impl ProtectionState {
     /// identifiants.
     pub fn audit_dedup(&self) -> MutexGuard<'_, AuditEntryDedup> {
         self.audit_dedup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Auteurs récents des entrées corrélables à un événement Gateway
+    /// (suppressions de salons et de rôles, mises à jour du serveur ; bornés).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants et des horodatages.
+    pub fn audit_authors(&self) -> MutexGuard<'_, RecentAuditAuthors> {
+        self.audit_authors
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

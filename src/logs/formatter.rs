@@ -216,7 +216,7 @@ pub fn inline_literal(value: &str, max_chars: usize) -> String {
 
 /// Neutralise un domaine ou une URL (`https[:]//exemple[.]com`) : même copié
 /// hors du bloc de code, il ne forme plus un lien.
-fn defang(value: &str) -> String {
+pub fn defang(value: &str) -> String {
     value.replace("://", "[:]//").replace('.', "[.]")
 }
 
@@ -262,6 +262,7 @@ const fn unit_key(unit: ThresholdUnit) -> TextKey {
         ThresholdUnit::Joins => TextKey::LogsUnitJoins,
         ThresholdUnit::Actions => TextKey::LogsUnitActions,
         ThresholdUnit::Signals => TextKey::LogsUnitSignals,
+        ThresholdUnit::Members => TextKey::LogsUnitMembers,
     }
 }
 

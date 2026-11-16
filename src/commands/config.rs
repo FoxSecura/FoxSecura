@@ -9,6 +9,7 @@ mod anti_raid;
 mod anti_spam;
 mod bad_words;
 mod content_filters;
+mod server_integrity;
 
 use poise::serenity_prelude as serenity;
 
@@ -32,6 +33,7 @@ use foxsecura::protection::automod::bad_words::parse_custom_words;
 use foxsecura::protection::lockdown::LiftTrigger;
 use foxsecura::protection::quarantine::QuarantineRoleRefusal;
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule};
+use server_integrity::{LimitRoleAction, ServerIntegrityState};
 
 const CATEGORY_SELECT_ID: &str = "foxsecura:config:category";
 
@@ -62,6 +64,11 @@ const CATEGORIES: &[Category] = &[
         id: "server_protection",
         label: TextKey::CategoryServerProtection,
         description: TextKey::CategoryServerProtectionDescription,
+    },
+    Category {
+        id: "server_integrity",
+        label: TextKey::CategoryServerIntegrity,
+        description: TextKey::CategoryServerIntegrityDescription,
     },
     Category {
         id: "access_control",
@@ -126,6 +133,10 @@ enum CategoryView {
     AntiNuke {
         state: AntiNukeState,
     },
+    ServerIntegrity {
+        state: ServerIntegrityState,
+        access: Access,
+    },
 }
 
 /// Ouvre le tableau de bord de configuration FoxSecura.
@@ -159,9 +170,9 @@ pub async fn config(ctx: Context<'_>) -> Result<(), Error> {
 /// ne lui appartient pas.
 ///
 /// Le droit exigé par le composant est revérifié à chaque interaction : les
-/// listes blanche et noire, la quarantaine et la levée du verrouillage
-/// exigent le propriétaire ou `ADMINISTRATOR`, le reste l'accès normal à
-/// `/config`.
+/// listes blanche et noire, la quarantaine, le rôle plafonné et la levée du
+/// verrouillage exigent le propriétaire ou `ADMINISTRATOR`, le reste l'accès
+/// normal à `/config`.
 pub async fn handle_component(
     ctx: &serenity::Context,
     data: &AppData,
@@ -173,11 +184,13 @@ pub async fn handle_component(
     let bad_words_action = bad_words::parse_action(custom_id);
     let blacklist_edit = BlacklistEdit::from_button(custom_id);
     let quarantine_action = QuarantineAction::from_custom_id(custom_id);
+    let limit_role_action = LimitRoleAction::from_custom_id(custom_id);
     let required = match (list_target, &module_toggle) {
         (Some(target), _) => target.required_right(),
         (None, Some(_)) => Right::Config,
         (None, None) if blacklist_edit.is_some() => Right::Blacklist,
         (None, None) if quarantine_action.is_some() => Right::Whitelist,
+        (None, None) if limit_role_action.is_some() => server_integrity::LIMIT_ROLE_RIGHT,
         (None, None) if custom_id == anti_raid::LOCKDOWN_LIFT_ID => anti_raid::LOCKDOWN_LIFT_RIGHT,
         (None, None) if bad_words_action.is_some() => Right::Config,
         (None, None)
@@ -209,6 +222,8 @@ pub async fn handle_component(
     let Some(guild_id) = component.guild_id.filter(|_| access.allows(required)) else {
         let specific = if quarantine_action.is_some() {
             Some(TextKey::ConfigQuarantineAccessDenied)
+        } else if limit_role_action.is_some() {
+            Some(TextKey::ConfigLimitRoleAccessDenied)
         } else if custom_id == anti_raid::LOCKDOWN_LIFT_ID {
             Some(TextKey::ConfigLockdownAccessDenied)
         } else {
@@ -227,6 +242,11 @@ pub async fn handle_component(
 
     if custom_id == anti_raid::LOCKDOWN_LIFT_ID {
         lift_lockdown(ctx, data, component, language, guild_id).await?;
+        return Ok(true);
+    }
+
+    if let Some(action) = limit_role_action {
+        handle_limit_role(ctx, data, component, language, guild_id, access, action).await?;
         return Ok(true);
     }
 
@@ -557,7 +577,10 @@ async fn save_module_toggle(
             }
             // Anti-nuke activé sans VIEW_AUDIT_LOG : signalé tout de suite
             // dans les logs locaux (une fois par guilde).
-            if toggle.enabled && content_filters::ANTI_NUKE_MODULES.contains(&toggle.module) {
+            if toggle.enabled
+                && (content_filters::ANTI_NUKE_MODULES.contains(&toggle.module)
+                    || content_filters::SERVER_INTEGRITY_MODULES.contains(&toggle.module))
+            {
                 crate::app::pipeline::anti_nuke::handle_guild_create(ctx, data, guild_id).await;
             }
         }
@@ -668,8 +691,11 @@ pub async fn handle_modal(
     let custom_id = modal.data.custom_id.as_str();
     let blacklist_edit = BlacklistEdit::from_modal(custom_id);
     let release = custom_id == anti_raid::QUARANTINE_RELEASE_MODAL_ID;
+    let limit_role_max = custom_id == server_integrity::LIMIT_ROLE_MAX_MODAL_ID;
     let required = if blacklist_edit.is_some() {
         Right::Blacklist
+    } else if limit_role_max {
+        server_integrity::LIMIT_ROLE_RIGHT
     } else if release {
         QuarantineAction::Release.required_right()
     } else if [
@@ -691,11 +717,14 @@ pub async fn handle_modal(
     let access =
         access::interaction_access(ctx, modal.guild_id, modal.member.as_ref(), modal.user.id);
     let Some(guild_id) = modal.guild_id.filter(|_| access.allows(required)) else {
-        let denied = denied_key(
-            required,
-            access,
-            release.then_some(TextKey::ConfigQuarantineAccessDenied),
-        );
+        let specific = if release {
+            Some(TextKey::ConfigQuarantineAccessDenied)
+        } else if limit_role_max {
+            Some(TextKey::ConfigLimitRoleAccessDenied)
+        } else {
+            None
+        };
+        let denied = denied_key(required, access, specific);
         respond_ephemeral_modal(ctx, modal, text(language, denied)).await?;
         return Ok(true);
     };
@@ -703,6 +732,9 @@ pub async fn handle_modal(
 
     if release {
         return release_member(ctx, data, modal, language, guild_id).await;
+    }
+    if limit_role_max {
+        return save_limit_role_max(ctx, data, modal, language, guild_id, access).await;
     }
     if let Some(edit) = blacklist_edit {
         return save_blacklist(ctx, data, modal, language, guild_id, access, edit).await;
@@ -1007,6 +1039,170 @@ async fn save_anti_nuke(
         }
     }
     Ok(true)
+}
+
+/// Rôle plafonné : sélection (validée d'après le cache), ouverture du modal
+/// du plafond, retrait du rôle. Le plafond est conservé au retrait.
+async fn handle_limit_role(
+    ctx: &serenity::Context,
+    data: &AppData,
+    component: &serenity::ComponentInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    action: LimitRoleAction,
+) -> Result<(), Error> {
+    let current = match run_database(&data.database, move |database| {
+        Ok(database
+            .find_guild_config(guild_id)?
+            .map(|config| config.limit_role)
+            .unwrap_or_default())
+    })
+    .await
+    {
+        Ok(current) => current,
+        Err(error) => {
+            eprintln!("[config] lecture du rôle plafonné impossible ({guild_id}) : {error}");
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+            return Ok(());
+        }
+    };
+
+    let role_id = match action {
+        LimitRoleAction::OpenMax => {
+            component
+                .create_response(
+                    &ctx.http,
+                    serenity::CreateInteractionResponse::Modal(server_integrity::max_modal(
+                        language,
+                        current.max_members,
+                    )),
+                )
+                .await?;
+            return Ok(());
+        }
+        LimitRoleAction::Clear => None,
+        LimitRoleAction::SelectRole => {
+            let Some(role_id) = anti_raid::selected_role(&component.data.kind) else {
+                component
+                    .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+                    .await?;
+                return Ok(());
+            };
+            // Mêmes refus que le rôle de quarantaine : @everyone, rôle géré,
+            // rôle non gérable, permission dangereuse.
+            if let Err(error) = quarantine::check_selected_role(ctx, guild_id, role_id) {
+                respond_ephemeral_component(ctx, component, &limit_role_message(language, &error))
+                    .await?;
+                return Ok(());
+            }
+            Some(role_id)
+        }
+    };
+
+    let max_members = current.max_members;
+    let saved = run_database(&data.database, move |database| {
+        database.set_limit_role(guild_id, role_id, max_members)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, server_integrity::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+    match view {
+        Ok(view) => {
+            update_dashboard(
+                ctx,
+                component,
+                language,
+                server_integrity::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!("[config] enregistrement du rôle plafonné impossible ({guild_id}) : {error}");
+            respond_ephemeral_component(ctx, component, text(language, TextKey::ConfigSaveFailed))
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Plafond du rôle plafonné (1 à 1000), puis réaffichage de la catégorie.
+/// Une saisie refusée ne modifie rien.
+async fn save_limit_role_max(
+    ctx: &serenity::Context,
+    data: &AppData,
+    modal: &serenity::ModalInteraction,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+) -> Result<bool, Error> {
+    let Some(max_members) = server_integrity::submitted_max(&modal.data.components) else {
+        respond_ephemeral_modal(
+            ctx,
+            modal,
+            text(language, TextKey::ConfigLimitRoleInvalidMax),
+        )
+        .await?;
+        return Ok(true);
+    };
+
+    let saved = run_database(&data.database, move |database| {
+        let role_id = database
+            .find_guild_config(guild_id)?
+            .and_then(|config| config.limit_role.role_id);
+        database.set_limit_role(guild_id, role_id, max_members)
+    })
+    .await;
+    let view = match saved {
+        Ok(_) => load_view(data, guild_id, server_integrity::CATEGORY_ID, access).await,
+        Err(error) => Err(error),
+    };
+    match view {
+        Ok(view) => {
+            update_dashboard_from_modal(
+                ctx,
+                modal,
+                language,
+                server_integrity::CATEGORY_ID,
+                view.as_ref(),
+            )
+            .await?;
+        }
+        Err(error) => {
+            eprintln!("[config] enregistrement du plafond impossible ({guild_id}) : {error}");
+            respond_ephemeral_modal(ctx, modal, text(language, TextKey::ConfigSaveFailed)).await?;
+        }
+    }
+    Ok(true)
+}
+
+/// Message d'un refus de rôle plafonné ; rien n'a été modifié.
+fn limit_role_message(language: Language, error: &QuarantineRoleError) -> String {
+    let key = match error {
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::Everyone) => {
+            TextKey::ConfigLimitRoleEveryone
+        }
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::Managed) => {
+            TextKey::ConfigLimitRoleManaged
+        }
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::NotManageable)
+        | QuarantineRoleError::MissingManageRoles => TextKey::ConfigLimitRoleNotManageable,
+        QuarantineRoleError::Refused(QuarantineRoleRefusal::DangerousPermissions(permissions)) => {
+            return format!(
+                "{} {}",
+                text(language, TextKey::ConfigLimitRoleDangerous),
+                permissions.get_permission_names().join(", ")
+            );
+        }
+        QuarantineRoleError::UnknownRole | QuarantineRoleError::Discord(_) => {
+            TextKey::ConfigLimitRoleUnknown
+        }
+    };
+    text(language, key).to_owned()
 }
 
 /// Salon piège choisi (en bascule), puis réaffichage de sa catégorie.
@@ -1519,6 +1715,24 @@ async fn load_view(
                 },
             })
         }
+        server_integrity::CATEGORY_ID => {
+            let (config, modules) = run_database(&data.database, move |database| {
+                Ok((
+                    database.find_guild_config(guild_id)?,
+                    database.enabled_modules(guild_id)?,
+                ))
+            })
+            .await?;
+            Some(CategoryView::ServerIntegrity {
+                state: ServerIntegrityState {
+                    modules,
+                    limit_role: config
+                        .map(|guild_config| guild_config.limit_role)
+                        .unwrap_or_default(),
+                },
+                access,
+            })
+        }
         _ => None,
     })
 }
@@ -1656,6 +1870,10 @@ fn build_embed(
                 (anti_nuke::CATEGORY_ID, Some(CategoryView::AntiNuke { state })) => {
                     embed.fields(anti_nuke::state_fields(language, state))
                 }
+                (
+                    server_integrity::CATEGORY_ID,
+                    Some(CategoryView::ServerIntegrity { state, .. }),
+                ) => embed.fields(server_integrity::state_fields(language, state)),
                 _ => embed.field(
                     text(language, TextKey::ConfigFieldState),
                     text(language, TextKey::ConfigStatePlaceholder),
@@ -1714,6 +1932,16 @@ fn build_components(
         }
         (Some(anti_nuke::CATEGORY_ID), Some(CategoryView::AntiNuke { state })) => {
             rows.extend(anti_nuke::components(language, state.modules));
+        }
+        (
+            Some(server_integrity::CATEGORY_ID),
+            Some(CategoryView::ServerIntegrity { state, access }),
+        ) => {
+            rows.extend(server_integrity::components(
+                language,
+                state.modules,
+                *access,
+            ));
         }
         _ => {}
     }

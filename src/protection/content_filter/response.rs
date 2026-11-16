@@ -381,5 +381,14 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         | ProtectionModule::AntiEmojiStickerNuke
         | ProtectionModule::AntiMassRoleGrant => TextKey::AntiNukeSummary,
         ProtectionModule::PanicMode => TextKey::PanicModeSummary,
+        ProtectionModule::AntiChannelDelete => TextKey::AntiChannelDeleteSummary,
+        ProtectionModule::AutoChannelRestore => TextKey::AutoChannelRestoreSummary,
+        ProtectionModule::AntiRoleDelete => TextKey::AntiRoleDeleteSummary,
+        ProtectionModule::AutoRoleRestore => TextKey::AutoRoleRestoreSummary,
+        ProtectionModule::AntiPermissions => TextKey::AntiPermissionsSummary,
+        ProtectionModule::AntiServerEdit => TextKey::AntiServerEditSummary,
+        ProtectionModule::AntiVanityChange => TextKey::AntiVanityChangeSummary,
+        ProtectionModule::WebhookWatch => TextKey::WebhookWatchCreatedSummary,
+        ProtectionModule::LimitRole => TextKey::LimitRoleSummary,
     }
 }

@@ -157,6 +157,25 @@ Anti-nuke et mode panique (voir [Modules de protection](Protection-Modules#anti-
 
 Identifiants internes : `foxsecura:config:server_protection:thresholds` et le modal `…:thresholds_modal` ; `foxsecura:config:server_protection:panic` et le modal `…:panic_modal`.
 
+### Catégorie Intégrité du serveur
+
+Restaurations, anti-permissions, alertes et rôle plafonné (voir [Modules de protection](Protection-Modules#intégrité-du-serveur-branchée-au-runtime-tranche-9)) :
+
+| Réglage | Stockage | Défaut | Droit |
+| --- | --- | --- | --- |
+| `anti_channel_delete`, `auto_channel_restore`, `anti_role_delete`, `auto_role_restore` | `guild_protection_modules` | désactivés | `Right::Config` |
+| `anti_permissions`, `anti_server_edit`, `anti_vanity_change`, `webhook_watch`, `limit_role` | `guild_protection_modules` | désactivés | `Right::Config` |
+| Rôle plafonné | `guild_configs.limit_role_id` (migration 10) | aucun | `Right::Whitelist` |
+| Plafond du rôle | `guild_configs.limit_role_max_members` | 5 | 1 à 1000, `Right::Whitelist` |
+
+- Interrupteurs identiques aux autres catégories (`foxsecura:config:module:<clé>:on|off`). Les modes auto ne s'appliquent que si le mode anti de la même ressource est coupé. Activer un module sans `VIEW_AUDIT_LOG` le signale dans les logs locaux.
+- **Rôle plafonné** (propriétaire ou `ADMINISTRATOR` ; sélecteur et boutons masqués pour `MANAGE_GUILD`, droit revérifié à chaque composant et modal) : le rôle choisi est refusé, sans écriture, s'il est `@everyone`, géré par une intégration, non gérable par FoxSecura ou porteur d'une permission dangereuse. **Plafond du rôle plafonné** ouvre un modal prérempli (1 à 1000) ; **Retirer le rôle plafonné** efface le rôle et garde le plafond.
+- Chaque écriture invalide le cache de la guilde.
+
+> ⚠️ Avant d'activer : l'anti-permissions annule aussi une modification **légitime** d'un administrateur hors liste blanche et le met en quarantaine ; le mode anti des suppressions recrée un salon supprimé volontairement et confine son auteur. Mettez l'équipe sur la liste blanche.
+
+Identifiants internes : `foxsecura:config:server_integrity:limit_role` (sélecteur), `…:limit_role_max` et le modal `…:limit_role_max_modal`, `…:limit_role_clear`.
+
 ### Catégorie Doubles comptes et salon piège
 
 L'identifiant de catégorie reste `anti_double_account`.
@@ -273,6 +292,10 @@ Permissions nécessaires aux fonctionnalités branchées :
 | Anti-nuke : quarantaine de l'auteur, retrait de ses rôles dangereux | `MANAGE_ROLES`, rôle de FoxSecura au-dessus des rôles retirés | serveur |
 | Mode panique : verrouillage de 15 minutes, mode lent de 30 s | `MANAGE_CHANNELS` et `MANAGE_ROLES` (comme le verrouillage de l'anti-raid) | tous les salons sauf les fils |
 | Envoi des incidents de l'anti-nuke | `VIEW_CHANNEL`, `SEND_MESSAGES` | salons de logs `member`, `role` et `server` |
+| Restauration des salons supprimés (overwrites clonés) | `MANAGE_CHANNELS` et `MANAGE_ROLES` ; `VIEW_AUDIT_LOG` pour l'auteur | serveur |
+| Restauration des rôles supprimés, retour en arrière des permissions, rôle plafonné | `MANAGE_ROLES`, rôle de FoxSecura au-dessus du rôle visé | serveur |
+| Surveillance des webhooks (suppression) | `MANAGE_WEBHOOKS` | serveur |
+| Envoi des incidents de l'intégrité du serveur | `VIEW_CHANNEL`, `SEND_MESSAGES` | salons de logs `channel`, `role` et `server` |
 | Pseudos hoistés (renommage) | `MANAGE_NICKNAMES` | serveur |
 | Envoi des incidents des arrivées | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `member` |
 | Toute sanction ou tout renommage | **rôle de FoxSecura au-dessus** du rôle le plus haut du membre visé | Paramètres du serveur → Rôles |

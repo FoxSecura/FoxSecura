@@ -1736,5 +1736,285 @@ catalog! {
         en: "Invalid threshold: enter a whole number from 2 to 10. Nothing was changed.",
         fr: "Seuil invalide : saisissez un nombre entier de 2 à 10. Rien n'a été modifié.",
         de: "Ungültige Schwelle: Gib eine ganze Zahl von 2 bis 10 ein. Nichts wurde geändert."
+    },
+    CategoryServerIntegrity => {
+        en: "Server integrity",
+        fr: "Intégrité du serveur",
+        de: "Serverintegrität"
+    },
+    CategoryServerIntegrityDescription => {
+        en: "Restore deleted channels and roles, watch settings, permissions and webhooks.",
+        fr: "Restauration des salons et rôles supprimés, surveillance des réglages, permissions et webhooks.",
+        de: "Wiederherstellung gelöschter Kanäle und Rollen, Überwachung von Einstellungen, Berechtigungen und Webhooks."
+    },
+    ModuleAntiChannelDelete => {
+        en: "Channel deletions (restore + quarantine)",
+        fr: "Suppressions de salons (restaure + confine)",
+        de: "Kanallöschungen (wiederherstellen + Quarantäne)"
+    },
+    ModuleAutoChannelRestore => {
+        en: "Channel auto-restore",
+        fr: "Restauration auto des salons",
+        de: "Auto-Wiederherstellung der Kanäle"
+    },
+    ModuleAntiRoleDelete => {
+        en: "Role deletions (restore + quarantine)",
+        fr: "Suppressions de rôles (restaure + confine)",
+        de: "Rollenlöschungen (wiederherstellen + Quarantäne)"
+    },
+    ModuleAutoRoleRestore => {
+        en: "Role auto-restore",
+        fr: "Restauration auto des rôles",
+        de: "Auto-Wiederherstellung der Rollen"
+    },
+    AntiChannelDeleteSummary => {
+        en: "Channel deleted: restored, author contained",
+        fr: "Salon supprimé : restauré, auteur confiné",
+        de: "Kanal gelöscht: wiederhergestellt, Urheber eingedämmt"
+    },
+    AutoChannelRestoreSummary => {
+        en: "Deleted channel restored",
+        fr: "Salon supprimé restauré",
+        de: "Gelöschter Kanal wiederhergestellt"
+    },
+    AntiRoleDeleteSummary => {
+        en: "Role deleted: restored, author contained",
+        fr: "Rôle supprimé : restauré, auteur confiné",
+        de: "Rolle gelöscht: wiederhergestellt, Urheber eingedämmt"
+    },
+    AutoRoleRestoreSummary => {
+        en: "Deleted role restored",
+        fr: "Rôle supprimé restauré",
+        de: "Gelöschte Rolle wiederhergestellt"
+    },
+    RestoreExemptSummary => {
+        en: "Deletion by a whitelisted author: restored without containment",
+        fr: "Suppression par un auteur de la liste blanche : restauration sans confinement",
+        de: "Löschung durch einen Urheber auf der Whitelist: wiederhergestellt ohne Eindämmung"
+    },
+    RestoreEvidenceDeleted => {
+        en: "Deleted resource",
+        fr: "Ressource supprimée",
+        de: "Gelöschte Ressource"
+    },
+    RestoreRecommendationAnti => {
+        en: "Check the restored resource and the author's permissions. Messages, webhooks and threads of a deleted channel, and the members of a deleted role, are not restored. Release the author from /config if this was legitimate.",
+        fr: "Vérifiez la ressource restaurée et les permissions de l'auteur. Les messages, webhooks et fils d'un salon supprimé, et les membres d'un rôle supprimé, ne sont pas restaurés. Libérez l'auteur depuis /config si c'était légitime.",
+        de: "Prüfe die wiederhergestellte Ressource und die Berechtigungen des Urhebers. Nachrichten, Webhooks und Threads eines gelöschten Kanals sowie die Mitglieder einer gelöschten Rolle werden nicht wiederhergestellt. Gib den Urheber über /config frei, falls es legitim war."
+    },
+    RestoreRecommendationAuto => {
+        en: "Check the restored resource. Messages, webhooks and threads of a deleted channel, and the members of a deleted role, are not restored.",
+        fr: "Vérifiez la ressource restaurée. Les messages, webhooks et fils d'un salon supprimé, et les membres d'un rôle supprimé, ne sont pas restaurés.",
+        de: "Prüfe die wiederhergestellte Ressource. Nachrichten, Webhooks und Threads eines gelöschten Kanals sowie die Mitglieder einer gelöschten Rolle werden nicht wiederhergestellt."
+    },
+    ModuleAntiPermissions => {
+        en: "Dangerous permissions (rollback)",
+        fr: "Permissions dangereuses (annulation)",
+        de: "Gefährliche Berechtigungen (Rücknahme)"
+    },
+    AntiPermissionsSummary => {
+        en: "Dangerous permission added to a role: permissions rolled back, author contained",
+        fr: "Permission dangereuse ajoutée à un rôle : permissions rétablies, auteur confiné",
+        de: "Gefährliche Berechtigung zu einer Rolle hinzugefügt: Berechtigungen zurückgesetzt, Urheber eingedämmt"
+    },
+    AntiPermissionsExemptSummary => {
+        en: "Dangerous permission added to a role by a whitelisted author: no rollback, no containment",
+        fr: "Permission dangereuse ajoutée à un rôle par un auteur de la liste blanche : ni annulation, ni confinement",
+        de: "Gefährliche Berechtigung durch einen Urheber auf der Whitelist hinzugefügt: keine Rücknahme, keine Eindämmung"
+    },
+    AntiPermissionsEvidenceBitfields => {
+        en: "Permissions (old->new)",
+        fr: "Permissions (ancien->nouveau)",
+        de: "Berechtigungen (alt->neu)"
+    },
+    AntiPermissionsEvidenceAdded => {
+        en: "Dangerous permissions added",
+        fr: "Permissions dangereuses ajoutées",
+        de: "Hinzugefügte gefährliche Berechtigungen"
+    },
+    AntiPermissionsRecommendation => {
+        en: "The previous permissions were restored. Review the author's roles; if the change was legitimate, release them from /config and redo it, or whitelist your administrators.",
+        fr: "Les anciennes permissions ont été rétablies. Revoyez les rôles de l'auteur ; si la modification était légitime, libérez-le depuis /config et refaites-la, ou mettez vos administrateurs sur la liste blanche.",
+        de: "Die vorherigen Berechtigungen wurden wiederhergestellt. Überprüfe die Rollen des Urhebers; war die Änderung legitim, gib ihn über /config frei und wiederhole sie, oder setze deine Administratoren auf die Whitelist."
+    },
+    AntiPermissionsRecommendationFailed => {
+        en: "The rollback was NOT applied: the dangerous permissions are still on the role. Remove them by hand now (usually Manage Roles is missing or FoxSecura's role is below this role).",
+        fr: "Le retour en arrière n'a PAS été appliqué : les permissions dangereuses sont toujours sur le rôle. Retirez-les à la main maintenant (souvent Gérer les rôles manquant ou rôle de FoxSecura sous ce rôle).",
+        de: "Die Rücknahme wurde NICHT angewendet: Die gefährlichen Berechtigungen sind noch auf der Rolle. Entferne sie jetzt manuell (meist fehlt Rollen verwalten oder die Rolle von FoxSecura liegt unter dieser Rolle)."
+    },
+    AntiPermissionsRecommendationExempt => {
+        en: "Whitelisted author: confirm with them that this permission change was intended.",
+        fr: "Auteur de la liste blanche : confirmez avec lui que ce changement de permissions était voulu.",
+        de: "Urheber auf der Whitelist: Kläre mit ihm, ob diese Berechtigungsänderung beabsichtigt war."
+    },
+    ModuleAntiServerEdit => {
+        en: "Server settings (alert)",
+        fr: "Réglages du serveur (alerte)",
+        de: "Servereinstellungen (Warnung)"
+    },
+    ModuleAntiVanityChange => {
+        en: "Custom invite URL (alert)",
+        fr: "URL personnalisée (alerte)",
+        de: "Eigene Einladungs-URL (Warnung)"
+    },
+    AntiServerEditSummary => {
+        en: "Server settings changed (name, icon, verification or notifications): alert only",
+        fr: "Réglages du serveur modifiés (nom, icône, vérification ou notifications) : alerte seule",
+        de: "Servereinstellungen geändert (Name, Symbol, Verifizierung oder Benachrichtigungen): nur Warnung"
+    },
+    AntiServerEditRecommendation => {
+        en: "Nothing was reverted. Check that the change was intended; if not, restore the settings by hand and review the author's permissions.",
+        fr: "Rien n'a été annulé. Vérifiez que la modification était voulue ; sinon, rétablissez les réglages à la main et revoyez les permissions de l'auteur.",
+        de: "Nichts wurde rückgängig gemacht. Prüfe, ob die Änderung beabsichtigt war; falls nicht, stelle die Einstellungen manuell wieder her und überprüfe die Berechtigungen des Urhebers."
+    },
+    AntiVanityChangeSummary => {
+        en: "Custom invite URL changed: alert only",
+        fr: "URL personnalisée modifiée : alerte seule",
+        de: "Eigene Einladungs-URL geändert: nur Warnung"
+    },
+    AntiVanityChangeEvidence => {
+        en: "Custom URL (old->new)",
+        fr: "URL personnalisée (ancienne->nouvelle)",
+        de: "Eigene URL (alt->neu)"
+    },
+    AntiVanityChangeRecommendation => {
+        en: "Discord does not let a bot take back a released custom URL: act now (contact Discord support if it was stolen) and remove Manage Server from the author.",
+        fr: "Discord ne permet pas à un bot de reprendre une URL personnalisée libérée : agissez tout de suite (support Discord si elle a été volée) et retirez Gérer le serveur à l'auteur.",
+        de: "Discord erlaubt einem Bot nicht, eine freigegebene eigene URL zurückzuholen: Handle sofort (Discord-Support kontaktieren, falls sie gestohlen wurde) und entziehe dem Urheber Server verwalten."
+    },
+    ModuleWebhookWatch => {
+        en: "Webhooks",
+        fr: "Webhooks",
+        de: "Webhooks"
+    },
+    WebhookWatchCreatedSummary => {
+        en: "Webhook created by an unauthorized author: webhook removed",
+        fr: "Webhook créé par un auteur non autorisé : webhook supprimé",
+        de: "Webhook von einem nicht autorisierten Urheber erstellt: Webhook entfernt"
+    },
+    WebhookWatchUpdatedSummary => {
+        en: "Webhook changed by an unauthorized author: webhook removed",
+        fr: "Webhook modifié par un auteur non autorisé : webhook supprimé",
+        de: "Webhook von einem nicht autorisierten Urheber geändert: Webhook entfernt"
+    },
+    WebhookWatchDeletedSummary => {
+        en: "Webhook deleted by an unauthorized author: alert only",
+        fr: "Webhook supprimé par un auteur non autorisé : alerte seule",
+        de: "Webhook von einem nicht autorisierten Urheber gelöscht: nur Warnung"
+    },
+    WebhookWatchEvidenceWebhook => {
+        en: "Webhook",
+        fr: "Webhook",
+        de: "Webhook"
+    },
+    WebhookWatchRecommendation => {
+        en: "Check with the author why they touched this webhook. Whitelist the members allowed to manage webhooks.",
+        fr: "Vérifiez avec l'auteur pourquoi il a touché ce webhook. Mettez sur la liste blanche les membres autorisés à gérer les webhooks.",
+        de: "Kläre mit dem Urheber, warum er diesen Webhook geändert hat. Setze Mitglieder, die Webhooks verwalten dürfen, auf die Whitelist."
+    },
+    WebhookWatchRecommendationFailed => {
+        en: "The unauthorized webhook is STILL active (see the action status, usually Manage Webhooks is missing): delete it by hand now, it can post as anyone.",
+        fr: "Le webhook non autorisé est TOUJOURS actif (voir l'état de l'action, souvent Gérer les webhooks manquant) : supprimez-le à la main maintenant, il peut publier sous n'importe quel nom.",
+        de: "Der nicht autorisierte Webhook ist IMMER NOCH aktiv (siehe Aktionsstatus, meist fehlt Webhooks verwalten): Lösche ihn jetzt manuell, er kann unter jedem Namen posten."
+    },
+    LogsUnitMembers => {
+        en: "members",
+        fr: "membres",
+        de: "Mitglieder"
+    },
+    ModuleLimitRole => {
+        en: "Capped role",
+        fr: "Rôle plafonné",
+        de: "Begrenzte Rolle"
+    },
+    LimitRoleSummary => {
+        en: "Capped role given beyond its limit: role removed from the member who just received it",
+        fr: "Rôle plafonné attribué au-delà de son plafond : rôle retiré au membre qui vient de le recevoir",
+        de: "Begrenzte Rolle über ihr Limit vergeben: Rolle dem Mitglied entzogen, das sie gerade erhalten hat"
+    },
+    LimitRoleFailedSummary => {
+        en: "Capped role given beyond its limit: the role could NOT be removed",
+        fr: "Rôle plafonné attribué au-delà de son plafond : le rôle n'a PAS pu être retiré",
+        de: "Begrenzte Rolle über ihr Limit vergeben: Die Rolle konnte NICHT entzogen werden"
+    },
+    LimitRoleRecommendation => {
+        en: "Check who gave the role. If more members should hold it, raise the cap in /config.",
+        fr: "Vérifiez qui a attribué le rôle. Si davantage de membres doivent le porter, relevez le plafond dans /config.",
+        de: "Prüfe, wer die Rolle vergeben hat. Sollen mehr Mitglieder sie tragen, erhöhe das Limit in /config."
+    },
+    LimitRoleRecommendationFailed => {
+        en: "The cap is still exceeded: remove the role by hand (usually Manage Roles is missing or FoxSecura's role is below the capped role).",
+        fr: "Le plafond est toujours dépassé : retirez le rôle à la main (souvent Gérer les rôles manquant ou rôle de FoxSecura sous le rôle plafonné).",
+        de: "Das Limit ist weiterhin überschritten: Entziehe die Rolle manuell (meist fehlt Rollen verwalten oder die Rolle von FoxSecura liegt unter der begrenzten Rolle)."
+    },
+    ConfigLimitRoleValue => {
+        en: "{role}: at most {max} members",
+        fr: "{role} : {max} membres au plus",
+        de: "{role}: höchstens {max} Mitglieder"
+    },
+    ConfigLimitRoleNone => {
+        en: "No capped role (cap: {max} members)",
+        fr: "Aucun rôle plafonné (plafond : {max} membres)",
+        de: "Keine begrenzte Rolle (Limit: {max} Mitglieder)"
+    },
+    ConfigServerIntegrityNotice => {
+        en: "Requires View Audit Log, Manage Channels, Manage Roles and Manage Webhooks, with FoxSecura's role above the managed roles. Deleted channels and roles are recreated from the deleted object: their messages, webhooks, threads and members are not restored. Auto modes only apply when the matching deletion module is off. Anti-permissions rolls back any dangerous permission added by a non-whitelisted author, even a legitimate change: whitelist your administrators. Server settings and the custom URL are alerts only; Discord does not let a bot take back a stolen custom URL. The capped role is never removed from the owner, nor on an incomplete member count.",
+        fr: "Requiert Voir les logs du serveur, Gérer les salons, Gérer les rôles et Gérer les webhooks, avec le rôle de FoxSecura au-dessus des rôles gérés. Les salons et rôles supprimés sont recréés d'après l'objet supprimé : messages, webhooks, fils et membres ne sont pas restaurés. Les modes auto ne s'appliquent que si le module de suppression correspondant est coupé. L'anti-permissions annule toute permission dangereuse ajoutée par un auteur hors liste blanche, même légitime : mettez vos administrateurs sur la liste blanche. Réglages du serveur et URL personnalisée : alertes seules ; un bot ne peut pas reprendre une URL volée. Le rôle plafonné n'est jamais retiré au propriétaire, ni sur un comptage incomplet.",
+        de: "Benötigt Audit-Log anzeigen, Kanäle verwalten, Rollen verwalten und Webhooks verwalten, mit der Rolle von FoxSecura über den verwalteten Rollen. Gelöschte Kanäle und Rollen werden aus dem gelöschten Objekt neu erstellt: Nachrichten, Webhooks, Threads und Mitglieder werden nicht wiederhergestellt. Auto-Modi gelten nur, wenn das passende Löschmodul aus ist. Anti-Berechtigungen nimmt jede gefährliche Berechtigung eines Urhebers außerhalb der Whitelist zurück, auch eine legitime: Setze deine Administratoren auf die Whitelist. Servereinstellungen und eigene URL: nur Warnungen; ein Bot kann keine gestohlene URL zurückholen. Die begrenzte Rolle wird nie dem Inhaber entzogen, noch bei unvollständiger Zählung."
+    },
+    ConfigLimitRoleSelect => {
+        en: "Choose the capped role",
+        fr: "Choisir le rôle plafonné",
+        de: "Begrenzte Rolle wählen"
+    },
+    ConfigLimitRoleMaxButton => {
+        en: "Capped role limit",
+        fr: "Plafond du rôle plafonné",
+        de: "Limit der begrenzten Rolle"
+    },
+    ConfigLimitRoleMaxInput => {
+        en: "Maximum members (1 to 1000)",
+        fr: "Membres au plus (1 à 1000)",
+        de: "Höchstens Mitglieder (1 bis 1000)"
+    },
+    ConfigLimitRoleClearButton => {
+        en: "Remove capped role",
+        fr: "Retirer le rôle plafonné",
+        de: "Begrenzte Rolle entfernen"
+    },
+    ConfigLimitRoleInvalidMax => {
+        en: "Invalid limit: enter a whole number from 1 to 1000. Nothing was changed.",
+        fr: "Plafond invalide : saisissez un nombre entier de 1 à 1000. Rien n'a été modifié.",
+        de: "Ungültiges Limit: Gib eine ganze Zahl von 1 bis 1000 ein. Nichts wurde geändert."
+    },
+    ConfigLimitRoleAccessDenied => {
+        en: "Only the server owner or an administrator can manage the capped role.",
+        fr: "Seuls le propriétaire du serveur et les administrateurs peuvent gérer le rôle plafonné.",
+        de: "Nur der Serverinhaber oder ein Administrator kann die begrenzte Rolle verwalten."
+    },
+    ConfigLimitRoleEveryone => {
+        en: "@everyone cannot be the capped role. Nothing was changed.",
+        fr: "@everyone ne peut pas être le rôle plafonné. Rien n'a été modifié.",
+        de: "@everyone kann nicht die begrenzte Rolle sein. Nichts wurde geändert."
+    },
+    ConfigLimitRoleManaged => {
+        en: "This role is managed by an integration: FoxSecura cannot remove it. Nothing was changed.",
+        fr: "Ce rôle est géré par une intégration : FoxSecura ne peut pas le retirer. Rien n'a été modifié.",
+        de: "Diese Rolle wird von einer Integration verwaltet: FoxSecura kann sie nicht entziehen. Nichts wurde geändert."
+    },
+    ConfigLimitRoleNotManageable => {
+        en: "FoxSecura cannot manage this role (Manage Roles missing or role above FoxSecura's role). Nothing was changed.",
+        fr: "FoxSecura ne peut pas gérer ce rôle (Gérer les rôles manquant ou rôle au-dessus de celui de FoxSecura). Rien n'a été modifié.",
+        de: "FoxSecura kann diese Rolle nicht verwalten (Rollen verwalten fehlt oder Rolle über der von FoxSecura). Nichts wurde geändert."
+    },
+    ConfigLimitRoleDangerous => {
+        en: "This role carries dangerous permissions; protect it with the anti-nuke instead. Nothing was changed:",
+        fr: "Ce rôle porte des permissions dangereuses ; protégez-le plutôt avec l'anti-nuke. Rien n'a été modifié :",
+        de: "Diese Rolle hat gefährliche Berechtigungen; schütze sie lieber mit dem Anti-Nuke. Nichts wurde geändert:"
+    },
+    ConfigLimitRoleUnknown => {
+        en: "Role not found in FoxSecura's cache. Nothing was changed.",
+        fr: "Rôle introuvable dans le cache de FoxSecura. Rien n'a été modifié.",
+        de: "Rolle nicht im Cache von FoxSecura gefunden. Nichts wurde geändert."
     }
 }
