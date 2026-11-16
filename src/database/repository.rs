@@ -5,6 +5,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::i18n::Language;
 use crate::logs::LogType;
+use crate::protection::anti_nuke::limit_role::{LimitRoleSettings, validate_limit_role_max};
 use crate::protection::anti_nuke::settings::{
     AntiNukeSettings, AntiNukeThresholds, validate_panic_threshold,
 };
@@ -235,6 +236,43 @@ ON CONFLICT(guild_id) DO UPDATE SET
         read_guild_config(&connection, guild_id)
     }
 
+    /// Enregistre (ou efface, avec `role_id` à `None`) le rôle plafonné et son
+    /// plafond (1 à 1000). `@everyone` et un plafond hors bornes sont refusés
+    /// sans rien écrire.
+    ///
+    /// La validation d'un rôle existant (géré, non gérable, permission
+    /// dangereuse) se fait d'après le cache Discord, avant l'écriture.
+    pub fn set_limit_role(
+        &self,
+        guild_id: u64,
+        role_id: Option<u64>,
+        max_members: u16,
+    ) -> Result<GuildConfig, DatabaseError> {
+        if role_id.is_some_and(|role_id| is_everyone_role(guild_id, role_id)) {
+            return Err(DatabaseError::EveryoneRoleNotLimitable);
+        }
+        let max_members = validate_limit_role_max(max_members)?;
+        let connection = self.write_connection(guild_id)?;
+
+        connection.execute(
+            r#"
+INSERT INTO guild_configs (guild_id, limit_role_id, limit_role_max_members)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(guild_id) DO UPDATE SET
+    limit_role_id = excluded.limit_role_id,
+    limit_role_max_members = excluded.limit_role_max_members,
+    updated_at = unixepoch()
+"#,
+            params![
+                guild_id.to_string(),
+                role_id.map(|id| id.to_string()),
+                max_members
+            ],
+        )?;
+
+        read_guild_config(&connection, guild_id)
+    }
+
     /// Enregistre (ou efface, avec `None`) le salon piège du honeypot.
     pub fn set_honeypot_channel(
         &self,
@@ -391,7 +429,8 @@ SELECT guild_id, language, created_at, updated_at,
     bad_words_language, new_account_min_age_days, quarantine_role_id,
     anti_raid_join_threshold, anti_raid_window_seconds, honeypot_channel_id,
     anti_nuke_ban_threshold, anti_nuke_unban_threshold, anti_nuke_create_threshold,
-    anti_nuke_emoji_sticker_threshold, anti_nuke_role_grant_threshold, panic_mode_threshold
+    anti_nuke_emoji_sticker_threshold, anti_nuke_role_grant_threshold, panic_mode_threshold,
+    limit_role_id, limit_role_max_members
 FROM guild_configs
 WHERE guild_id = ?1
 "#,
@@ -419,6 +458,8 @@ WHERE guild_id = ?1
                     row.get::<_, u8>(17)?,
                     row.get::<_, u8>(18)?,
                 ],
+                row.get::<_, Option<String>>(19)?,
+                row.get::<_, u16>(20)?,
             ))
         },
     )?;
@@ -446,6 +487,10 @@ WHERE guild_id = ?1
             panic_threshold: row.13[5],
         }
         .validated()?,
+        limit_role: LimitRoleSettings {
+            role_id: row.14.as_deref().map(parse_snowflake).transpose()?,
+            max_members: validate_limit_role_max(row.15)?,
+        },
         created_at: row.2,
         updated_at: row.3,
     })

@@ -373,7 +373,8 @@ fn detect_module(
         | ProtectionModule::AntiPermissions
         | ProtectionModule::AntiServerEdit
         | ProtectionModule::AntiVanityChange
-        | ProtectionModule::WebhookWatch => None,
+        | ProtectionModule::WebhookWatch
+        | ProtectionModule::LimitRole => None,
     }
 }
 

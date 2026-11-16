@@ -165,6 +165,10 @@ pub enum DatabaseError {
     InvalidLockdownStatus(String),
     /// Seuil de l'anti-nuke ou du mode panique hors des bornes.
     InvalidAntiNukeSettings(AntiNukeSettingsError),
+    /// `@everyone` ne peut pas être le rôle plafonné.
+    EveryoneRoleNotLimitable,
+    /// Plafond du rôle plafonné hors des bornes (1 à 1000).
+    InvalidLimitRoleMax(u16),
 }
 
 impl fmt::Display for DatabaseError {
@@ -217,6 +221,13 @@ impl fmt::Display for DatabaseError {
             }
             Self::InvalidAntiRaidLimits(error) => error.fmt(formatter),
             Self::InvalidAntiNukeSettings(error) => error.fmt(formatter),
+            Self::EveryoneRoleNotLimitable => {
+                formatter.write_str("le rôle @everyone ne peut pas être le rôle plafonné")
+            }
+            Self::InvalidLimitRoleMax(value) => write!(
+                formatter,
+                "plafond du rôle plafonné invalide : {value} (attendu : 1 à 1000)"
+            ),
             Self::InvalidLockdownStatus(value) => {
                 write!(
                     formatter,
@@ -251,7 +262,9 @@ impl Error for DatabaseError {
             | Self::InvalidNewAccountMinAge(_)
             | Self::EveryoneRoleNotQuarantinable
             | Self::InvalidOverwriteState(_)
-            | Self::InvalidLockdownStatus(_) => None,
+            | Self::InvalidLockdownStatus(_)
+            | Self::EveryoneRoleNotLimitable
+            | Self::InvalidLimitRoleMax(_) => None,
         }
     }
 }

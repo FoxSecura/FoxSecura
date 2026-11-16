@@ -262,6 +262,7 @@ const fn unit_key(unit: ThresholdUnit) -> TextKey {
         ThresholdUnit::Joins => TextKey::LogsUnitJoins,
         ThresholdUnit::Actions => TextKey::LogsUnitActions,
         ThresholdUnit::Signals => TextKey::LogsUnitSignals,
+        ThresholdUnit::Members => TextKey::LogsUnitMembers,
     }
 }
 

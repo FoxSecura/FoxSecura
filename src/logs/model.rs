@@ -145,6 +145,8 @@ pub enum ThresholdUnit {
     Joins,
     Actions,
     Signals,
+    /// Membres qui portent un rôle (rôle plafonné).
+    Members,
 }
 
 #[derive(Debug, Clone, PartialEq)]

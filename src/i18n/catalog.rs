@@ -1916,5 +1916,35 @@ catalog! {
         en: "The unauthorized webhook is STILL active (see the action status, usually Manage Webhooks is missing): delete it by hand now, it can post as anyone.",
         fr: "Le webhook non autorisé est TOUJOURS actif (voir l'état de l'action, souvent Gérer les webhooks manquant) : supprimez-le à la main maintenant, il peut publier sous n'importe quel nom.",
         de: "Der nicht autorisierte Webhook ist IMMER NOCH aktiv (siehe Aktionsstatus, meist fehlt Webhooks verwalten): Lösche ihn jetzt manuell, er kann unter jedem Namen posten."
+    },
+    LogsUnitMembers => {
+        en: "members",
+        fr: "membres",
+        de: "Mitglieder"
+    },
+    ModuleLimitRole => {
+        en: "Capped role",
+        fr: "Rôle plafonné",
+        de: "Begrenzte Rolle"
+    },
+    LimitRoleSummary => {
+        en: "Capped role given beyond its limit: role removed from the member who just received it",
+        fr: "Rôle plafonné attribué au-delà de son plafond : rôle retiré au membre qui vient de le recevoir",
+        de: "Begrenzte Rolle über ihr Limit vergeben: Rolle dem Mitglied entzogen, das sie gerade erhalten hat"
+    },
+    LimitRoleFailedSummary => {
+        en: "Capped role given beyond its limit: the role could NOT be removed",
+        fr: "Rôle plafonné attribué au-delà de son plafond : le rôle n'a PAS pu être retiré",
+        de: "Begrenzte Rolle über ihr Limit vergeben: Die Rolle konnte NICHT entzogen werden"
+    },
+    LimitRoleRecommendation => {
+        en: "Check who gave the role. If more members should hold it, raise the cap in /config.",
+        fr: "Vérifiez qui a attribué le rôle. Si davantage de membres doivent le porter, relevez le plafond dans /config.",
+        de: "Prüfe, wer die Rolle vergeben hat. Sollen mehr Mitglieder sie tragen, erhöhe das Limit in /config."
+    },
+    LimitRoleRecommendationFailed => {
+        en: "The cap is still exceeded: remove the role by hand (usually Manage Roles is missing or FoxSecura's role is below the capped role).",
+        fr: "Le plafond est toujours dépassé : retirez le rôle à la main (souvent Gérer les rôles manquant ou rôle de FoxSecura sous le rôle plafonné).",
+        de: "Das Limit ist weiterhin überschritten: Entziehe die Rolle manuell (meist fehlt Rollen verwalten oder die Rolle von FoxSecura liegt unter der begrenzten Rolle)."
     }
 }

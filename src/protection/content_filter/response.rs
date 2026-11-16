@@ -389,5 +389,6 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiServerEdit => TextKey::AntiServerEditSummary,
         ProtectionModule::AntiVanityChange => TextKey::AntiVanityChangeSummary,
         ProtectionModule::WebhookWatch => TextKey::WebhookWatchCreatedSummary,
+        ProtectionModule::LimitRole => TextKey::LimitRoleSummary,
     }
 }

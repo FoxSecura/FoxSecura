@@ -12,6 +12,7 @@ use foxsecura::database::{
 };
 use foxsecura::i18n::Language;
 use foxsecura::logs::LogType;
+use foxsecura::protection::anti_nuke::limit_role::LimitRoleSettings;
 use foxsecura::protection::anti_nuke::settings::{
     AntiNukeSettings, AntiNukeSettingsError, AntiNukeThresholds,
 };
@@ -282,8 +283,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_nine() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 9);
+fn latest_schema_version_is_ten() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 10);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -3078,4 +3079,110 @@ fn the_applied_slowmode_is_stored_with_the_lockdown() {
             .slowmode_seconds,
         30
     );
+}
+
+const V9_MIGRATION: &str = r#"
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_ban_threshold INTEGER NOT NULL DEFAULT 3
+    CHECK (anti_nuke_ban_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_unban_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_unban_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_create_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_create_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_emoji_sticker_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_emoji_sticker_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN anti_nuke_role_grant_threshold INTEGER NOT NULL DEFAULT 5
+    CHECK (anti_nuke_role_grant_threshold BETWEEN 2 AND 20);
+ALTER TABLE guild_configs ADD COLUMN panic_mode_threshold INTEGER NOT NULL DEFAULT 3
+    CHECK (panic_mode_threshold BETWEEN 2 AND 10);
+
+ALTER TABLE guild_lockdowns ADD COLUMN slowmode_seconds INTEGER NOT NULL DEFAULT 10
+    CHECK (slowmode_seconds BETWEEN 0 AND 21600);
+INSERT INTO schema_migrations (version, name) VALUES (9, 'anti_nuke');
+"#;
+
+#[test]
+fn migrates_version_nine_database_without_data_loss() {
+    let directory = temporary_directory("migrate-v9");
+    let path = directory.join("foxsecura.sqlite3");
+
+    {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch(V7_SCHEMA).unwrap();
+        connection.execute_batch(V8_MIGRATION).unwrap();
+        connection.execute_batch(V9_MIGRATION).unwrap();
+        connection
+            .execute_batch(
+                r#"
+INSERT INTO guild_configs (
+    guild_id, language, created_at, updated_at, quarantine_role_id,
+    anti_nuke_ban_threshold, panic_mode_threshold
+)
+VALUES ('123', 'en', 1000, 2000, '500', 4, 6);
+INSERT INTO guild_protection_modules (guild_id, module_key, enabled)
+VALUES ('123', 'anti_mass_ban', 1);
+"#,
+            )
+            .unwrap();
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+    let config = database.find_guild_config(123).unwrap().unwrap();
+    assert_eq!((config.created_at, config.updated_at), (1000, 2000));
+    assert_eq!(config.quarantine_role_id, Some(500));
+    assert_eq!(config.anti_nuke.thresholds.ban, 4);
+    assert_eq!(config.anti_nuke.panic_threshold, 6);
+    // Réglages de la migration 10 : rôle non configuré, plafond par défaut.
+    assert_eq!(config.limit_role, LimitRoleSettings::default());
+    assert_eq!(config.limit_role.max_members, 5);
+    assert!(
+        database
+            .enabled_modules(123)
+            .unwrap()
+            .contains(ProtectionModule::AntiMassBan)
+    );
+
+    database.set_limit_role(123, Some(700), 3).unwrap();
+    drop(database);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+    let config = reopened.find_guild_config(123).unwrap().unwrap();
+    assert_eq!(
+        config.limit_role,
+        LimitRoleSettings {
+            role_id: Some(700),
+            max_members: 3,
+        }
+    );
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn limit_role_is_bounded_and_never_everyone() {
+    let database = Database::open_in_memory().unwrap();
+    for max in [1, 1000, 42] {
+        let config = database.set_limit_role(1, Some(9), max).unwrap();
+        assert_eq!(config.limit_role.max_members, max);
+    }
+    for max in [0, 1001, u16::MAX] {
+        assert!(matches!(
+            database.set_limit_role(1, Some(9), max),
+            Err(DatabaseError::InvalidLimitRoleMax(value)) if value == max
+        ));
+    }
+    assert!(matches!(
+        database.set_limit_role(1, Some(1), 5),
+        Err(DatabaseError::EveryoneRoleNotLimitable)
+    ));
+    // Le refus n'a rien écrit ; l'effacement garde le plafond.
+    assert_eq!(
+        database.guild_config(1).unwrap().limit_role,
+        LimitRoleSettings {
+            role_id: Some(9),
+            max_members: 42,
+        }
+    );
+    let cleared = database.set_limit_role(1, None, 42).unwrap();
+    assert_eq!(cleared.limit_role.role_id, None);
 }
