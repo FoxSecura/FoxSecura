@@ -136,6 +136,18 @@ Branché en tranche 8 : rafales par auteur (bans, expulsions, exclusions, déban
 - **Rejeu** : une entrée de plus de 5 minutes (reconnexion) est ignorée, une entrée déjà traitée n'est jamais recomptée.
 - **Mono-instance** : dédoublonnage, compteurs, pauses de 30 s et signaux du mode panique vivent en mémoire (bornés à 10 000 entrées) : perdus au redémarrage, jamais partagés. Deux instances sur la même guilde compteraient chacune la moitié d'une rafale, et chacune pourrait mettre l'auteur en quarantaine.
 
+### Intégrité du serveur (tranche 9)
+
+- **Permissions** : `VIEW_AUDIT_LOG` (auteurs), `MANAGE_CHANNELS` (recréer un salon), `MANAGE_ROLES` (recréer un rôle, retour en arrière des permissions, quarantaine, rôle plafonné ; rôle de FoxSecura au-dessus du rôle visé), `MANAGE_WEBHOOKS` (supprimer un webhook). Une permission manquante donne un incident `critical` avec `missing_permission` ou `role_hierarchy`, jamais un échec silencieux.
+- **Faux positif de l'anti-permissions** : une modification **légitime** d'un administrateur hors liste blanche (ajout de `BAN_MEMBERS` à un rôle de modération) est annulée et son auteur mis en quarantaine (rôles dangereux non rendus). Mettez les administrateurs sur la liste blanche ; un auteur exempté n'est ni annulé ni confiné, l'incident reste visible.
+- **Faux positif des suppressions (mode anti)** : un ménage légitime par un membre non exempté recrée les salons ou rôles et confine l'auteur. Préférez le mode auto (restauration seule, silencieuse hors succès) si l'équipe réorganise souvent le serveur.
+- **Ce qui n'est pas restauré** : messages, webhooks et fils d'un salon supprimé ; membres d'un rôle supprimé ; un rôle absent du cache. Les restaurations ne remplacent pas une sauvegarde (hors périmètre, tranche suivante).
+- **URL personnalisée** : alerte seule ; un bot ne peut pas reprendre une vanity volée.
+- **Réglages du serveur** : alerte seule, jamais de retour en arrière (il combattrait le propriétaire).
+- **Rôle plafonné** : jamais retiré au propriétaire ; un comptage incomplet (cache partiel et hydratation impossible) ne retire **rien**. L'hydratation coûte au plus 25 appels API, seulement à l'ajout du rôle plafonné.
+- **Boucles** : chaque action de FoxSecura (retour en arrière, suppression de webhook, restauration, retrait du rôle plafonné) porte une raison `FoxSecura …` et a le bot pour auteur : le socle l'écarte, elle ne se re-déclenche jamais.
+- **Mono-instance** : l'index des auteurs récents (2 048 entrées, 5 minutes) vit en mémoire.
+
 ## Modération IA
 
 L'IA doit être traitée comme un signal externe non déterministe. Les résultats doivent être validés contre un schéma, convertis vers le vocabulaire FoxSecura puis soumis à la politique locale.
