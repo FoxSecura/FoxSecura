@@ -9,10 +9,13 @@ use std::time::Duration;
 use foxsecura::i18n::Language;
 use foxsecura::logs::{LogSeverity, SecurityEvidence, ThresholdUnit};
 use foxsecura::protection::anti_spam::anti_spam_ping::{MentionTarget, MentionTargetKind};
+use foxsecura::protection::automod::bad_words::{
+    BadWordsLanguage, BadWordsMatcher, built_in_bad_words,
+};
 use foxsecura::protection::content_filter::{
-    AuthorContext, ContentFinding, MENTION_SPAM_THRESHOLD, MENTION_SPAM_WINDOW, MentionBursts,
-    MentionFacts, MentionStage, MessageContent, MessageEvent, MessageRoute, OWNER_PING_THRESHOLD,
-    OWNER_PING_WINDOW, build_incident, route_message_with,
+    AuthorContext, CONTENT_FILTERS, ContentFinding, MENTION_SPAM_THRESHOLD, MENTION_SPAM_WINDOW,
+    MESSAGE_CHAIN, MentionBursts, MentionFacts, MentionStage, MessageContent, MessageEvent,
+    MessageRoute, OWNER_PING_THRESHOLD, OWNER_PING_WINDOW, build_incident, route_message_with,
 };
 use foxsecura::protection::shared::{
     DeleteMessageOutcome, GuildMessage, MessageScope, ModuleSet, ProtectionModule,
@@ -419,4 +422,145 @@ fn mention_spam_is_never_evaluated_for_edits_or_exempt_authors() {
         }
     }
     assert_eq!(bursts.tracked_key_count(), 0);
+}
+
+// --- C. Ordre et court-circuit ---
+
+fn all_modules() -> ModuleSet {
+    ProtectionModule::ALL.into_iter().collect()
+}
+
+fn route_all(
+    bursts: &mut MentionBursts,
+    message: &MessageContent,
+    matcher: &BadWordsMatcher,
+    facts: MentionFacts<'_>,
+) -> MessageRoute {
+    route_message_with(
+        MessageScope::Enforce,
+        MessageEvent::Created,
+        all_modules(),
+        message,
+        AuthorContext::default(),
+        Some(matcher),
+        Some(MentionStage { bursts, facts }),
+    )
+}
+
+#[test]
+fn message_chain_places_the_mention_stage_between_mass_mentions_and_bad_words() {
+    let position = |module| MESSAGE_CHAIN.iter().position(|m| *m == module).unwrap();
+    assert!(
+        position(ProtectionModule::AntiMassMention) < position(ProtectionModule::AntiPingOwner)
+    );
+    assert!(position(ProtectionModule::AntiPingOwner) < position(ProtectionModule::AntiSpamPing));
+    assert!(position(ProtectionModule::AntiSpamPing) < position(ProtectionModule::BadWords));
+    // Les filtres de contenu gardent leur ordre relatif.
+    let filters: Vec<_> = MESSAGE_CHAIN
+        .iter()
+        .copied()
+        .filter(|module| CONTENT_FILTERS.contains(module))
+        .collect();
+    assert_eq!(filters, CONTENT_FILTERS);
+}
+
+#[test]
+fn an_earlier_filter_short_circuits_the_mention_stage_without_counting() {
+    let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
+    let mut bursts = MentionBursts::new();
+    let invite = text_message("discord.gg/raid");
+
+    for second in 0..5 {
+        let route = route_all(
+            &mut bursts,
+            &invite,
+            &matcher,
+            facts(AUTHOR, second, &[OWNER], &[]),
+        );
+        assert_eq!(module_of(&route), Some(ProtectionModule::AntiInvite));
+    }
+    // Aucune mention comptée : le filtre a arrêté la chaîne avant l'étape.
+    assert_eq!(bursts.tracked_key_count(), 0);
+}
+
+#[test]
+fn owner_ping_wins_over_mention_spam_and_mention_spam_over_bad_words() {
+    let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
+    let mut bursts = MentionBursts::new();
+    let insult = text_message("quelle merde");
+    let clean = text_message("salut");
+
+    // Deux pings du propriétaire et d'un rôle : rien n'atteint le seuil.
+    for second in 0..2 {
+        let route = route_all(
+            &mut bursts,
+            &clean,
+            &matcher,
+            facts(AUTHOR, second, &[OWNER], &[5]),
+        );
+        assert_eq!(route, MessageRoute::AntiSpam);
+    }
+    // Troisième : les deux rafales atteindraient le seuil, le propriétaire
+    // passe en premier et un seul module répond.
+    let route = route_all(
+        &mut bursts,
+        &insult,
+        &matcher,
+        facts(AUTHOR, 2, &[OWNER], &[5]),
+    );
+    assert_eq!(module_of(&route), Some(ProtectionModule::AntiPingOwner));
+
+    // Un autre auteur : spam de mentions d'un rôle, avec un mot interdit.
+    let other = AUTHOR + 1;
+    for second in 0..2 {
+        let route = route_all(
+            &mut bursts,
+            &insult,
+            &matcher,
+            facts(other, second, &[], &[6]),
+        );
+        assert_eq!(module_of(&route), Some(ProtectionModule::BadWords));
+    }
+    let route = route_all(&mut bursts, &insult, &matcher, facts(other, 2, &[], &[6]));
+    assert_eq!(module_of(&route), Some(ProtectionModule::AntiSpamPing));
+}
+
+#[test]
+fn bad_words_still_apply_to_edits_and_exempt_authors_after_the_mention_stage() {
+    let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
+    let mut bursts = MentionBursts::new();
+    let insult = text_message("quelle merde");
+
+    for (scope, event) in [
+        (MessageScope::Enforce, MessageEvent::Edited),
+        (MessageScope::ExemptAuthor, MessageEvent::Created),
+    ] {
+        let route = route_message_with(
+            scope,
+            event,
+            all_modules(),
+            &insult,
+            AuthorContext::default(),
+            Some(&matcher),
+            Some(MentionStage {
+                bursts: &mut bursts,
+                facts: facts(AUTHOR, 0, &[OWNER], &[]),
+            }),
+        );
+        assert_eq!(module_of(&route), Some(ProtectionModule::BadWords));
+    }
+    assert_eq!(bursts.tracked_key_count(), 0);
+}
+
+#[test]
+fn a_clean_creation_reaches_the_anti_spam_once_the_chain_is_exhausted() {
+    let matcher = BadWordsMatcher::new(built_in_bad_words(BadWordsLanguage::French));
+    let mut bursts = MentionBursts::new();
+    let route = route_all(
+        &mut bursts,
+        &text_message("bonjour"),
+        &matcher,
+        facts(AUTHOR, 0, &[OWNER], &[]),
+    );
+    assert_eq!(route, MessageRoute::AntiSpam);
 }

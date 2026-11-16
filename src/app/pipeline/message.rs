@@ -138,8 +138,9 @@ pub async fn handle_update(
 ///
 /// Gardes (hors guilde, webhook, bot), puis une seule lecture en base
 /// (configuration, salon ignoré, liste blanche, modules activés, mots
-/// interdits), puis le honeypot, les filtres de contenu et enfin
-/// l'anti-spam. Chaque module est isolé : son erreur est journalisée sans
+/// interdits), puis le honeypot et la chaîne des messages
+/// (`foxsecura::protection::content_filter::MESSAGE_CHAIN` : filtres de
+/// contenu, étape « mentions », mots interdits) et enfin l'anti-spam. Chaque module est isolé : son erreur est journalisée sans
 /// interrompre le pipeline ni le client.
 ///
 /// Honeypot : après les gardes salon ignoré, webhook et bot, avant tous les

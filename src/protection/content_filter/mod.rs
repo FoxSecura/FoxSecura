@@ -8,14 +8,21 @@
 //! court-circuit) → suppression par le binaire → [`plan_follow_up`]
 //! (sanction ou revue) → [`build_incident`] et [`record_follow_up`].
 //!
-//! Ordre de la spécification V1 : pièces jointes → caractères invisibles →
-//! anti-arnaque → liens malveillants → liens adultes → invitations →
-//! `@everyone`/`@here` → mentions de masse → mots interdits. Le premier module
-//! activé qui déclenche arrête la chaîne : un message ne produit jamais deux
-//! suppressions ni deux incidents. L'anti-arnaque passe avant les liens
-//! malveillants : c'est lui qui gradue la réponse (un lien malveillant est
-//! l'un de ses signaux). Les filtres passent avant l'anti-spam ; un message
-//! qu'ils retiennent n'est pas compté dans la fenêtre anti-spam.
+//! Ordre de la spécification V1 ([`MESSAGE_CHAIN`]) : pièces jointes →
+//! caractères invisibles → anti-arnaque → liens malveillants → liens adultes
+//! → invitations → `@everyone`/`@here` → mentions de masse → anti-ping du
+//! propriétaire → anti-spam de mentions → mots interdits, puis l'anti-spam
+//! par rafales. Le premier module activé qui déclenche arrête la chaîne : un
+//! message ne produit jamais deux suppressions ni deux incidents.
+//! L'anti-arnaque passe avant les liens malveillants : c'est lui qui gradue
+//! la réponse (un lien malveillant est l'un de ses signaux).
+//!
+//! L'étape « mentions » (anti-ping du propriétaire, anti-spam de mentions,
+//! voir [`MentionBursts`]) ne s'applique qu'aux créations d'auteurs non
+//! exemptés ; les filtres de contenu s'appliquent aussi aux modifications et
+//! aux auteurs exemptés (suppression seule). Un module compte un message
+//! dès qu'il l'évalue : un message retenu ensuite par les mots interdits a
+//! donc déjà été compté par l'étape « mentions », jamais par l'anti-spam.
 
 mod mentions;
 mod response;
@@ -60,6 +67,22 @@ pub const CONTENT_FILTERS: [ProtectionModule; 9] = [
     ProtectionModule::AntiInvite,
     ProtectionModule::AntiEveryone,
     ProtectionModule::AntiMassMention,
+    ProtectionModule::BadWords,
+];
+
+/// Chaîne complète des messages, dans l'ordre d'évaluation (V1), avant
+/// l'anti-spam par rafales.
+pub const MESSAGE_CHAIN: [ProtectionModule; 11] = [
+    ProtectionModule::AttachmentFilter,
+    ProtectionModule::InvisibleCharFilter,
+    ProtectionModule::AntiScam,
+    ProtectionModule::MaliciousLink,
+    ProtectionModule::AdultLink,
+    ProtectionModule::AntiInvite,
+    ProtectionModule::AntiEveryone,
+    ProtectionModule::AntiMassMention,
+    ProtectionModule::AntiPingOwner,
+    ProtectionModule::AntiSpamPing,
     ProtectionModule::BadWords,
 ];
 
