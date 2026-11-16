@@ -369,7 +369,8 @@ fn detect_module(
         | ProtectionModule::AntiChannelDelete
         | ProtectionModule::AutoChannelRestore
         | ProtectionModule::AntiRoleDelete
-        | ProtectionModule::AutoRoleRestore => None,
+        | ProtectionModule::AutoRoleRestore
+        | ProtectionModule::AntiPermissions => None,
     }
 }
 

@@ -47,11 +47,12 @@ pub enum ProtectionModule {
     AutoChannelRestore,
     AntiRoleDelete,
     AutoRoleRestore,
+    AntiPermissions,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -81,6 +82,7 @@ impl ProtectionModule {
         Self::AutoChannelRestore,
         Self::AntiRoleDelete,
         Self::AutoRoleRestore,
+        Self::AntiPermissions,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -115,6 +117,7 @@ impl ProtectionModule {
             Self::AutoChannelRestore => "auto_channel_restore",
             Self::AntiRoleDelete => "anti_role_delete",
             Self::AutoRoleRestore => "auto_role_restore",
+            Self::AntiPermissions => "anti_permissions",
         }
     }
 

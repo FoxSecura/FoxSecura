@@ -19,7 +19,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::MemberGuardContext;
 use foxsecura::i18n::{DEFAULT_LANGUAGE, Language};
-use foxsecura::protection::anti_nuke::audit::NukeAction;
 use foxsecura::protection::anti_nuke::audit::{
     AuditAction, AuditEntry, AuditGuardContext, RecordedAuditAuthor, classify_entry, screen_entry,
     screened_author, should_warn_missing_audit_permission,
@@ -39,12 +38,12 @@ use poise::serenity_prelude::{
     self as serenity,
     audit_log::{
         Action, AuditLogEntry, Change, ChannelAction, EmojiAction, MemberAction, RoleAction,
-        StickerAction,
+        StickerAction, WebhookAction,
     },
 };
 
 use super::quarantine::{self, QuarantineTarget, discord_failure};
-use super::{bot_assigned_roles, incident_log, lockdown};
+use super::{bot_assigned_roles, incident_log, lockdown, server_integrity};
 use crate::app::{AppData, run_database};
 
 /// Entrée du journal d'audit poussée par Discord.
@@ -66,9 +65,11 @@ pub async fn handle_audit_entry(
     // le résultat des gardes (hors rejeu et doublon), pour que la restauration
     // pilotée par l'événement Gateway sache qui a supprimé — ou que c'était le
     // propriétaire ou FoxSecura lui-même, auquel cas elle ne fait rien.
+    // La mise à jour du serveur suit le même chemin : son auteur est corrélé
+    // à l'événement `GuildUpdate` (server-edit, vanity).
     if matches!(
         entry.action,
-        AuditAction::ChannelDelete | AuditAction::RoleDelete
+        AuditAction::ChannelDelete | AuditAction::RoleDelete | AuditAction::GuildUpdate
     ) {
         if let Some(author) = screened_author(&screened) {
             data.protection.audit_authors().record(RecordedAuditAuthor {
@@ -85,6 +86,10 @@ pub async fn handle_audit_entry(
     let Ok(author_id) = screened else {
         return;
     };
+    // Intégrité du serveur : réponses unitaires, sans rafale.
+    if server_integrity::handle_audit_entry(ctx, data, &entry, author_id).await {
+        return;
+    }
     let Some(action) = classify_entry(&entry) else {
         return;
     };
@@ -119,7 +124,15 @@ pub async fn handle_audit_entry(
         burst.window.as_secs()
     );
 
-    let containment = contain_author(ctx, data, &context, guild, author_id, action).await;
+    let containment = contain_author(
+        ctx,
+        data,
+        &context,
+        guild,
+        author_id,
+        anti_nuke_audit_reason(action),
+    )
+    .await;
     let incident = nuke_incident(
         language(&context),
         NukeIncidentInput {
@@ -200,15 +213,18 @@ pub(super) async fn panic_signal(
     incident_log::publish(ctx, data, guild_id, language(context), &incident).await;
 }
 
-/// Confine l'auteur d'une rafale : rien s'il est exempté, quarantaine avec
+/// Confine l'auteur d'une entrée : rien s'il est exempté, quarantaine avec
 /// retrait des rôles dangereux sinon (jamais de repli timeout).
-async fn contain_author(
+///
+/// `context` doit avoir été lu pour cet auteur (liste blanche par
+/// identifiant) ; `reason` : raison d'audit log de la quarantaine.
+pub(super) async fn contain_author(
     ctx: &serenity::Context,
     data: &AppData,
     context: &MemberGuardContext,
     guild_id: u64,
     author_id: u64,
-    action: NukeAction,
+    reason: String,
 ) -> Containment {
     let author = author_roles(ctx, guild_id, author_id).await;
     let plan = plan_response(AuthorFacts {
@@ -232,17 +248,28 @@ async fn contain_author(
                 whitelisted: false,
             };
             Containment::Quarantine(
-                quarantine::quarantine(
-                    ctx,
-                    data,
-                    &target,
-                    ANTI_NUKE_QUARANTINE,
-                    anti_nuke_audit_reason(action),
-                )
-                .await,
+                quarantine::quarantine(ctx, data, &target, ANTI_NUKE_QUARANTINE, reason).await,
             )
         }
     }
+}
+
+/// L'auteur est-il exempté (liste blanche par identifiant ou par rôle ; le
+/// rôle de quarantaine n'exempte jamais) ? `context` doit avoir été lu pour
+/// cet auteur.
+pub(super) async fn is_author_exempt(
+    ctx: &serenity::Context,
+    context: &MemberGuardContext,
+    guild_id: u64,
+    author_id: u64,
+) -> bool {
+    let roles = author_roles(ctx, guild_id, author_id).await;
+    plan_response(AuthorFacts {
+        user_listed: context.user_whitelisted,
+        whitelist_roles: &context.whitelist_roles,
+        ignored_roles: bot_assigned_roles(context.guild_config.as_ref()),
+        member_roles: roles.as_deref().ok(),
+    }) == NukeResponsePlan::IgnoreExempt
 }
 
 /// Rôles de l'auteur : cache de la guilde, sinon lecture par l'API (un
@@ -276,7 +303,7 @@ pub(super) async fn author_roles(
     }
 }
 
-fn language(context: &MemberGuardContext) -> Language {
+pub(super) fn language(context: &MemberGuardContext) -> Language {
     context
         .guild_config
         .as_ref()
@@ -284,7 +311,11 @@ fn language(context: &MemberGuardContext) -> Language {
 }
 
 /// Une seule lecture par entrée, servie par le cache de la guilde.
-async fn read_context(data: &AppData, guild_id: u64, author_id: u64) -> Option<MemberGuardContext> {
+pub(super) async fn read_context(
+    data: &AppData,
+    guild_id: u64,
+    author_id: u64,
+) -> Option<MemberGuardContext> {
     match run_database(&data.database, move |database| {
         database.member_guard_context(guild_id, author_id)
     })
@@ -312,6 +343,11 @@ fn convert_entry(guild_id: u64, entry: &AuditLogEntry) -> AuditEntry {
         Action::Channel(ChannelAction::Delete) => AuditAction::ChannelDelete,
         Action::Role(RoleAction::Create) => AuditAction::RoleCreate,
         Action::Role(RoleAction::Delete) => AuditAction::RoleDelete,
+        Action::Role(RoleAction::Update) => AuditAction::RoleUpdate,
+        Action::GuildUpdate => AuditAction::GuildUpdate,
+        Action::Webhook(WebhookAction::Create) => AuditAction::WebhookCreate,
+        Action::Webhook(WebhookAction::Update) => AuditAction::WebhookUpdate,
+        Action::Webhook(WebhookAction::Delete) => AuditAction::WebhookDelete,
         Action::Emoji(EmojiAction::Create) => AuditAction::EmojiCreate,
         Action::Emoji(EmojiAction::Delete) => AuditAction::EmojiDelete,
         Action::Sticker(StickerAction::Create) => AuditAction::StickerCreate,
@@ -335,6 +371,12 @@ fn convert_entry(guild_id: u64, entry: &AuditLogEntry) -> AuditEntry {
             }
             Change::RolesAdded { new, .. } => {
                 converted.roles_added += new.as_ref().map_or(0, Vec::len);
+            }
+            Change::Permissions {
+                old: Some(old),
+                new: Some(new),
+            } => {
+                converted.permissions_change = Some((old.bits(), new.bits()));
             }
             Change::Name {
                 new: Some(name), ..
@@ -468,6 +510,34 @@ mod tests {
             }]
         }));
         assert_eq!(convert_entry(1, &lifted).timeout_until, Some(None));
+    }
+
+    #[test]
+    fn converts_role_permission_changes_and_integrity_actions() {
+        let update = parse(serde_json::json!({
+            "id": "1300000000000000010",
+            "user_id": "42",
+            "target_id": "50",
+            "action_type": 31,
+            "changes": [{ "key": "permissions", "old_value": "2048", "new_value": "2056" }]
+        }));
+        let converted = convert_entry(1, &update);
+        assert_eq!(converted.action, AuditAction::RoleUpdate);
+        assert_eq!(converted.permissions_change, Some((2048, 2056)));
+
+        for (action_type, expected) in [
+            (1, AuditAction::GuildUpdate),
+            (50, AuditAction::WebhookCreate),
+            (51, AuditAction::WebhookUpdate),
+            (52, AuditAction::WebhookDelete),
+        ] {
+            let entry = parse(serde_json::json!({
+                "id": "1300000000000000011",
+                "user_id": "42",
+                "action_type": action_type
+            }));
+            assert_eq!(convert_entry(1, &entry).action, expected, "{action_type}");
+        }
     }
 
     #[test]

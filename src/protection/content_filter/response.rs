@@ -385,5 +385,6 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AutoChannelRestore => TextKey::AutoChannelRestoreSummary,
         ProtectionModule::AntiRoleDelete => TextKey::AntiRoleDeleteSummary,
         ProtectionModule::AutoRoleRestore => TextKey::AutoRoleRestoreSummary,
+        ProtectionModule::AntiPermissions => TextKey::AntiPermissionsSummary,
     }
 }

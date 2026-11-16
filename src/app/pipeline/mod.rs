@@ -19,6 +19,7 @@ pub mod message;
 pub mod quarantine;
 pub mod restore;
 mod sanction;
+mod server_integrity;
 
 use std::time::Duration;
 

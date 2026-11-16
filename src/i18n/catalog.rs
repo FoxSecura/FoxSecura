@@ -1806,5 +1806,45 @@ catalog! {
         en: "Check the restored resource. Messages, webhooks and threads of a deleted channel, and the members of a deleted role, are not restored.",
         fr: "Vérifiez la ressource restaurée. Les messages, webhooks et fils d'un salon supprimé, et les membres d'un rôle supprimé, ne sont pas restaurés.",
         de: "Prüfe die wiederhergestellte Ressource. Nachrichten, Webhooks und Threads eines gelöschten Kanals sowie die Mitglieder einer gelöschten Rolle werden nicht wiederhergestellt."
+    },
+    ModuleAntiPermissions => {
+        en: "Dangerous permissions (rollback)",
+        fr: "Permissions dangereuses (annulation)",
+        de: "Gefährliche Berechtigungen (Rücknahme)"
+    },
+    AntiPermissionsSummary => {
+        en: "Dangerous permission added to a role: permissions rolled back, author contained",
+        fr: "Permission dangereuse ajoutée à un rôle : permissions rétablies, auteur confiné",
+        de: "Gefährliche Berechtigung zu einer Rolle hinzugefügt: Berechtigungen zurückgesetzt, Urheber eingedämmt"
+    },
+    AntiPermissionsExemptSummary => {
+        en: "Dangerous permission added to a role by a whitelisted author: no rollback, no containment",
+        fr: "Permission dangereuse ajoutée à un rôle par un auteur de la liste blanche : ni annulation, ni confinement",
+        de: "Gefährliche Berechtigung durch einen Urheber auf der Whitelist hinzugefügt: keine Rücknahme, keine Eindämmung"
+    },
+    AntiPermissionsEvidenceBitfields => {
+        en: "Permissions (old->new)",
+        fr: "Permissions (ancien->nouveau)",
+        de: "Berechtigungen (alt->neu)"
+    },
+    AntiPermissionsEvidenceAdded => {
+        en: "Dangerous permissions added",
+        fr: "Permissions dangereuses ajoutées",
+        de: "Hinzugefügte gefährliche Berechtigungen"
+    },
+    AntiPermissionsRecommendation => {
+        en: "The previous permissions were restored. Review the author's roles; if the change was legitimate, release them from /config and redo it, or whitelist your administrators.",
+        fr: "Les anciennes permissions ont été rétablies. Revoyez les rôles de l'auteur ; si la modification était légitime, libérez-le depuis /config et refaites-la, ou mettez vos administrateurs sur la liste blanche.",
+        de: "Die vorherigen Berechtigungen wurden wiederhergestellt. Überprüfe die Rollen des Urhebers; war die Änderung legitim, gib ihn über /config frei und wiederhole sie, oder setze deine Administratoren auf die Whitelist."
+    },
+    AntiPermissionsRecommendationFailed => {
+        en: "The rollback was NOT applied: the dangerous permissions are still on the role. Remove them by hand now (usually Manage Roles is missing or FoxSecura's role is below this role).",
+        fr: "Le retour en arrière n'a PAS été appliqué : les permissions dangereuses sont toujours sur le rôle. Retirez-les à la main maintenant (souvent Gérer les rôles manquant ou rôle de FoxSecura sous ce rôle).",
+        de: "Die Rücknahme wurde NICHT angewendet: Die gefährlichen Berechtigungen sind noch auf der Rolle. Entferne sie jetzt manuell (meist fehlt Rollen verwalten oder die Rolle von FoxSecura liegt unter dieser Rolle)."
+    },
+    AntiPermissionsRecommendationExempt => {
+        en: "Whitelisted author: confirm with them that this permission change was intended.",
+        fr: "Auteur de la liste blanche : confirmez avec lui que ce changement de permissions était voulu.",
+        de: "Urheber auf der Whitelist: Kläre mit ihm, ob diese Berechtigungsänderung beabsichtigt war."
     }
 }

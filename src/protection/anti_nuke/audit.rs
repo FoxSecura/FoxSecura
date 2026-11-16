@@ -62,6 +62,17 @@ pub enum AuditAction {
     ChannelDelete,
     /// Suppression d'un rôle : restauration, jamais comptée en rafale (V1).
     RoleDelete,
+    /// Modification d'un rôle : anti-permissions (retour en arrière).
+    RoleUpdate,
+    /// Modification des réglages du serveur : auteur des alertes
+    /// server-edit et vanity.
+    GuildUpdate,
+    /// Création d'un webhook : surveillance des webhooks.
+    WebhookCreate,
+    /// Modification d'un webhook : surveillance des webhooks.
+    WebhookUpdate,
+    /// Suppression d'un webhook : alerte seule.
+    WebhookDelete,
     /// Tout autre type d'entrée : jamais compté.
     Other,
 }
@@ -86,6 +97,9 @@ pub struct AuditEntry {
     pub timeout_until: Option<Option<Duration>>,
     /// Rôles ajoutés (clé de changement `$add`).
     pub roles_added: usize,
+    /// Changement de `permissions` d'un rôle : `(ancien, nouveau)` en
+    /// bitfield brut, seulement si les deux valeurs sont connues.
+    pub permissions_change: Option<(u64, u64)>,
 }
 
 impl AuditEntry {
@@ -101,6 +115,7 @@ impl AuditEntry {
             reason: None,
             timeout_until: None,
             roles_added: 0,
+            permissions_change: None,
         }
     }
 
@@ -163,6 +178,12 @@ pub fn classify_entry(entry: &AuditEntry) -> Option<NukeAction> {
         // Les suppressions n'ont pas de module de rafale (V1) : la réponse est
         // la restauration et la sanction unitaire (`resource_actions::restore`).
         AuditAction::ChannelDelete | AuditAction::RoleDelete => None,
+        // Intégrité du serveur : réponses unitaires (`server_integrity`).
+        AuditAction::RoleUpdate
+        | AuditAction::GuildUpdate
+        | AuditAction::WebhookCreate
+        | AuditAction::WebhookUpdate
+        | AuditAction::WebhookDelete => None,
         AuditAction::Other => None,
     }
 }

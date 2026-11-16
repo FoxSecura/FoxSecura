@@ -74,6 +74,7 @@ pub const SERVER_INTEGRITY_MODULES: &[ProtectionModule] = &[
     ProtectionModule::AutoChannelRestore,
     ProtectionModule::AntiRoleDelete,
     ProtectionModule::AutoRoleRestore,
+    ProtectionModule::AntiPermissions,
 ];
 
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
@@ -255,6 +256,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AutoChannelRestore => TextKey::ModuleAutoChannelRestore,
         ProtectionModule::AntiRoleDelete => TextKey::ModuleAntiRoleDelete,
         ProtectionModule::AutoRoleRestore => TextKey::ModuleAutoRoleRestore,
+        ProtectionModule::AntiPermissions => TextKey::ModuleAntiPermissions,
     }
 }
 

@@ -554,7 +554,8 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::AntiChannelDelete
         | ProtectionModule::AutoChannelRestore
         | ProtectionModule::AntiRoleDelete
-        | ProtectionModule::AutoRoleRestore => {
+        | ProtectionModule::AutoRoleRestore
+        | ProtectionModule::AntiPermissions => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }
