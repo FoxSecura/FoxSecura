@@ -2176,5 +2176,190 @@ catalog! {
         en: "External apps: adding \"Use External Apps\" to a role (except @everyone, managed roles and FoxSecura's role) by a non-whitelisted member removes only that permission, then contains the author. Webhook watch also deletes webhook messages with an invite, a malicious link, @everyone/@here, 5+ mentions or 5 messages in 5 s (no sanction).",
         fr: "Applications externes : l'ajout de « Utiliser des applications externes » à un rôle (hors @everyone, rôles gérés et rôle de FoxSecura) par un membre hors liste blanche retire uniquement cette permission, puis confine l'auteur. La surveillance des webhooks supprime aussi leurs messages contenant une invitation, un lien malveillant, @everyone/@here, 5 mentions ou plus, ou 5 messages en 5 s (sans sanction).",
         de: "Externe Apps: Das Hinzufügen von „Externe Apps verwenden“ zu einer Rolle (außer @everyone, verwalteten Rollen und der Rolle von FoxSecura) durch ein Mitglied außerhalb der Whitelist entfernt nur diese Berechtigung und dämmt dann den Autor ein. Die Webhook-Überwachung löscht auch Webhook-Nachrichten mit Einladung, schädlichem Link, @everyone/@here, 5+ Erwähnungen oder 5 Nachrichten in 5 s (ohne Sanktion)."
+    },
+    ModuleMemberProfileFilter => {
+        en: "Member profile filter",
+        fr: "Filtre de profil",
+        de: "Profilfilter"
+    },
+    ModuleAutoModRuleGuard => {
+        en: "AutoMod rule guard",
+        fr: "Garde des règles AutoMod",
+        de: "AutoMod-Regelschutz"
+    },
+    MemberProfileFilterSummary => {
+        en: "Native AutoMod rule on member profiles (applied by Discord).",
+        fr: "Règle AutoMod native sur les profils des membres (appliquée par Discord).",
+        de: "Native AutoMod-Regel für Mitgliederprofile (von Discord angewendet)."
+    },
+    AutoModRuleGuardDeletedSummary => {
+        en: "A FoxSecura AutoMod rule was deleted: restoration attempted.",
+        fr: "Une règle AutoMod FoxSecura a été supprimée : restauration tentée.",
+        de: "Eine AutoMod-Regel von FoxSecura wurde gelöscht: Wiederherstellung versucht."
+    },
+    AutoModRuleGuardDisabledSummary => {
+        en: "A FoxSecura AutoMod rule was disabled: restoration attempted.",
+        fr: "Une règle AutoMod FoxSecura a été désactivée : restauration tentée.",
+        de: "Eine AutoMod-Regel von FoxSecura wurde deaktiviert: Wiederherstellung versucht."
+    },
+    AutoModRuleGuardEvidenceRule => {
+        en: "Rule",
+        fr: "Règle",
+        de: "Regel"
+    },
+    AutoModRuleGuardEvidenceChange => {
+        en: "Change",
+        fr: "Modification",
+        de: "Änderung"
+    },
+    AutoModRuleGuardEvidenceExempt => {
+        en: "Whitelisted author (restored, no sanction)",
+        fr: "Auteur sur liste blanche (restaurée, sans sanction)",
+        de: "Autor auf der Whitelist (wiederhergestellt, ohne Sanktion)"
+    },
+    AutoModRuleGuardRecommendation => {
+        en: "Check who manages AutoMod rules; FoxSecura does not sanction the author.",
+        fr: "Vérifiez qui gère les règles AutoMod ; FoxSecura ne sanctionne pas l'auteur.",
+        de: "Prüfen Sie, wer AutoMod-Regeln verwaltet; FoxSecura sanktioniert den Autor nicht."
+    },
+    AutoModRuleGuardRecommendationFailed => {
+        en: "The rule could not be restored: give FoxSecura Manage Server, then use \"Sync AutoMod\" in /config.",
+        fr: "La règle n'a pas pu être restaurée : donnez « Gérer le serveur » à FoxSecura puis utilisez « Synchroniser AutoMod » dans /config.",
+        de: "Die Regel konnte nicht wiederhergestellt werden: Geben Sie FoxSecura „Server verwalten“ und nutzen Sie dann „AutoMod synchronisieren“ in /config."
+    },
+    ConfigAutomodRules => {
+        en: "Native AutoMod rules",
+        fr: "Règles AutoMod natives",
+        de: "Native AutoMod-Regeln"
+    },
+    ConfigAutomodRuleActive => {
+        en: "active",
+        fr: "active",
+        de: "aktiv"
+    },
+    ConfigAutomodRuleInactive => {
+        en: "disabled on Discord",
+        fr: "désactivée sur Discord",
+        de: "auf Discord deaktiviert"
+    },
+    ConfigAutomodRuleAbsent => {
+        en: "not created",
+        fr: "non créée",
+        de: "nicht erstellt"
+    },
+    ConfigAutomodRulesUnknown => {
+        en: "State unknown: the rules could not be read on Discord (Manage Server required).",
+        fr: "État inconnu : les règles n'ont pas pu être lues sur Discord (« Gérer le serveur » requis).",
+        de: "Status unbekannt: Die Regeln konnten auf Discord nicht gelesen werden („Server verwalten“ erforderlich)."
+    },
+    ConfigAutomodRulesNotice => {
+        en: "Each switch (invites, adult links, bad words, profile filter, mentions, anti-spam) also enables or disables its Discord rule. Requires Manage Server. Limits: 1000 keywords of 60 characters per rule; one rule per unique type (an existing rule of another bot on that type is left alone). No role or channel exemptions.",
+        fr: "Chaque interrupteur (invitations, liens adultes, mots interdits, filtre de profil, mentions, anti-spam) active ou désactive aussi sa règle Discord. Requiert « Gérer le serveur ». Limites : 1000 mots-clés de 60 caractères par règle ; une seule règle par type unique (une règle existante d'un autre bot sur ce type est laissée telle quelle). Pas d'exemptions de rôles ni de salons.",
+        de: "Jeder Schalter (Einladungen, Erwachsenen-Links, verbotene Wörter, Profilfilter, Erwähnungen, Anti-Spam) schaltet auch seine Discord-Regel ein oder aus. Benötigt „Server verwalten“. Grenzen: 1000 Schlüsselwörter mit 60 Zeichen pro Regel; eine Regel pro eindeutigem Typ (eine bestehende Regel eines anderen Bots auf diesem Typ bleibt unverändert). Keine Rollen- oder Kanalausnahmen."
+    },
+    ConfigAutomodSyncButton => {
+        en: "Sync AutoMod",
+        fr: "Synchroniser AutoMod",
+        de: "AutoMod synchronisieren"
+    },
+    ConfigAutomodDeleteButton => {
+        en: "Delete FoxSecura rules",
+        fr: "Supprimer les règles FoxSecura",
+        de: "FoxSecura-Regeln löschen"
+    },
+    ConfigAutomodDeleteConfirmPrompt => {
+        en: "Delete every AutoMod rule whose name starts with \"FoxSecura •\"? Other rules are not touched. The switches stay as they are.",
+        fr: "Supprimer toutes les règles AutoMod dont le nom commence par « FoxSecura • » ? Les autres règles ne sont pas touchées. Les interrupteurs restent inchangés.",
+        de: "Alle AutoMod-Regeln löschen, deren Name mit „FoxSecura •“ beginnt? Andere Regeln bleiben unberührt. Die Schalter bleiben unverändert."
+    },
+    ConfigAutomodDeleteConfirmButton => {
+        en: "Confirm deletion",
+        fr: "Confirmer la suppression",
+        de: "Löschen bestätigen"
+    },
+    ConfigAutomodOwnerOnly => {
+        en: "Only the server owner can delete FoxSecura's AutoMod rules.",
+        fr: "Seul le propriétaire du serveur peut supprimer les règles AutoMod de FoxSecura.",
+        de: "Nur der Serverbesitzer kann die AutoMod-Regeln von FoxSecura löschen."
+    },
+    ConfigAutomodDeleteDone => {
+        en: "FoxSecura rules deleted",
+        fr: "Règles FoxSecura supprimées",
+        de: "Gelöschte FoxSecura-Regeln"
+    },
+    ConfigAutomodDeleteFailed => {
+        en: "Not deleted",
+        fr: "Non supprimées",
+        de: "Nicht gelöscht"
+    },
+    ConfigAutomodReportTitle => {
+        en: "AutoMod synchronization",
+        fr: "Synchronisation AutoMod",
+        de: "AutoMod-Synchronisierung"
+    },
+    ConfigAutomodReportCreated => {
+        en: "created",
+        fr: "créée",
+        de: "erstellt"
+    },
+    ConfigAutomodReportCreatedDisabled => {
+        en: "created (disabled)",
+        fr: "créée (désactivée)",
+        de: "erstellt (deaktiviert)"
+    },
+    ConfigAutomodReportUpdated => {
+        en: "updated",
+        fr: "mise à jour",
+        de: "aktualisiert"
+    },
+    ConfigAutomodReportDisabled => {
+        en: "disabled",
+        fr: "désactivée",
+        de: "deaktiviert"
+    },
+    ConfigAutomodReportMissing => {
+        en: "absent (switch off)",
+        fr: "absente (interrupteur désactivé)",
+        de: "nicht vorhanden (Schalter aus)"
+    },
+    ConfigAutomodReportNoKeywords => {
+        en: "skipped: no keywords",
+        fr: "ignorée : aucun mot-clé",
+        de: "übersprungen: keine Schlüsselwörter"
+    },
+    ConfigAutomodReportConflict => {
+        en: "skipped: a rule of this unique type already exists (another bot or a moderator)",
+        fr: "ignorée : une règle de ce type unique existe déjà (autre bot ou modérateur)",
+        de: "übersprungen: Eine Regel dieses eindeutigen Typs existiert bereits (anderer Bot oder Moderator)"
+    },
+    ConfigAutomodReportFailed => {
+        en: "failed",
+        fr: "échec",
+        de: "fehlgeschlagen"
+    },
+    ConfigAutomodReportRemoved => {
+        en: "removed",
+        fr: "supprimée(s)",
+        de: "entfernt"
+    },
+    ConfigAutomodReportTooLong => {
+        en: "keywords over 60 characters left out of the Discord rule (still filtered by FoxSecura)",
+        fr: "mots-clés de plus de 60 caractères exclus de la règle Discord (toujours filtrés par FoxSecura)",
+        de: "Schlüsselwörter über 60 Zeichen nicht in der Discord-Regel (weiterhin von FoxSecura gefiltert)"
+    },
+    ConfigAutomodReportTruncated => {
+        en: "keywords beyond the first 1000 not sent to Discord",
+        fr: "mots-clés au-delà des 1000 premiers non envoyés à Discord",
+        de: "Schlüsselwörter nach den ersten 1000 nicht an Discord gesendet"
+    },
+    ConfigAutomodMissingPermission => {
+        en: "FoxSecura does not have Manage Server: no AutoMod rule was changed.",
+        fr: "FoxSecura n'a pas la permission « Gérer le serveur » : aucune règle AutoMod n'a été modifiée.",
+        de: "FoxSecura hat nicht „Server verwalten“: Keine AutoMod-Regel wurde geändert."
+    },
+    ConfigAutomodReadFailed => {
+        en: "The AutoMod rules could not be read on Discord: no rule was changed.",
+        fr: "Les règles AutoMod n'ont pas pu être lues sur Discord : aucune règle n'a été modifiée.",
+        de: "Die AutoMod-Regeln konnten auf Discord nicht gelesen werden: Keine Regel wurde geändert."
     }
 }

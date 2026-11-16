@@ -36,6 +36,8 @@ pub const AUTOMOD_MODULES: &[ProtectionModule] = &[
     ProtectionModule::AdultLink,
     ProtectionModule::AntiInvite,
     ProtectionModule::BadWords,
+    ProtectionModule::MemberProfileFilter,
+    ProtectionModule::AutoModRuleGuard,
 ];
 
 /// Boutons par rangée : limite Discord.
@@ -285,6 +287,8 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiGhostPing => TextKey::ModuleAntiGhostPing,
         ProtectionModule::AntiSpamPing => TextKey::ModuleAntiSpamPing,
         ProtectionModule::AntiPingOwner => TextKey::ModuleAntiPingOwner,
+        ProtectionModule::MemberProfileFilter => TextKey::ModuleMemberProfileFilter,
+        ProtectionModule::AutoModRuleGuard => TextKey::ModuleAutoModRuleGuard,
     }
 }
 

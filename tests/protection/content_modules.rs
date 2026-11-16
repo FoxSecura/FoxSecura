@@ -564,7 +564,9 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::AntiSpamPing
         | ProtectionModule::AntiGhostPing
         | ProtectionModule::AutoSlowmode
-        | ProtectionModule::AntiExternalApplication => {
+        | ProtectionModule::AntiExternalApplication
+        | ProtectionModule::MemberProfileFilter
+        | ProtectionModule::AutoModRuleGuard => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }

@@ -7,3 +7,4 @@ mod bad_words;
 mod member_profile;
 mod native_payload;
 mod native_rules;
+mod native_sync;

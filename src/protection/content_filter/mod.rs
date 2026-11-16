@@ -484,7 +484,11 @@ fn detect_module(
         // Mode lent automatique : rafale par salon, avant la liste blanche.
         | ProtectionModule::AutoSlowmode
         // Applications externes : entrées du journal d'audit.
-        | ProtectionModule::AntiExternalApplication => None,
+        | ProtectionModule::AntiExternalApplication
+        // Règles AutoMod natives : appliquées par Discord, pas de détecteur
+        // runtime (filtre de profil) ; garde : entrées du journal d'audit.
+        | ProtectionModule::MemberProfileFilter
+        | ProtectionModule::AutoModRuleGuard => None,
     }
 }
 
