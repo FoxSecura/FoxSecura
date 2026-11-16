@@ -17,6 +17,7 @@ pub mod lockdown;
 pub mod member;
 pub mod message;
 pub mod quarantine;
+pub mod restore;
 mod sanction;
 
 use std::time::Duration;

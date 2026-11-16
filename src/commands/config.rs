@@ -64,6 +64,11 @@ const CATEGORIES: &[Category] = &[
         description: TextKey::CategoryServerProtectionDescription,
     },
     Category {
+        id: "server_integrity",
+        label: TextKey::CategoryServerIntegrity,
+        description: TextKey::CategoryServerIntegrityDescription,
+    },
+    Category {
         id: "access_control",
         label: TextKey::CategoryAccessControl,
         description: TextKey::CategoryAccessControlDescription,

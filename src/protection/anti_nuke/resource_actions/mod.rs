@@ -7,3 +7,4 @@ pub mod anti_mass_channel_create;
 pub mod anti_mass_role_create;
 pub mod anti_mass_role_grant;
 pub mod anti_role_delete;
+pub mod restore;

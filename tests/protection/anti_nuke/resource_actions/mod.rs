@@ -3,3 +3,4 @@
 
 mod bursts;
 mod deletions;
+mod restore;

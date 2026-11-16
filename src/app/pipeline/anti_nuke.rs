@@ -21,8 +21,8 @@ use foxsecura::database::MemberGuardContext;
 use foxsecura::i18n::{DEFAULT_LANGUAGE, Language};
 use foxsecura::protection::anti_nuke::audit::NukeAction;
 use foxsecura::protection::anti_nuke::audit::{
-    AuditAction, AuditEntry, AuditGuardContext, classify_entry, screen_entry,
-    should_warn_missing_audit_permission,
+    AuditAction, AuditEntry, AuditGuardContext, RecordedAuditAuthor, classify_entry, screen_entry,
+    screened_author, should_warn_missing_audit_permission,
 };
 use foxsecura::protection::anti_nuke::burst::BurstVerdict;
 use foxsecura::protection::anti_nuke::is_anti_nuke_enabled;
@@ -61,6 +61,27 @@ pub async fn handle_audit_entry(
         bot_id: ctx.cache.current_user().id.get(),
     };
     let screened = screen_entry(&entry, guard, &mut data.protection.audit_dedup());
+
+    // Suppressions de salons et de rôles : l'auteur est indexé, quel que soit
+    // le résultat des gardes (hors rejeu et doublon), pour que la restauration
+    // pilotée par l'événement Gateway sache qui a supprimé — ou que c'était le
+    // propriétaire ou FoxSecura lui-même, auquel cas elle ne fait rien.
+    if matches!(
+        entry.action,
+        AuditAction::ChannelDelete | AuditAction::RoleDelete
+    ) {
+        if let Some(author) = screened_author(&screened) {
+            data.protection.audit_authors().record(RecordedAuditAuthor {
+                guild_id: entry.guild_id,
+                action: entry.action,
+                target_id: entry.target_id,
+                author,
+                created_at: entry.created_at(),
+            });
+        }
+        return;
+    }
+
     let Ok(author_id) = screened else {
         return;
     };
@@ -117,19 +138,19 @@ pub async fn handle_audit_entry(
             .enabled_modules
             .contains(ProtectionModule::PanicMode)
     {
-        panic_signal(ctx, data, &context, guild, action, guard.now).await;
+        panic_signal(ctx, data, &context, guild, action.module(), guard.now).await;
     }
 }
 
 /// Signal d'un incident critique au mode panique ; verrouille le serveur 15
 /// minutes (mode lent de 30 s) si assez de modules distincts ont réagi en
 /// 30 s et qu'aucun verrouillage n'est déjà actif.
-async fn panic_signal(
+pub(super) async fn panic_signal(
     ctx: &serenity::Context,
     data: &AppData,
     context: &MemberGuardContext,
     guild_id: u64,
-    action: NukeAction,
+    module: ProtectionModule,
     now: Duration,
 ) {
     let lockdown_active = match run_database(&data.database, move |database| {
@@ -152,7 +173,7 @@ async fn panic_signal(
         .panic_threshold;
     let result = data.protection.panic_mode().record_with(
         guild_id,
-        action.module().key(),
+        module.key(),
         now,
         usize::from(threshold),
         lockdown_active,
@@ -226,7 +247,7 @@ async fn contain_author(
 
 /// Rôles de l'auteur : cache de la guilde, sinon lecture par l'API (un
 /// appel). `Err` avec le détail si l'auteur est introuvable.
-async fn author_roles(
+pub(super) async fn author_roles(
     ctx: &serenity::Context,
     guild_id: u64,
     author_id: u64,
@@ -288,7 +309,9 @@ fn convert_entry(guild_id: u64, entry: &AuditLogEntry) -> AuditEntry {
         Action::Member(MemberAction::Update) => AuditAction::MemberUpdate,
         Action::Member(MemberAction::RoleUpdate) => AuditAction::MemberRoleUpdate,
         Action::Channel(ChannelAction::Create) => AuditAction::ChannelCreate,
+        Action::Channel(ChannelAction::Delete) => AuditAction::ChannelDelete,
         Action::Role(RoleAction::Create) => AuditAction::RoleCreate,
+        Action::Role(RoleAction::Delete) => AuditAction::RoleDelete,
         Action::Emoji(EmojiAction::Create) => AuditAction::EmojiCreate,
         Action::Emoji(EmojiAction::Delete) => AuditAction::EmojiDelete,
         Action::Sticker(StickerAction::Create) => AuditAction::StickerCreate,
@@ -469,7 +492,9 @@ mod tests {
             (62, AuditAction::EmojiDelete),
             (90, AuditAction::StickerCreate),
             (92, AuditAction::StickerDelete),
-            (12, AuditAction::Other),
+            (12, AuditAction::ChannelDelete),
+            (32, AuditAction::RoleDelete),
+            (11, AuditAction::Other),
         ] {
             let entry = parse(serde_json::json!({
                 "id": "1300000000000000005",

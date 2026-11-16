@@ -1736,5 +1736,75 @@ catalog! {
         en: "Invalid threshold: enter a whole number from 2 to 10. Nothing was changed.",
         fr: "Seuil invalide : saisissez un nombre entier de 2 à 10. Rien n'a été modifié.",
         de: "Ungültige Schwelle: Gib eine ganze Zahl von 2 bis 10 ein. Nichts wurde geändert."
+    },
+    CategoryServerIntegrity => {
+        en: "Server integrity",
+        fr: "Intégrité du serveur",
+        de: "Serverintegrität"
+    },
+    CategoryServerIntegrityDescription => {
+        en: "Restore deleted channels and roles, watch settings, permissions and webhooks.",
+        fr: "Restauration des salons et rôles supprimés, surveillance des réglages, permissions et webhooks.",
+        de: "Wiederherstellung gelöschter Kanäle und Rollen, Überwachung von Einstellungen, Berechtigungen und Webhooks."
+    },
+    ModuleAntiChannelDelete => {
+        en: "Channel deletions (restore + quarantine)",
+        fr: "Suppressions de salons (restaure + confine)",
+        de: "Kanallöschungen (wiederherstellen + Quarantäne)"
+    },
+    ModuleAutoChannelRestore => {
+        en: "Channel auto-restore",
+        fr: "Restauration auto des salons",
+        de: "Auto-Wiederherstellung der Kanäle"
+    },
+    ModuleAntiRoleDelete => {
+        en: "Role deletions (restore + quarantine)",
+        fr: "Suppressions de rôles (restaure + confine)",
+        de: "Rollenlöschungen (wiederherstellen + Quarantäne)"
+    },
+    ModuleAutoRoleRestore => {
+        en: "Role auto-restore",
+        fr: "Restauration auto des rôles",
+        de: "Auto-Wiederherstellung der Rollen"
+    },
+    AntiChannelDeleteSummary => {
+        en: "Channel deleted: restored, author contained",
+        fr: "Salon supprimé : restauré, auteur confiné",
+        de: "Kanal gelöscht: wiederhergestellt, Urheber eingedämmt"
+    },
+    AutoChannelRestoreSummary => {
+        en: "Deleted channel restored",
+        fr: "Salon supprimé restauré",
+        de: "Gelöschter Kanal wiederhergestellt"
+    },
+    AntiRoleDeleteSummary => {
+        en: "Role deleted: restored, author contained",
+        fr: "Rôle supprimé : restauré, auteur confiné",
+        de: "Rolle gelöscht: wiederhergestellt, Urheber eingedämmt"
+    },
+    AutoRoleRestoreSummary => {
+        en: "Deleted role restored",
+        fr: "Rôle supprimé restauré",
+        de: "Gelöschte Rolle wiederhergestellt"
+    },
+    RestoreExemptSummary => {
+        en: "Deletion by a whitelisted author: restored without containment",
+        fr: "Suppression par un auteur de la liste blanche : restauration sans confinement",
+        de: "Löschung durch einen Urheber auf der Whitelist: wiederhergestellt ohne Eindämmung"
+    },
+    RestoreEvidenceDeleted => {
+        en: "Deleted resource",
+        fr: "Ressource supprimée",
+        de: "Gelöschte Ressource"
+    },
+    RestoreRecommendationAnti => {
+        en: "Check the restored resource and the author's permissions. Messages, webhooks and threads of a deleted channel, and the members of a deleted role, are not restored. Release the author from /config if this was legitimate.",
+        fr: "Vérifiez la ressource restaurée et les permissions de l'auteur. Les messages, webhooks et fils d'un salon supprimé, et les membres d'un rôle supprimé, ne sont pas restaurés. Libérez l'auteur depuis /config si c'était légitime.",
+        de: "Prüfe die wiederhergestellte Ressource und die Berechtigungen des Urhebers. Nachrichten, Webhooks und Threads eines gelöschten Kanals sowie die Mitglieder einer gelöschten Rolle werden nicht wiederhergestellt. Gib den Urheber über /config frei, falls es legitim war."
+    },
+    RestoreRecommendationAuto => {
+        en: "Check the restored resource. Messages, webhooks and threads of a deleted channel, and the members of a deleted role, are not restored.",
+        fr: "Vérifiez la ressource restaurée. Les messages, webhooks et fils d'un salon supprimé, et les membres d'un rôle supprimé, ne sont pas restaurés.",
+        de: "Prüfe die wiederhergestellte Ressource. Nachrichten, Webhooks und Threads eines gelöschten Kanals sowie die Mitglieder einer gelöschten Rolle werden nicht wiederhergestellt."
     }
 }

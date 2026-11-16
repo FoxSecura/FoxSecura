@@ -43,11 +43,15 @@ pub enum ProtectionModule {
     AntiEmojiStickerNuke,
     AntiMassRoleGrant,
     PanicMode,
+    AntiChannelDelete,
+    AutoChannelRestore,
+    AntiRoleDelete,
+    AutoRoleRestore,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 29] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -73,6 +77,10 @@ impl ProtectionModule {
         Self::AntiEmojiStickerNuke,
         Self::AntiMassRoleGrant,
         Self::PanicMode,
+        Self::AntiChannelDelete,
+        Self::AutoChannelRestore,
+        Self::AntiRoleDelete,
+        Self::AutoRoleRestore,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -103,6 +111,10 @@ impl ProtectionModule {
             Self::AntiEmojiStickerNuke => "anti_emoji_sticker_nuke",
             Self::AntiMassRoleGrant => "anti_mass_role_grant",
             Self::PanicMode => "panic_mode",
+            Self::AntiChannelDelete => "anti_channel_delete",
+            Self::AutoChannelRestore => "auto_channel_restore",
+            Self::AntiRoleDelete => "anti_role_delete",
+            Self::AutoRoleRestore => "auto_role_restore",
         }
     }
 

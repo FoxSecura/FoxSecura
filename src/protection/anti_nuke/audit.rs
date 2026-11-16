@@ -58,7 +58,11 @@ pub enum AuditAction {
     EmojiDelete,
     StickerCreate,
     StickerDelete,
-    /// Tout autre type d'entrée : jamais compté par cette tranche.
+    /// Suppression d'un salon : restauration, jamais comptée en rafale (V1).
+    ChannelDelete,
+    /// Suppression d'un rôle : restauration, jamais comptée en rafale (V1).
+    RoleDelete,
+    /// Tout autre type d'entrée : jamais compté.
     Other,
 }
 
@@ -156,6 +160,9 @@ pub fn classify_entry(entry: &AuditEntry) -> Option<NukeAction> {
         | AuditAction::EmojiDelete
         | AuditAction::StickerCreate
         | AuditAction::StickerDelete => Some(NukeAction::EmojiSticker),
+        // Les suppressions n'ont pas de module de rafale (V1) : la réponse est
+        // la restauration et la sanction unitaire (`resource_actions::restore`).
+        AuditAction::ChannelDelete | AuditAction::RoleDelete => None,
         AuditAction::Other => None,
     }
 }
@@ -271,6 +278,127 @@ impl AuditEntryDedup {
 
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
+    }
+}
+
+/// Auteurs récents d'entrées retenus par défaut dans [`RecentAuditAuthors`].
+pub const DEFAULT_AUDIT_AUTHOR_CAPACITY: usize = 2_048;
+
+/// Fraîcheur maximale d'une entrée corrélée à un événement Gateway par sa
+/// cible (suppression de salon ou de rôle) : la cible est unique, le socle
+/// borne déjà l'âge des entrées.
+pub const RESOURCE_AUTHOR_MAX_AGE: Duration = MAX_AUDIT_ENTRY_AGE;
+
+/// Auteur d'une entrée, après les gardes du socle.
+///
+/// Les gardes d'âge et de doublon ne produisent aucun auteur : une entrée
+/// rejouée n'est jamais enregistrée (voir [`screened_author`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenedAuthor {
+    /// Auteur retenu par les gardes : les modules peuvent y répondre.
+    Counted(u64),
+    /// Propriétaire du serveur : libre d'agir, aucune réponse.
+    Owner,
+    /// Le bot lui-même (ses restaurations comprises) : aucune réponse.
+    Bot,
+    /// Discord ne donne pas d'auteur.
+    Unresolved,
+}
+
+/// Convertit le résultat de [`screen_entry`] en auteur enregistrable ;
+/// `None` pour une entrée trop vieille ou déjà traitée.
+pub const fn screened_author(screened: &Result<u64, AuditIgnoreReason>) -> Option<ScreenedAuthor> {
+    match screened {
+        Ok(author_id) => Some(ScreenedAuthor::Counted(*author_id)),
+        Err(AuditIgnoreReason::GuildOwner) => Some(ScreenedAuthor::Owner),
+        Err(AuditIgnoreReason::BotItself | AuditIgnoreReason::FoxSecuraAction) => {
+            Some(ScreenedAuthor::Bot)
+        }
+        Err(AuditIgnoreReason::NoAuthor) => Some(ScreenedAuthor::Unresolved),
+        Err(AuditIgnoreReason::TooOld | AuditIgnoreReason::Duplicate) => None,
+    }
+}
+
+/// Auteur d'une entrée enregistrée pour la corrélation avec un événement
+/// Gateway (suppression de salon ou de rôle, mise à jour du serveur).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordedAuditAuthor {
+    pub guild_id: u64,
+    pub action: AuditAction,
+    pub target_id: Option<u64>,
+    pub author: ScreenedAuthor,
+    /// Date de création de l'entrée, depuis l'époque Unix.
+    pub created_at: Duration,
+}
+
+/// Index borné, en mémoire, des auteurs d'entrées récentes.
+///
+/// Les événements Gateway (`ChannelDelete`, `RoleDelete`, `GuildUpdate`) ne
+/// portent pas d'auteur : il vient de l'entrée d'audit correspondante,
+/// corrélée par cible et fraîcheur. L'ordre des deux événements n'est pas
+/// garanti : le runtime consulte l'index, attend brièvement, puis réessaie ;
+/// un auteur toujours introuvable reste non résolu.
+#[derive(Debug)]
+pub struct RecentAuditAuthors {
+    capacity: usize,
+    entries: VecDeque<RecordedAuditAuthor>,
+}
+
+impl Default for RecentAuditAuthors {
+    fn default() -> Self {
+        Self::new(DEFAULT_AUDIT_AUTHOR_CAPACITY)
+    }
+}
+
+impl RecentAuditAuthors {
+    /// `capacity` vaut au moins 1.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            entries: VecDeque::new(),
+        }
+    }
+
+    /// Enregistre l'auteur d'une entrée ; au-delà de la capacité, la plus
+    /// ancienne est oubliée.
+    pub fn record(&mut self, entry: RecordedAuditAuthor) {
+        self.entries.push_back(entry);
+        while self.entries.len() > self.capacity {
+            self.entries.pop_front();
+        }
+    }
+
+    /// Auteur le plus récent pour une action et une cible d'une guilde.
+    ///
+    /// `target_id` à `None` : seule l'action est comparée (mise à jour du
+    /// serveur, dont la cible est la guilde elle-même). Seules les entrées
+    /// plus fraîches que `max_age` comptent.
+    pub fn resolve(
+        &self,
+        guild_id: u64,
+        action: AuditAction,
+        target_id: Option<u64>,
+        now: Duration,
+        max_age: Duration,
+    ) -> Option<ScreenedAuthor> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.guild_id == guild_id
+                    && entry.action == action
+                    && (target_id.is_none() || entry.target_id == target_id)
+                    && now.saturating_sub(entry.created_at) <= max_age
+            })
+            .map(|entry| entry.author)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
