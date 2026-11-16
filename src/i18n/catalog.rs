@@ -2126,5 +2126,25 @@ catalog! {
         en: "The slowmode was not applied: check FoxSecura's Manage Channels permission in this channel.",
         fr: "Le mode lent n'a pas été posé : vérifiez la permission Gérer les salons de FoxSecura dans ce salon.",
         de: "Der Slowmode wurde nicht gesetzt: Prüfe die Berechtigung Kanäle verwalten von FoxSecura in diesem Kanal."
+    },
+    WebhookMessageSummary => {
+        en: "Dangerous webhook message: message deleted.",
+        fr: "Message de webhook dangereux : message supprimé.",
+        de: "Gefährliche Webhook-Nachricht: Nachricht gelöscht."
+    },
+    WebhookMessageEvidenceReasons => {
+        en: "Reasons",
+        fr: "Raisons",
+        de: "Gründe"
+    },
+    WebhookMessageEvidenceWebhook => {
+        en: "Webhook",
+        fr: "Webhook",
+        de: "Webhook"
+    },
+    WebhookMessageRecommendation => {
+        en: "Check who owns this webhook and delete it in the channel settings if it is not legitimate.",
+        fr: "Vérifiez à qui appartient ce webhook et supprimez-le dans les réglages du salon s'il n'est pas légitime.",
+        de: "Prüfe, wem dieser Webhook gehört, und lösche ihn in den Kanaleinstellungen, falls er nicht legitim ist."
     }
 }

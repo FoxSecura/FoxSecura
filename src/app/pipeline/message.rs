@@ -65,6 +65,12 @@ impl Mentions {
 
 /// Création d'un message.
 pub async fn handle(ctx: &serenity::Context, data: &AppData, message: &serenity::Message) {
+    // Messages de webhook : écartés par les gardes communes, ils suivent le
+    // chemin propre au module `webhook_watch`.
+    if message.webhook_id.is_some() {
+        super::webhook_message::handle(ctx, data, message).await;
+        return;
+    }
     let member = message.member.as_deref();
     let inspected = InspectedMessage {
         snapshot: MessageSnapshot {

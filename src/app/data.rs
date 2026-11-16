@@ -9,6 +9,7 @@ use foxsecura::protection::anti_nuke::audit::{AuditEntryDedup, RecentAuditAuthor
 use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
 use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
+use foxsecura::protection::anti_raid::webhook_message::WebhookMessageSpamDetector;
 use foxsecura::protection::anti_spam::anti_ghost_ping::{AntiGhostPingDetector, BotDeletionMarks};
 use foxsecura::protection::anti_spam::auto_slowmode::AutoSlowmodeDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
@@ -50,6 +51,7 @@ pub struct ProtectionState {
     ghost_pings: Mutex<AntiGhostPingDetector>,
     bot_deletions: Mutex<BotDeletionMarks>,
     auto_slowmode: Mutex<AutoSlowmodeDetector>,
+    webhook_spam: Mutex<WebhookMessageSpamDetector>,
     slowmode_in_flight: Arc<SlowmodeInFlight>,
     join_bursts: Mutex<JoinBurstDetector>,
     bad_words: Mutex<BadWordsMatcherCache>,
@@ -113,6 +115,16 @@ impl ProtectionState {
     /// horodatages.
     pub fn auto_slowmode(&self) -> MutexGuard<'_, AutoSlowmodeDetector> {
         self.auto_slowmode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales des messages de webhook, par webhook (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn webhook_spam(&self) -> MutexGuard<'_, WebhookMessageSpamDetector> {
+        self.webhook_spam
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

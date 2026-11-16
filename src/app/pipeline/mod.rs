@@ -23,6 +23,7 @@ pub mod quarantine;
 pub mod restore;
 mod sanction;
 pub mod server_integrity;
+mod webhook_message;
 
 use std::time::Duration;
 
