@@ -5,4 +5,5 @@ mod adult_link;
 mod anti_invite;
 mod bad_words;
 mod member_profile;
+mod native_payload;
 mod native_rules;

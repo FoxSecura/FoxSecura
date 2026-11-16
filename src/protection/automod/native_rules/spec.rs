@@ -4,8 +4,7 @@
 use std::collections::HashSet;
 
 use crate::protection::automod::{
-    anti_invite::INVITE_PATTERNS,
-    member_profile::profile_filter_keywords,
+    anti_invite::INVITE_PATTERNS, member_profile::profile_filter_keywords,
 };
 
 pub const AUTOMOD_RULE_PREFIX: &str = "FoxSecura •";
@@ -21,6 +20,49 @@ pub enum AutoModRuleKey {
 }
 
 impl AutoModRuleKey {
+    /// Les six règles, dans l'ordre de la synchronisation.
+    pub const ALL: [Self; 6] = [
+        Self::InviteLinkBlocking,
+        Self::AdultLinksFiltering,
+        Self::BadWordsFilter,
+        Self::MentionSpamBlocking,
+        Self::GenericSpamBlocking,
+        Self::MemberProfileFilter,
+    ];
+
+    /// Nom exact de la règle sur Discord. Le préfixe [`AUTOMOD_RULE_PREFIX`]
+    /// est la seule marque de propriété : ne jamais le changer.
+    pub const fn rule_name(self) -> &'static str {
+        match self {
+            Self::InviteLinkBlocking => "FoxSecura • Invite Link Blocking",
+            Self::AdultLinksFiltering => "FoxSecura • Adult Links Filtering",
+            Self::BadWordsFilter => "FoxSecura • Bad Words Filter",
+            Self::MentionSpamBlocking => "FoxSecura • Mention Spam Blocking",
+            Self::GenericSpamBlocking => "FoxSecura • Spam Blocking",
+            Self::MemberProfileFilter => "FoxSecura • Member Profile Filter",
+        }
+    }
+
+    /// Anciens noms (V1), reconnus comme la même règle.
+    pub const fn legacy_names(self) -> &'static [&'static str] {
+        match self {
+            Self::InviteLinkBlocking => &["FoxSecura • Invite Links"],
+            Self::AdultLinksFiltering => &["FoxSecura • Sexual Content"],
+            Self::BadWordsFilter => &["FoxSecura • Bad Words"],
+            Self::MentionSpamBlocking | Self::GenericSpamBlocking | Self::MemberProfileFilter => {
+                &[]
+            }
+        }
+    }
+
+    /// Règle portant ce nom (actuel ou ancien) ; `None` pour une règle
+    /// étrangère ou un nom FoxSecura inconnu.
+    pub fn from_rule_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|key| key.rule_name() == name || key.legacy_names().contains(&name))
+    }
+
     pub const fn config_key(self) -> &'static str {
         match self {
             Self::InviteLinkBlocking => "antiInviteEnabled",
@@ -40,6 +82,9 @@ pub enum AutoModRuleTriggerType {
     Spam,
     MentionSpam,
     MemberProfile,
+    /// Type que FoxSecura ne crée jamais (règle d'un autre bot, type futur
+    /// ou retiré) : code Discord brut.
+    Other(u8),
 }
 
 impl AutoModRuleTriggerType {
@@ -135,57 +180,60 @@ where
         AutoModRuleSpec {
             key: AutoModRuleKey::InviteLinkBlocking,
             label: "Invite Link Blocking",
-            name: "FoxSecura • Invite Link Blocking",
+            name: AutoModRuleKey::InviteLinkBlocking.rule_name(),
             trigger_type: AutoModRuleTriggerType::Keyword,
             trigger_metadata: AutoModRuleTriggerMetadata::KeywordFilter(
-                INVITE_PATTERNS.iter().map(|pattern| (*pattern).to_owned()).collect(),
+                INVITE_PATTERNS
+                    .iter()
+                    .map(|pattern| (*pattern).to_owned())
+                    .collect(),
             ),
-            legacy_names: &["FoxSecura • Invite Links"],
+            legacy_names: AutoModRuleKey::InviteLinkBlocking.legacy_names(),
         },
         AutoModRuleSpec {
             key: AutoModRuleKey::AdultLinksFiltering,
             label: "Adult Links Filtering",
-            name: "FoxSecura • Adult Links Filtering",
+            name: AutoModRuleKey::AdultLinksFiltering.rule_name(),
             trigger_type: AutoModRuleTriggerType::KeywordPreset,
             trigger_metadata: AutoModRuleTriggerMetadata::KeywordPreset(vec![
                 KeywordPreset::SexualContent,
             ]),
-            legacy_names: &["FoxSecura • Sexual Content"],
+            legacy_names: AutoModRuleKey::AdultLinksFiltering.legacy_names(),
         },
         AutoModRuleSpec {
             key: AutoModRuleKey::BadWordsFilter,
             label: "Bad Words Filter",
-            name: "FoxSecura • Bad Words Filter",
+            name: AutoModRuleKey::BadWordsFilter.rule_name(),
             trigger_type: AutoModRuleTriggerType::Keyword,
             trigger_metadata: AutoModRuleTriggerMetadata::KeywordFilter(blocked_words),
-            legacy_names: &["FoxSecura • Bad Words"],
+            legacy_names: AutoModRuleKey::BadWordsFilter.legacy_names(),
         },
         AutoModRuleSpec {
             key: AutoModRuleKey::MentionSpamBlocking,
             label: "Mention Spam Blocking",
-            name: "FoxSecura • Mention Spam Blocking",
+            name: AutoModRuleKey::MentionSpamBlocking.rule_name(),
             trigger_type: AutoModRuleTriggerType::MentionSpam,
             trigger_metadata: AutoModRuleTriggerMetadata::MentionSpam {
                 total_limit: 5,
                 raid_protection_enabled: true,
             },
-            legacy_names: &[],
+            legacy_names: AutoModRuleKey::MentionSpamBlocking.legacy_names(),
         },
         AutoModRuleSpec {
             key: AutoModRuleKey::GenericSpamBlocking,
             label: "Spam Blocking",
-            name: "FoxSecura • Spam Blocking",
+            name: AutoModRuleKey::GenericSpamBlocking.rule_name(),
             trigger_type: AutoModRuleTriggerType::Spam,
             trigger_metadata: AutoModRuleTriggerMetadata::None,
-            legacy_names: &[],
+            legacy_names: AutoModRuleKey::GenericSpamBlocking.legacy_names(),
         },
         AutoModRuleSpec {
             key: AutoModRuleKey::MemberProfileFilter,
             label: "Member Profile Filter",
-            name: "FoxSecura • Member Profile Filter",
+            name: AutoModRuleKey::MemberProfileFilter.rule_name(),
             trigger_type: AutoModRuleTriggerType::MemberProfile,
             trigger_metadata: AutoModRuleTriggerMetadata::KeywordFilter(profile_filter_keywords()),
-            legacy_names: &[],
+            legacy_names: AutoModRuleKey::MemberProfileFilter.legacy_names(),
         },
     ]
 }
