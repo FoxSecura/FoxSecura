@@ -37,8 +37,8 @@ use foxsecura::protection::shared::ProtectionModule;
 use poise::serenity_prelude::{
     self as serenity,
     audit_log::{
-        Action, AuditLogEntry, Change, ChannelAction, EmojiAction, MemberAction, RoleAction,
-        StickerAction, WebhookAction,
+        Action, AuditLogEntry, AutoModAction, Change, ChannelAction, EmojiAction, MemberAction,
+        RoleAction, StickerAction, WebhookAction,
     },
 };
 
@@ -352,6 +352,8 @@ fn convert_entry(guild_id: u64, entry: &AuditLogEntry) -> AuditEntry {
         Action::Emoji(EmojiAction::Delete) => AuditAction::EmojiDelete,
         Action::Sticker(StickerAction::Create) => AuditAction::StickerCreate,
         Action::Sticker(StickerAction::Delete) => AuditAction::StickerDelete,
+        Action::AutoMod(AutoModAction::RuleUpdate) => AuditAction::AutoModRuleUpdate,
+        Action::AutoMod(AutoModAction::RuleDelete) => AuditAction::AutoModRuleDelete,
         _ => AuditAction::Other,
     };
     // Un identifiant nul n'est pas un auteur (snowflakes toujours positifs).
@@ -378,10 +380,16 @@ fn convert_entry(guild_id: u64, entry: &AuditLogEntry) -> AuditEntry {
             } => {
                 converted.permissions_change = Some((old.bits(), new.bits()));
             }
-            Change::Name {
-                new: Some(name), ..
-            } => {
-                converted.target_name = Some(name.clone());
+            Change::Name { old, new } => {
+                if let Some(name) = new {
+                    converted.target_name = Some(name.clone());
+                }
+                if let Some(name) = old {
+                    converted.previous_name = Some(name.clone());
+                }
+            }
+            Change::Enabled { new, .. } => {
+                converted.enabled_after = *new;
             }
             _ => {}
         }
@@ -538,6 +546,59 @@ mod tests {
             }));
             assert_eq!(convert_entry(1, &entry).action, expected, "{action_type}");
         }
+    }
+
+    #[test]
+    fn converts_automod_rule_changes() {
+        let disabled = parse(serde_json::json!({
+            "id": "1300000000000000020",
+            "user_id": "42",
+            "target_id": "77",
+            "action_type": 141,
+            "changes": [
+                { "key": "name", "old_value": "FoxSecura • Spam Blocking", "new_value": "x" },
+                { "key": "enabled", "old_value": true, "new_value": false }
+            ]
+        }));
+        let converted = convert_entry(1, &disabled);
+        assert_eq!(converted.action, AuditAction::AutoModRuleUpdate);
+        assert_eq!(converted.target_id, Some(77));
+        assert_eq!(
+            converted.previous_name.as_deref(),
+            Some("FoxSecura • Spam Blocking")
+        );
+        assert_eq!(converted.target_name.as_deref(), Some("x"));
+        assert_eq!(converted.enabled_after, Some(false));
+
+        let deleted = parse(serde_json::json!({
+            "id": "1300000000000000021",
+            "user_id": "42",
+            "target_id": "77",
+            "action_type": 142,
+            "changes": [
+                { "key": "name", "old_value": "FoxSecura • Bad Words Filter" },
+                { "key": "event_type", "old_value": 2 },
+                { "key": "trigger_type", "old_value": 6 },
+                { "key": "trigger_metadata", "old_value": {
+                    "keyword_filter": ["free nitro"],
+                    "regex_patterns": [],
+                    "allow_list": [],
+                    "mention_raid_protection_enabled": true
+                } },
+                { "key": "actions", "old_value": [{ "type": 4, "metadata": {} }] },
+                { "key": "enabled", "old_value": true },
+                { "key": "exempt_roles", "old_value": [] },
+                { "key": "exempt_channels", "old_value": [] }
+            ]
+        }));
+        let converted = convert_entry(1, &deleted);
+        assert_eq!(converted.action, AuditAction::AutoModRuleDelete);
+        assert_eq!(
+            converted.previous_name.as_deref(),
+            Some("FoxSecura • Bad Words Filter")
+        );
+        assert_eq!(converted.target_name, None);
+        assert_eq!(converted.enabled_after, None);
     }
 
     #[test]

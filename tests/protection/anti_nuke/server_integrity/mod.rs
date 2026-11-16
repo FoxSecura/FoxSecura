@@ -3,6 +3,7 @@
 
 mod anti_permissions;
 mod authorization;
+mod automod_rule_guard;
 mod external_application;
 mod server_guard;
 mod server_settings;

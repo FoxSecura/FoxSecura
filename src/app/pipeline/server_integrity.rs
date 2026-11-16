@@ -10,6 +10,8 @@
 //! - `WebhookCreate` / `WebhookUpdate` / `WebhookDelete` : suppression d'un
 //!   webhook créé ou modifié par un auteur non autorisé, alerte sur une
 //!   suppression.
+//! - `AutoModRuleUpdate` / `AutoModRuleDelete` : garde des règles AutoMod
+//!   natives (`automod_rules::guard`), restauration sans sanction.
 //! - `GuildUpdate` (événement Gateway, ancienne version du serveur d'après le
 //!   cache) : alertes server-edit et vanity, sans sanction ; l'auteur vient
 //!   de l'entrée d'audit `GuildUpdate` indexée par le socle.
@@ -68,6 +70,10 @@ pub async fn handle_audit_entry(
         }
         AuditAction::WebhookCreate | AuditAction::WebhookUpdate | AuditAction::WebhookDelete => {
             webhook_change(ctx, data, entry, author_id).await;
+            true
+        }
+        AuditAction::AutoModRuleUpdate | AuditAction::AutoModRuleDelete => {
+            super::automod_rules::guard(ctx, data, entry, author_id).await;
             true
         }
         _ => false,

@@ -73,6 +73,10 @@ pub enum AuditAction {
     WebhookUpdate,
     /// Suppression d'un webhook : alerte seule.
     WebhookDelete,
+    /// Modification d'une règle AutoMod (141) : garde des règles natives.
+    AutoModRuleUpdate,
+    /// Suppression d'une règle AutoMod (142) : garde des règles natives.
+    AutoModRuleDelete,
     /// Tout autre type d'entrée : jamais compté.
     Other,
 }
@@ -100,6 +104,11 @@ pub struct AuditEntry {
     /// Changement de `permissions` d'un rôle : `(ancien, nouveau)` en
     /// bitfield brut, seulement si les deux valeurs sont connues.
     pub permissions_change: Option<(u64, u64)>,
+    /// Ancien nom de la cible (`name.old_value`) : nom d'une règle AutoMod
+    /// supprimée ou renommée. Valeur non fiable.
+    pub previous_name: Option<String>,
+    /// Nouvelle valeur de `enabled` (règle AutoMod), si elle a changé.
+    pub enabled_after: Option<bool>,
 }
 
 impl AuditEntry {
@@ -116,6 +125,8 @@ impl AuditEntry {
             timeout_until: None,
             roles_added: 0,
             permissions_change: None,
+            previous_name: None,
+            enabled_after: None,
         }
     }
 
@@ -184,6 +195,8 @@ pub fn classify_entry(entry: &AuditEntry) -> Option<NukeAction> {
         | AuditAction::WebhookCreate
         | AuditAction::WebhookUpdate
         | AuditAction::WebhookDelete => None,
+        // Garde des règles AutoMod : restauration unitaire, jamais de rafale.
+        AuditAction::AutoModRuleUpdate | AuditAction::AutoModRuleDelete => None,
         AuditAction::Other => None,
     }
 }

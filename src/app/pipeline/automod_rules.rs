@@ -15,13 +15,18 @@
 //! 3. bouton « Synchroniser AutoMod » : les six règles,
 //!    `create_when_disabled = true` ;
 //! 4. bouton « Supprimer les règles FoxSecura » (propriétaire) ;
-//! 5. garde des règles (`automod_rule_guard`).
+//! 5. garde des règles ([`guard`], module `automod_rule_guard`).
 //!
 //! Permission : `MANAGE_GUILD`. Les décisions sont dans
 //! `foxsecura::protection::automod::native_rules` ; ce module ne fait que
 //! lire la base et le cache et appeler l'API. Les erreurs sont journalisées et
 //! jamais propagées.
 
+use foxsecura::protection::anti_nuke::audit::{AuditAction, AuditEntry};
+use foxsecura::protection::anti_nuke::server_integrity::automod_rule_guard::{
+    GuardInput, GuardPlan, RuleGuardIncidentInput, considered_rule_name, detect_alteration,
+    plan_rule_guard, restore_result, rule_guard_incident,
+};
 use foxsecura::protection::automod::bad_words::resolve_blocked_words;
 use foxsecura::protection::automod::native_rules::{
     AutoModRuleClient, AutoModRuleKey, CleanupOutcome, ExistingAutoModRule, ReconcileOutcome,
@@ -29,10 +34,13 @@ use foxsecura::protection::automod::native_rules::{
     reconcile_guild,
 };
 use foxsecura::protection::quarantine::DiscordFailure;
+use foxsecura::protection::shared::ProtectionModule;
 use poise::serenity_prelude as serenity;
 use serde_json::Value;
 
+use super::anti_nuke::{is_author_exempt, language, read_context};
 use super::quarantine::discord_failure;
+use super::server_integrity::publish_critical;
 use crate::app::{AppData, Error, run_database};
 
 /// Client HTTP serenity, charge JSON brute.
@@ -205,4 +213,108 @@ pub async fn delete_all(ctx: &serenity::Context, data: &AppData, guild_id: u64) 
     .await;
     println!("[automod] suppression des règles FoxSecura de la guilde {guild_id} : {outcome:?}");
     outcome
+}
+
+/// Garde des règles : entrée `AutoModRuleUpdate` / `AutoModRuleDelete` déjà
+/// retenue par le socle (propriétaire et FoxSecura lui-même exclus : nos
+/// propres réconciliations ne reviennent jamais ici).
+///
+/// Restaure la seule règle altérée, sans sanctionner l'auteur, même s'il
+/// est sur la liste blanche.
+pub async fn guard(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry, author_id: u64) {
+    // Modification qui laisse la règle active : aucune lecture.
+    if detect_alteration(entry.action, entry.enabled_after).is_none() {
+        return;
+    }
+    let guild_id = entry.guild_id;
+    let Some(context) = read_context(data, guild_id, author_id).await else {
+        return;
+    };
+    if !context
+        .enabled_modules
+        .contains(ProtectionModule::AutoModRuleGuard)
+    {
+        return;
+    }
+
+    // Nom actuel relu seulement s'il manque l'ancien (modification sans
+    // renommage) ; une règle supprimée porte toujours son ancien nom.
+    let current_name = match (&entry.previous_name, entry.action, entry.target_id) {
+        (None, AuditAction::AutoModRuleUpdate, Some(rule_id)) => match ctx
+            .http
+            .get_automod_rule(
+                serenity::GuildId::new(guild_id),
+                serenity::RuleId::new(rule_id),
+            )
+            .await
+        {
+            Ok(rule) => Some(rule.name),
+            Err(error) => {
+                eprintln!(
+                    "[automod-rule-guard] règle {rule_id} de la guilde {guild_id} illisible : {}",
+                    discord_failure(error).details
+                );
+                None
+            }
+        },
+        _ => None,
+    };
+    let rule_name = considered_rule_name(entry.previous_name.as_deref(), current_name.as_deref());
+    let author_exempt = is_author_exempt(ctx, &context, guild_id, author_id).await;
+    let plan = plan_rule_guard(GuardInput {
+        action: entry.action,
+        enabled_after: entry.enabled_after,
+        rule_name,
+        modules: context.enabled_modules,
+        anti_spam_enabled: context
+            .guild_config
+            .as_ref()
+            .is_some_and(|config| config.anti_spam.enabled),
+        author_exempt,
+    });
+    let GuardPlan::Restore {
+        key,
+        alteration,
+        author_exempt,
+    } = plan
+    else {
+        println!(
+            "[automod-rule-guard] entrée {} de la guilde {guild_id} ignorée : {plan:?}",
+            entry.entry_id
+        );
+        return;
+    };
+
+    // La règle modifiée existe encore : elle est reprise telle quelle
+    // (renommée et réactivée) plutôt que dupliquée.
+    let adopt = (entry.action == AuditAction::AutoModRuleUpdate)
+        .then_some(entry.target_id)
+        .flatten();
+    let restore = match reconcile(ctx, data, guild_id, &[key], false, adopt).await {
+        Some(outcome) => restore_result(&outcome),
+        None => return,
+    };
+    println!(
+        "[automod-rule-guard] {key:?} {} par {author_id} sur la guilde {guild_id} : {restore:?}",
+        alteration.evidence()
+    );
+    let incident = rule_guard_incident(
+        language(&context),
+        RuleGuardIncidentInput {
+            author_id,
+            rule_name: rule_name.unwrap_or(key.rule_name()),
+            alteration,
+            author_exempt,
+        },
+        &restore,
+    );
+    publish_critical(
+        ctx,
+        data,
+        &context,
+        guild_id,
+        ProtectionModule::AutoModRuleGuard,
+        &incident,
+    )
+    .await;
 }

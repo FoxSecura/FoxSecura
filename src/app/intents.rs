@@ -9,6 +9,10 @@ use poise::serenity_prelude::{self as serenity, GatewayIntents};
 ///   d'audit poussées par Discord (anti-nuke). Ces entrées exigent en plus la
 ///   permission `VIEW_AUDIT_LOG` dans chaque serveur : sans elle, Discord
 ///   n'en envoie aucune (signalé une fois par guilde dans les logs locaux).
+///   La garde des règles AutoMod natives passe aussi par ces entrées
+///   (`AutoModRuleUpdate`, `AutoModRuleDelete`) et par l'HTTP :
+///   `AUTO_MODERATION_CONFIGURATION` n'est pas demandé (ses événements ne
+///   portent pas l'auteur).
 /// - `GUILD_MESSAGES` : créations et modifications de messages (anti-spam,
 ///   filtres de contenu).
 /// - `MESSAGE_CONTENT` (**privilégié**) : texte et mentions des messages, lus

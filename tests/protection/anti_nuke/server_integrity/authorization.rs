@@ -9,7 +9,6 @@ use foxsecura::protection::anti_nuke::{
         anti_permissions::detect_permission_escalation,
         anti_server_edit::{ServerField, detect_server_edit},
         anti_vanity_change::detect_vanity_change,
-        automod_rule_guard::{AutoModRuleChange, detect_managed_rule_change},
     },
 };
 
@@ -43,7 +42,7 @@ fn dangerous_permission_addition_requires_enforcement() {
 }
 
 #[test]
-fn server_vanity_and_automod_changes_follow_executor_policy() {
+fn server_and_vanity_changes_follow_executor_policy() {
     assert_eq!(
         detect_server_edit(true, &[ServerField::Name], false, false).decision,
         ExecutorDecision::Alert
@@ -51,25 +50,5 @@ fn server_vanity_and_automod_changes_follow_executor_policy() {
     assert_eq!(
         detect_vanity_change(true, Some("old"), Some("new"), true, false),
         ExecutorDecision::Enforce
-    );
-    assert_eq!(
-        detect_managed_rule_change(
-            true,
-            true,
-            AutoModRuleChange::Delete,
-            true,
-            false,
-        ),
-        ExecutorDecision::Enforce
-    );
-    assert_eq!(
-        detect_managed_rule_change(
-            true,
-            false,
-            AutoModRuleChange::Delete,
-            true,
-            false,
-        ),
-        ExecutorDecision::Ignore
     );
 }
