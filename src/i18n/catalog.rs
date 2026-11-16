@@ -1946,5 +1946,75 @@ catalog! {
         en: "The cap is still exceeded: remove the role by hand (usually Manage Roles is missing or FoxSecura's role is below the capped role).",
         fr: "Le plafond est toujours dépassé : retirez le rôle à la main (souvent Gérer les rôles manquant ou rôle de FoxSecura sous le rôle plafonné).",
         de: "Das Limit ist weiterhin überschritten: Entziehe die Rolle manuell (meist fehlt Rollen verwalten oder die Rolle von FoxSecura liegt unter der begrenzten Rolle)."
+    },
+    ConfigLimitRoleValue => {
+        en: "{role}: at most {max} members",
+        fr: "{role} : {max} membres au plus",
+        de: "{role}: höchstens {max} Mitglieder"
+    },
+    ConfigLimitRoleNone => {
+        en: "No capped role (cap: {max} members)",
+        fr: "Aucun rôle plafonné (plafond : {max} membres)",
+        de: "Keine begrenzte Rolle (Limit: {max} Mitglieder)"
+    },
+    ConfigServerIntegrityNotice => {
+        en: "Requires View Audit Log, Manage Channels, Manage Roles and Manage Webhooks, with FoxSecura's role above the managed roles. Deleted channels and roles are recreated from the deleted object: their messages, webhooks, threads and members are not restored. Auto modes only apply when the matching deletion module is off. Anti-permissions rolls back any dangerous permission added by a non-whitelisted author, even a legitimate change: whitelist your administrators. Server settings and the custom URL are alerts only; Discord does not let a bot take back a stolen custom URL. The capped role is never removed from the owner, nor on an incomplete member count.",
+        fr: "Requiert Voir les logs du serveur, Gérer les salons, Gérer les rôles et Gérer les webhooks, avec le rôle de FoxSecura au-dessus des rôles gérés. Les salons et rôles supprimés sont recréés d'après l'objet supprimé : messages, webhooks, fils et membres ne sont pas restaurés. Les modes auto ne s'appliquent que si le module de suppression correspondant est coupé. L'anti-permissions annule toute permission dangereuse ajoutée par un auteur hors liste blanche, même légitime : mettez vos administrateurs sur la liste blanche. Réglages du serveur et URL personnalisée : alertes seules ; un bot ne peut pas reprendre une URL volée. Le rôle plafonné n'est jamais retiré au propriétaire, ni sur un comptage incomplet.",
+        de: "Benötigt Audit-Log anzeigen, Kanäle verwalten, Rollen verwalten und Webhooks verwalten, mit der Rolle von FoxSecura über den verwalteten Rollen. Gelöschte Kanäle und Rollen werden aus dem gelöschten Objekt neu erstellt: Nachrichten, Webhooks, Threads und Mitglieder werden nicht wiederhergestellt. Auto-Modi gelten nur, wenn das passende Löschmodul aus ist. Anti-Berechtigungen nimmt jede gefährliche Berechtigung eines Urhebers außerhalb der Whitelist zurück, auch eine legitime: Setze deine Administratoren auf die Whitelist. Servereinstellungen und eigene URL: nur Warnungen; ein Bot kann keine gestohlene URL zurückholen. Die begrenzte Rolle wird nie dem Inhaber entzogen, noch bei unvollständiger Zählung."
+    },
+    ConfigLimitRoleSelect => {
+        en: "Choose the capped role",
+        fr: "Choisir le rôle plafonné",
+        de: "Begrenzte Rolle wählen"
+    },
+    ConfigLimitRoleMaxButton => {
+        en: "Capped role limit",
+        fr: "Plafond du rôle plafonné",
+        de: "Limit der begrenzten Rolle"
+    },
+    ConfigLimitRoleMaxInput => {
+        en: "Maximum members (1 to 1000)",
+        fr: "Membres au plus (1 à 1000)",
+        de: "Höchstens Mitglieder (1 bis 1000)"
+    },
+    ConfigLimitRoleClearButton => {
+        en: "Remove capped role",
+        fr: "Retirer le rôle plafonné",
+        de: "Begrenzte Rolle entfernen"
+    },
+    ConfigLimitRoleInvalidMax => {
+        en: "Invalid limit: enter a whole number from 1 to 1000. Nothing was changed.",
+        fr: "Plafond invalide : saisissez un nombre entier de 1 à 1000. Rien n'a été modifié.",
+        de: "Ungültiges Limit: Gib eine ganze Zahl von 1 bis 1000 ein. Nichts wurde geändert."
+    },
+    ConfigLimitRoleAccessDenied => {
+        en: "Only the server owner or an administrator can manage the capped role.",
+        fr: "Seuls le propriétaire du serveur et les administrateurs peuvent gérer le rôle plafonné.",
+        de: "Nur der Serverinhaber oder ein Administrator kann die begrenzte Rolle verwalten."
+    },
+    ConfigLimitRoleEveryone => {
+        en: "@everyone cannot be the capped role. Nothing was changed.",
+        fr: "@everyone ne peut pas être le rôle plafonné. Rien n'a été modifié.",
+        de: "@everyone kann nicht die begrenzte Rolle sein. Nichts wurde geändert."
+    },
+    ConfigLimitRoleManaged => {
+        en: "This role is managed by an integration: FoxSecura cannot remove it. Nothing was changed.",
+        fr: "Ce rôle est géré par une intégration : FoxSecura ne peut pas le retirer. Rien n'a été modifié.",
+        de: "Diese Rolle wird von einer Integration verwaltet: FoxSecura kann sie nicht entziehen. Nichts wurde geändert."
+    },
+    ConfigLimitRoleNotManageable => {
+        en: "FoxSecura cannot manage this role (Manage Roles missing or role above FoxSecura's role). Nothing was changed.",
+        fr: "FoxSecura ne peut pas gérer ce rôle (Gérer les rôles manquant ou rôle au-dessus de celui de FoxSecura). Rien n'a été modifié.",
+        de: "FoxSecura kann diese Rolle nicht verwalten (Rollen verwalten fehlt oder Rolle über der von FoxSecura). Nichts wurde geändert."
+    },
+    ConfigLimitRoleDangerous => {
+        en: "This role carries dangerous permissions; protect it with the anti-nuke instead. Nothing was changed:",
+        fr: "Ce rôle porte des permissions dangereuses ; protégez-le plutôt avec l'anti-nuke. Rien n'a été modifié :",
+        de: "Diese Rolle hat gefährliche Berechtigungen; schütze sie lieber mit dem Anti-Nuke. Nichts wurde geändert:"
+    },
+    ConfigLimitRoleUnknown => {
+        en: "Role not found in FoxSecura's cache. Nothing was changed.",
+        fr: "Rôle introuvable dans le cache de FoxSecura. Rien n'a été modifié.",
+        de: "Rolle nicht im Cache von FoxSecura gefunden. Nichts wurde geändert."
     }
 }

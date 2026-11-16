@@ -292,6 +292,7 @@ mod tests {
         assert!(AUTOMOD_MODULES.len() <= BUTTONS_PER_ROW);
         assert!(ANTI_RAID_MODULES.len() <= BUTTONS_PER_ROW);
         assert!(ANTI_NUKE_MODULES.len() <= 2 * BUTTONS_PER_ROW);
+        assert!(SERVER_INTEGRITY_MODULES.len() <= 2 * BUTTONS_PER_ROW);
     }
 
     #[test]
