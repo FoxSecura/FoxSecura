@@ -5,7 +5,12 @@
 //!
 //! Ce module ne réimplémente pas `anti_raid::anti_impersonation`. Dans FoxSecura,
 //! ce filtre est représenté par une règle AutoMod native Discord et n'a pas de
-//! second détecteur runtime.
+//! second détecteur runtime (parité V1) : déclencheur `MEMBER_PROFILE` (6),
+//! événement `MEMBER_UPDATE` (2), action `BLOCK_MEMBER_INTERACTION` (4).
+//!
+//! Interrupteur : module `member_profile_filter` (`/config` → AutoMod,
+//! désactivé par défaut). Tous les mots-clés respectent les limites Discord
+//! des règles natives (60 caractères, 1000 mots-clés).
 
 use super::anti_invite::INVITE_PATTERNS;
 

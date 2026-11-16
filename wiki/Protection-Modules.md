@@ -42,11 +42,14 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Mode lent automatique (`auto_slowmode`), **mode lent 10 s** | **oui**, `MESSAGE_CREATE` + maintenance toutes les 5 s, reprise au démarrage | `/config` → Anti-Spam, désactivé par défaut, 12 messages en 7 s par salon |
 | Messages de webhook (`webhook_message`), suppression | **oui**, `MESSAGE_CREATE` d'un webhook | interrupteur `webhook_watch` (`/config` → Intégrité du serveur) |
 | Applications externes (`anti_external_application`), **retrait du bit + quarantaine** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` (`RoleUpdate`) | `/config` → Intégrité du serveur, désactivé par défaut |
-| Tous les autres modules (dont règles AutoMod natives) | non (moteurs testés isolément) | — |
+| Règles AutoMod natives (6 règles « FoxSecura • … ») | **oui**, à l'action humaine : interrupteurs liés, liste de mots, « Synchroniser AutoMod » (jamais au démarrage) | `/config` → AutoMod ; règles liées aux interrupteurs ci-dessous |
+| Filtre de profil (`member_profile_filter`), règle native seule | **oui**, règle Discord `MEMBER_PROFILE` (aucun détecteur runtime) | `/config` → AutoMod, désactivé par défaut |
+| Garde des règles AutoMod (`automod_rule_guard`), **restauration sans sanction** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` (`AutoModRuleUpdate`, `AutoModRuleDelete`) | `/config` → AutoMod, désactivé par défaut |
+| Tous les autres modules | non (moteurs testés isolément) | — |
 
 ## Anti-Nuke
 
-`anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur. La tranche 8 branche le **socle des journaux d'audit**, les **rafales par auteur** et le **mode panique** ; la tranche 9 y ajoute l'**intégrité du serveur** (restauration des salons et rôles supprimés, permissions dangereuses, réglages du serveur, URL personnalisée, webhooks, rôle plafonné). Les applications externes et les règles AutoMod natives restent des moteurs testés isolément.
+`anti_nuke` vise les actions destructrices ou sensibles effectuées contre la structure du serveur. La tranche 8 branche le **socle des journaux d'audit**, les **rafales par auteur** et le **mode panique** ; la tranche 9 y ajoute l'**intégrité du serveur** (restauration des salons et rôles supprimés, permissions dangereuses, réglages du serveur, URL personnalisée, webhooks, rôle plafonné). La tranche 10 branche les applications externes, la tranche 11 la garde des règles AutoMod natives (voir [AutoMod](#automod)).
 
 ### Socle des journaux d'audit (branché au runtime)
 
@@ -155,7 +158,7 @@ Réponses **unitaires** (aucune rafale, aucun seuil) appuyées sur le même socl
 
 ### Briques non branchées
 
-`action_guard.rs` (`evaluate_executor_action`), le détecteur hérité `detect_external_application_permission_added` (la réponse branchée est `plan_role_update`), `automod_rule_guard` (la V2 ne crée pas encore de règles AutoMod natives à protéger) et `server_guard` restent des moteurs testés isolément.
+`action_guard.rs` (`evaluate_executor_action`), le détecteur hérité `detect_external_application_permission_added` (la réponse branchée est `plan_role_update`), et `server_guard` restent des moteurs testés isolément.
 
 ## Anti-Raid
 
@@ -475,10 +478,47 @@ La couche partagée `url_signal` fournit des signaux réutilisables aux protecti
 - filtrage de liens adultes ;
 - anti-invite ;
 - mots interdits avec listes et matcher séparés ;
-- contrôle de profil membre ;
-- règles natives Discord avec spécification et reconciler.
+- filtre de profil membre (règle native seule) ;
+- règles natives Discord : spécification (`spec.rs`), plan (`reconciler.rs`), charge JSON et limites (`payload.rs`), exécution (`sync.rs`), interrupteurs (`switch.rs`) et textes de `/config` (`report.rs`).
 
-Le couple `native_rules/spec.rs` + `native_rules/reconciler.rs` permet de représenter un état attendu puis de rapprocher la configuration Discord de cet état. Cette stratégie est préférable à une suite d'appels impératifs non idempotents.
+Le couple `spec` + `reconciler` représente l'état attendu puis rapproche la configuration Discord de cet état : opérations idempotentes, modifications externes traitées explicitement.
+
+### Règles AutoMod natives (branchées, tranche 11)
+
+Six règles, dont le nom commence par `FoxSecura •` — **seule marque de propriété**, jamais modifiée :
+
+| Règle | Déclencheur Discord | Interrupteur lié |
+| --- | --- | --- |
+| `FoxSecura • Invite Link Blocking` | mots-clés (1), motifs d'invitation | `anti_invite` |
+| `FoxSecura • Adult Links Filtering` | préréglage (4), `SEXUAL_CONTENT` | `adult_link` |
+| `FoxSecura • Bad Words Filter` | mots-clés (1), liste intégrée + mots perso | `bad_words` |
+| `FoxSecura • Mention Spam Blocking` | mentions (5), 5 mentions, protection anti-raid | `anti_mass_mention` |
+| `FoxSecura • Spam Blocking` | spam (3), sans métadonnées | anti-spam (`anti_spam_*`) |
+| `FoxSecura • Member Profile Filter` | profil (6), événement `MEMBER_UPDATE`, action « bloquer l'interaction » | `member_profile_filter` |
+
+Les messages bloqués affichent « Blocked by FoxSecura. ». Les filtres runtime de FoxSecura restent actifs en parallèle (défense en profondeur) ; la règle native bloque le message avant même qu'il soit publié.
+
+- **Charge JSON brute** : serenity 0.12.5 ne connaît ni le déclencheur `MEMBER_PROFILE`, ni l'événement `MEMBER_UPDATE`, ni l'action `BLOCK_MEMBER_INTERACTION`, ni `mention_raid_protection_enabled`. La charge est construite par une fonction pure (`create_payload`, `update_payload`), testée à l'octet près ; une modification n'envoie jamais `trigger_type` (Discord refuse de le changer) : une règle dont le type a changé est supprimée puis recréée (« migrate trigger type »).
+- **Limites Discord** appliquées avant tout envoi : 1000 mots-clés de **60 caractères** au plus. Les mots personnalisés en acceptent 100 : un mot plus long est **exclu de la règle native** mais reste appliqué par le filtre runtime ; au-delà de 1000 mots, la liste est tronquée. Les deux cas sont signalés dans le rapport, jamais en échec global. Liste vide → règle supprimée.
+- **Types uniques** : Discord n'accepte qu'une règle par type préréglage, spam, mentions et profil, et 6 règles de mots-clés. Une règle existante d'un autre bot ou d'un modérateur sur un type unique fait **ignorer** la règle FoxSecura (rapport « ignorée »), jamais supprimer la règle étrangère.
+- **Quand** : basculement d'un interrupteur lié (activer crée ou réactive, désactiver désactive sans créer) ; changement de la liste de mots (règle créée même si le filtre est désactivé, V1) ; bouton « Synchroniser AutoMod » (les six règles) ; bouton « Supprimer les règles FoxSecura » (propriétaire). **Jamais au démarrage ni à l'arrivée sur une guilde.**
+- **Exécution** : pré-vérification de `MANAGE_GUILD` d'après le cache (sinon aucun appel, un seul résultat « permission manquante ») ; doublons supprimés d'abord ; un échec sur une règle n'arrête pas les autres ; rapport par règle (créée, mise à jour, désactivée, absente, ignorée avec raison, échec).
+- **Verrou par guilde** : chaque réconciliation et la suppression tiennent un verrou asynchrone de la guilde, de la lecture des règles au dernier appel : un basculement et une restauration par la garde ne s'entrelacent jamais (sinon : doublons).
+- **Limite connue** : pas d'exemptions de rôles ni de salons sur les règles natives (parité V1) ; celles ajoutées à la main sur Discord sont conservées par une mise à jour (jamais envoyées par FoxSecura), mais perdues si la règle est recréée (migration de déclencheur, restauration après suppression).
+
+### Garde des règles AutoMod (`automod_rule_guard`, branchée, tranche 11)
+
+Sur les entrées d'audit `AutoModRuleUpdate` (141) et `AutoModRuleDelete` (142) retenues par le socle (propriétaire et FoxSecura lui-même ignorés : pas de boucle avec nos réconciliations) :
+
+- altération = **suppression** d'une règle FoxSecura ou **modification qui la désactive** ; une modification qui la laisse active est ignorée ;
+- nom considéré : l'**ancien** nom s'il figure dans les changements, sinon le nom actuel (relu sur Discord) : un renommage **et** une désactivation dans la même édition sont détectés (correctif par rapport à la V1) ; une règle sans le préfixe est ignorée ;
+- interrupteur lié désactivé : rien à protéger ;
+- sinon, **seule cette règle** est réconciliée (verrou de guilde) : recréée si supprimée, renommée et réactivée si modifiée — même si l'auteur est sur la liste blanche (restauration d'une ressource protégée). **Aucune sanction** de l'auteur (V1) ;
+- incident `critical` : auteur, règle, preuve `deleted` / `disabled`, action `restore_automod_rule` (`missing_permission` sans `MANAGE_GUILD`).
+
+**Intents** : rien de nouveau. Les entrées arrivent par `GUILD_MODERATION` (avec `VIEW_AUDIT_LOG`) ; `AUTO_MODERATION_CONFIGURATION` n'est pas demandé.
+
+**Permissions** : `MANAGE_GUILD` (lire, créer, modifier et supprimer les règles), `VIEW_AUDIT_LOG` (garde).
 
 ## Décisions et actions
 

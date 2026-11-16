@@ -117,6 +117,16 @@ Le projet suit le versionnage sémantique. La version `0.1.0` correspond à la p
 - Permissions : `MANAGE_MESSAGES`, `MANAGE_CHANNELS`, `MODERATE_MEMBERS`, `MANAGE_ROLES`, `MANAGE_WEBHOOKS` selon les modules. Aucun nouvel intent (`MESSAGE_DELETE` relève de `GUILD_MESSAGES`), aucune nouvelle crate.
 - **Limites** : état en mémoire mono-instance (rafales, suivi des ghost pings, marques) ; **faux positifs** possibles : ghost ping attribué à l'auteur quand un modérateur supprime le message, mode lent posé sur un salon très actif.
 
+### Règles AutoMod natives (tranche 11)
+
+- Six règles AutoMod Discord « FoxSecura • … » (invitations, liens adultes, mots interdits, mentions, spam, profil) synchronisées par `plan_reconciliation` : charge JSON brute construite par une fonction pure (serenity 0.12.5 ne connaît ni `MEMBER_PROFILE`, ni `MEMBER_UPDATE`, ni `BLOCK_MEMBER_INTERACTION`, ni `mention_raid_protection_enabled`), modification sans `trigger_type`, migration de déclencheur par suppression puis création, raisons d'audit V1 (`FoxSecura AutoMod setup`, `… duplicate cleanup`, `… cleanup`).
+- Limites Discord : 1000 mots-clés de 60 caractères (mot perso plus long exclu de la règle native mais toujours filtré au runtime, signalé), `mention_total_limit` ≤ 50, message ≤ 150. Règle étrangère sur un type unique : règle FoxSecura ignorée.
+- Exécution : pré-vérification `MANAGE_GUILD` (aucun appel sinon), échec isolé par règle, rapport par règle, **verrou asynchrone par guilde** autour de chaque réconciliation.
+- Déclencheurs : interrupteurs liés de `/config`, changement de la liste de mots, bouton « Synchroniser AutoMod », bouton « Supprimer les règles FoxSecura » (propriétaire, confirmation, préfixe seul). Aucune création au démarrage ni à l'arrivée sur une guilde.
+- `/config` → AutoMod : état des six règles lu sur Discord (« état inconnu » si la lecture échoue), nouveaux interrupteurs `member_profile_filter` et `automod_rule_guard` (désactivés par défaut). Nouveau droit `Right::Owner`.
+- Garde des règles (`automod_rule_guard`) : `AuditAction::AutoModRuleUpdate` (141) et `AutoModRuleDelete` (142) ; suppression ou désactivation d'une règle FoxSecura → restauration de cette seule règle, sans sanction, même pour la liste blanche ; ancien nom pris en compte (renommage + désactivation détectés, correctif V1) ; incident `critical` `restore_automod_rule`. Le détecteur non branché `detect_managed_rule_change` est remplacé.
+- Aucun nouvel intent (entrées d'audit via `GUILD_MODERATION`), aucune migration (table générique des modules), aucune nouvelle dépendance. Limites connues : pas d'exemptions de rôles ni de salons (parité V1), mono-instance.
+
 ### Configuration (`/config`)
 
 - Catégorie Anti-Raid : interrupteur `anti_raid`, modal du seuil et de la fenêtre (bornes validées, refus sans écriture), état du verrouillage (inactif, actif avec levée prévue, levée en cours, nouvelle tentative), bouton « Lever le verrouillage » (`Right::Whitelist`).

@@ -14,7 +14,7 @@ Si un secret est accidentellement publié, sa suppression de Git ne suffit pas :
 
 ## Permissions minimales
 
-N'accordez au bot que les permissions nécessaires aux protections effectivement activées. L'anti-nuke exige `VIEW_AUDIT_LOG`, `MANAGE_ROLES` et `MANAGE_CHANNELS` (voir ci-dessous), mais cela ne justifie pas d'accorder `Administrator` par défaut.
+N'accordez au bot que les permissions nécessaires aux protections effectivement activées. L'anti-nuke exige `VIEW_AUDIT_LOG`, `MANAGE_ROLES` et `MANAGE_CHANNELS`, les règles AutoMod natives `MANAGE_GUILD` (voir ci-dessous), mais cela ne justifie pas d'accorder `Administrator` par défaut.
 
 La hiérarchie Discord s'applique toujours : FoxSecura ne peut pas sanctionner un membre ou modifier un rôle placé au-dessus de son rôle le plus élevé.
 
@@ -156,6 +156,17 @@ Branché en tranche 8 : rafales par auteur (bans, expulsions, exclusions, déban
 - **Messages de webhook** : un webhook d'intégration légitime (alertes, flux RSS) qui poste 5 messages en 5 s ou mentionne 5 rôles voit ses messages supprimés ; ignorez son salon. Jamais de sanction, et jamais les messages de FoxSecura.
 - **Applications externes** : un administrateur hors liste blanche qui accorde « Utiliser des applications externes » voit **seul ce bit** retiré et est mis en quarantaine (retrait des rôles dangereux) ; mettez l'équipe sur la liste blanche avant d'activer.
 - **Mono-instance** : rafales, suivi des ghost pings et marques de suppression vivent en mémoire d'un seul processus ; seules les lignes de mode lent automatique survivent à un redémarrage.
+
+### Règles AutoMod natives et leur garde (tranche 11)
+
+- **Permission** : `MANAGE_GUILD`, pour lire, créer, modifier et supprimer les règles. Sans elle, aucune règle n'est touchée et `/config` le dit ; la garde publie un incident `critical` avec `missing_permission`.
+- **Propriété par le nom** : seules les règles dont le nom commence par `FoxSecura •` sont gérées. Un modérateur qui nomme une règle ainsi la confie à FoxSecura (« Synchroniser » ou « Supprimer » peuvent la toucher) ; une règle d'un autre bot n'est jamais supprimée : sur un type unique (préréglage, spam, mentions, profil), la règle FoxSecura est simplement ignorée.
+- **Aucune création sans action humaine** : jamais au démarrage ni à l'arrivée sur une guilde ; seule la garde recrée une règle qui existait.
+- **Suppression réservée au propriétaire**, avec confirmation.
+- **Garde sans sanction** : un modérateur (même sur liste blanche) qui supprime ou désactive une règle FoxSecura la voit restaurée, sans quarantaine ni timeout ; l'incident est `critical` et compte pour le mode panique. Le propriétaire n'est jamais contrarié. Pour désactiver durablement une règle, utilisez son interrupteur dans `/config`.
+- **Boucles** : toutes les écritures portent une raison `FoxSecura AutoMod …` et ont le bot pour auteur : le socle les écarte.
+- **Pas d'exemptions de rôles ni de salons** posées par FoxSecura (parité V1) : la règle native s'applique au staff. Les exemptions ajoutées à la main sur Discord sont conservées par une mise à jour, perdues si la règle est recréée (migration de déclencheur, restauration après suppression).
+- **Mono-instance** : le verrou par guilde des réconciliations vit en mémoire ; deux instances pourraient créer un doublon (supprimé à la synchronisation suivante).
 
 ## Modération IA
 
