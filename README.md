@@ -1,8 +1,9 @@
 # FoxSecura
 
-[![Cargo Check](https://github.com/FoxSecura/FoxSecura/actions/workflows/cargo-check.yml/badge.svg)](https://github.com/FoxSecura/FoxSecura/actions/workflows/cargo-check.yml)
-[![Rust](https://img.shields.io/badge/Rust-1.98.1-DEA584?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0--only-663399?style=flat&logo=gnu&logoColor=white)](LICENSE)
+[![Cargo Check](https://img.shields.io/github/actions/workflow/status/FoxSecura/FoxSecura/cargo-check.yml?style=plastic&logo=githubactions&logoColor=white&label=Cargo%20Check)](https://github.com/FoxSecura/FoxSecura/actions/workflows/cargo-check.yml)
+[![Rust](https://img.shields.io/badge/Rust-1.98.1-DEA584?style=plastic&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Discord — Inviter le bot](https://img.shields.io/badge/Discord-Inviter_le_bot-5865F2?style=plastic&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1540682643627184238)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0--only-663399?style=plastic&logo=gnu&logoColor=white)](LICENSE)
 
 **FoxSecura** est un bot Discord de sécurité écrit en Rust. Il vise à protéger les serveurs contre les raids, le spam, les abus de permissions, les destructions de ressources et différents contenus à risque.
 
