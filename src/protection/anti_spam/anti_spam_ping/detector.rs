@@ -12,7 +12,7 @@ pub enum MentionTargetKind {
 }
 
 impl MentionTargetKind {
-    fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::User => "user",
             Self::Role => "role",

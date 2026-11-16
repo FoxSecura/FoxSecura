@@ -560,7 +560,8 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::AntiVanityChange
         | ProtectionModule::WebhookWatch
         | ProtectionModule::LimitRole
-        | ProtectionModule::AntiPingOwner => {
+        | ProtectionModule::AntiPingOwner
+        | ProtectionModule::AntiSpamPing => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }

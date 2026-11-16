@@ -20,7 +20,10 @@ use super::{anti_spam, bot_assigned_roles, content_filter, honeypot, unix_durati
 use crate::app::{AppData, run_database};
 
 /// Modules de l'étape « mentions » de la chaîne.
-const MENTION_MODULES: [ProtectionModule; 1] = [ProtectionModule::AntiPingOwner];
+const MENTION_MODULES: [ProtectionModule; 2] = [
+    ProtectionModule::AntiPingOwner,
+    ProtectionModule::AntiSpamPing,
+];
 
 /// Message converti depuis un événement Discord, prêt pour le pipeline.
 struct InspectedMessage {

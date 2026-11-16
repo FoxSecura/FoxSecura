@@ -29,6 +29,7 @@ use crate::protection::anti_spam::anti_mass_mention::{
 use crate::protection::anti_spam::anti_scam::{
     AntiScamContext, AntiScamObservation, ScamConfidence, detect_scam_message,
 };
+use crate::protection::anti_spam::anti_spam_ping::MentionTarget;
 use crate::protection::anti_spam::attachment_filter::detect_dangerous_attachment;
 use crate::protection::anti_spam::invisible_char_filter::detect_obfuscated_text;
 use crate::protection::anti_spam::malicious_link::{MaliciousLinkContext, detect_malicious_link};
@@ -39,7 +40,10 @@ use crate::protection::shared::{
     MessageScope, ModuleSet, ProtectionDecision, ProtectionModule, extract_url_signals,
 };
 
-pub use mentions::{MentionBursts, MentionFacts, OWNER_PING_THRESHOLD, OWNER_PING_WINDOW};
+pub use mentions::{
+    MENTION_SPAM_THRESHOLD, MENTION_SPAM_WINDOW, MentionBursts, MentionFacts, OWNER_PING_THRESHOLD,
+    OWNER_PING_WINDOW,
+};
 pub use response::{
     ANTI_SCAM_AUDIT_LABEL, ANTI_SCAM_BAN_PURGE, ANTI_SCAM_TIMEOUT, EXCERPT_MAX_CHARS, FollowUp,
     FollowUpOutcome, MAX_SCAM_SIGNALS, RevisionCheck, anti_scam_audit_reason, build_incident,
@@ -196,6 +200,13 @@ pub enum ContentFinding {
     },
     BadWord {
         word: String,
+    },
+    /// Rafale de messages qui mentionnent la même cible.
+    MentionSpam {
+        target: MentionTarget,
+        count: usize,
+        threshold: usize,
+        window: Duration,
     },
     /// Rafale de messages qui mentionnent le propriétaire du serveur.
     OwnerPing {
@@ -443,7 +454,8 @@ fn detect_module(
         | ProtectionModule::WebhookWatch
         | ProtectionModule::LimitRole
         // Étape « mentions » : rafales comptées par `MentionBursts`.
-        | ProtectionModule::AntiPingOwner => None,
+        | ProtectionModule::AntiPingOwner
+        | ProtectionModule::AntiSpamPing => None,
     }
 }
 

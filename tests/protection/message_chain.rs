@@ -8,10 +8,11 @@ use std::time::Duration;
 
 use foxsecura::i18n::Language;
 use foxsecura::logs::{LogSeverity, SecurityEvidence, ThresholdUnit};
+use foxsecura::protection::anti_spam::anti_spam_ping::{MentionTarget, MentionTargetKind};
 use foxsecura::protection::content_filter::{
-    AuthorContext, ContentFinding, MentionBursts, MentionFacts, MentionStage, MessageContent,
-    MessageEvent, MessageRoute, OWNER_PING_THRESHOLD, OWNER_PING_WINDOW, build_incident,
-    route_message_with,
+    AuthorContext, ContentFinding, MENTION_SPAM_THRESHOLD, MENTION_SPAM_WINDOW, MentionBursts,
+    MentionFacts, MentionStage, MessageContent, MessageEvent, MessageRoute, OWNER_PING_THRESHOLD,
+    OWNER_PING_WINDOW, build_incident, route_message_with,
 };
 use foxsecura::protection::shared::{
     DeleteMessageOutcome, GuildMessage, MessageScope, ModuleSet, ProtectionModule,
@@ -287,4 +288,135 @@ fn owner_ping_incident_carries_the_burst_and_follows_the_deletion() {
         &DeleteMessageOutcome::NotDeletable,
     );
     assert_eq!(kept.severity, LogSeverity::Critical);
+}
+
+// --- B. Anti-spam de mentions ---
+
+fn spam_target(route: &MessageRoute) -> Option<(MentionTarget, usize)> {
+    match route {
+        MessageRoute::Filter(detection) => match detection.finding {
+            ContentFinding::MentionSpam { target, count, .. } => Some((target, count)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[test]
+fn mention_spam_triggers_on_the_third_mention_of_a_target_within_ten_seconds() {
+    let enabled = modules(&[ProtectionModule::AntiSpamPing]);
+    let mut bursts = MentionBursts::new();
+
+    assert_eq!(MENTION_SPAM_THRESHOLD, 3);
+    assert_eq!(MENTION_SPAM_WINDOW, Duration::from_secs(10));
+    assert_eq!(
+        created(&mut bursts, enabled, facts(AUTHOR, 0, &[7], &[])),
+        MessageRoute::AntiSpam
+    );
+    assert_eq!(
+        created(&mut bursts, enabled, facts(AUTHOR, 5, &[7], &[])),
+        MessageRoute::AntiSpam
+    );
+    let route = created(&mut bursts, enabled, facts(AUTHOR, 10, &[7], &[]));
+    assert_eq!(
+        spam_target(&route),
+        Some((
+            MentionTarget {
+                kind: MentionTargetKind::User,
+                id: 7
+            },
+            3
+        ))
+    );
+}
+
+#[test]
+fn mention_spam_outside_the_window_does_not_add_up() {
+    let enabled = modules(&[ProtectionModule::AntiSpamPing]);
+    let mut bursts = MentionBursts::new();
+
+    for second in [0, 6, 17] {
+        assert_eq!(
+            created(&mut bursts, enabled, facts(AUTHOR, second, &[], &[9])),
+            MessageRoute::AntiSpam,
+            "seconde {second}"
+        );
+    }
+}
+
+#[test]
+fn mention_spam_is_isolated_per_target_kind_and_author() {
+    let enabled = modules(&[ProtectionModule::AntiSpamPing]);
+    let mut bursts = MentionBursts::new();
+
+    // Utilisateur 7 et rôle 7 sont deux cibles distinctes.
+    created(&mut bursts, enabled, facts(AUTHOR, 0, &[7], &[]));
+    created(&mut bursts, enabled, facts(AUTHOR, 1, &[7], &[]));
+    assert_eq!(
+        created(&mut bursts, enabled, facts(AUTHOR, 2, &[], &[7])),
+        MessageRoute::AntiSpam
+    );
+    // Un autre auteur qui mentionne la même cible : compté à part.
+    assert_eq!(
+        created(&mut bursts, enabled, facts(AUTHOR + 1, 2, &[7], &[])),
+        MessageRoute::AntiSpam
+    );
+    // Une autre cible du même auteur : comptée à part.
+    assert_eq!(
+        created(&mut bursts, enabled, facts(AUTHOR, 2, &[8], &[])),
+        MessageRoute::AntiSpam
+    );
+    assert_eq!(
+        spam_target(&created(&mut bursts, enabled, facts(AUTHOR, 3, &[7], &[]))).map(|(t, _)| t),
+        Some(MentionTarget {
+            kind: MentionTargetKind::User,
+            id: 7
+        })
+    );
+}
+
+#[test]
+fn mention_spam_reports_the_first_target_to_reach_the_threshold() {
+    let enabled = modules(&[ProtectionModule::AntiSpamPing]);
+    let mut bursts = MentionBursts::new();
+
+    created(&mut bursts, enabled, facts(AUTHOR, 0, &[1], &[2]));
+    created(&mut bursts, enabled, facts(AUTHOR, 1, &[], &[2]));
+    // Le rôle 2 atteint le seuil avant l'utilisateur 1.
+    let route = created(&mut bursts, enabled, facts(AUTHOR, 2, &[1], &[2]));
+    assert_eq!(
+        spam_target(&route),
+        Some((
+            MentionTarget {
+                kind: MentionTargetKind::Role,
+                id: 2
+            },
+            3
+        ))
+    );
+}
+
+#[test]
+fn mention_spam_is_never_evaluated_for_edits_or_exempt_authors() {
+    let enabled = modules(&[ProtectionModule::AntiSpamPing]);
+    let mut bursts = MentionBursts::new();
+    let message = text_message("salut");
+
+    for second in 0..5 {
+        for (scope, event) in [
+            (MessageScope::Enforce, MessageEvent::Edited),
+            (MessageScope::ExemptAuthor, MessageEvent::Created),
+        ] {
+            let route = route(
+                &mut bursts,
+                enabled,
+                scope,
+                event,
+                &message,
+                facts(AUTHOR, second, &[7], &[]),
+            );
+            assert_eq!(route, MessageRoute::Skip);
+        }
+    }
+    assert_eq!(bursts.tracked_key_count(), 0);
 }

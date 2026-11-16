@@ -2026,5 +2026,20 @@ catalog! {
         en: "Repeated mentions of the server owner: message deleted.",
         fr: "Mentions répétées du propriétaire du serveur : message supprimé.",
         de: "Wiederholte Erwähnungen des Serverbesitzers: Nachricht gelöscht."
+    },
+    ModuleAntiSpamPing => {
+        en: "Mention spam",
+        fr: "Spam de mentions",
+        de: "Erwähnungsspam"
+    },
+    AntiSpamPingSummary => {
+        en: "Same user or role mentioned repeatedly: message deleted.",
+        fr: "Même utilisateur ou rôle mentionné en rafale : message supprimé.",
+        de: "Derselbe Nutzer oder dieselbe Rolle wiederholt erwähnt: Nachricht gelöscht."
+    },
+    ContentFilterEvidenceTarget => {
+        en: "Mentioned target",
+        fr: "Cible mentionnée",
+        de: "Erwähntes Ziel"
     }
 }
