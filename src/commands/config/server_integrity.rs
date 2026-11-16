@@ -81,6 +81,11 @@ pub fn state_fields(
             text(language, TextKey::ConfigServerIntegrityNotice).to_owned(),
             false,
         ),
+        (
+            text(language, TextKey::ModuleAntiExternalApplication),
+            text(language, TextKey::ConfigExternalAppsNotice).to_owned(),
+            false,
+        ),
     ]
 }
 

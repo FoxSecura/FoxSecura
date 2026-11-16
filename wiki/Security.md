@@ -148,6 +148,15 @@ Branché en tranche 8 : rafales par auteur (bans, expulsions, exclusions, déban
 - **Boucles** : chaque action de FoxSecura (retour en arrière, suppression de webhook, restauration, retrait du rôle plafonné) porte une raison `FoxSecura …` et a le bot pour auteur : le socle l'écarte, elle ne se re-déclenche jamais.
 - **Mono-instance** : l'index des auteurs récents (2 048 entrées, 5 minutes) vit en mémoire.
 
+### Mentions, ghost pings, mode lent, webhooks et applications externes (tranche 10)
+
+- **Ghost ping attribué à l'auteur** : Discord ne dit pas qui a supprimé un message (l'auto-suppression n'est pas journalisée, celles des modérateurs sont regroupées). Un modérateur qui supprime un message de 5 mentions ou plus produit une alerte au nom de son auteur ; deux en 10 minutes mènent au **timeout de 5 minutes** de l'auteur. Le premier ghost ping n'est jamais sanctionné ; le propriétaire et la liste blanche ne le sont jamais. Les suppressions de FoxSecura lui-même sont marquées avant l'appel et ne comptent jamais ; une purge (`MESSAGE_DELETE_BULK`) non plus.
+- **Mode lent sur un salon très actif** : un événement ou une annonce suivie peut dépasser 12 messages en 7 s ; le salon passe alors à 10 s pendant au moins 90 s. Le mode lent n'est jamais réduit, n'est jamais posé pendant un verrouillage, et n'est rendu que si le salon porte encore la valeur posée : un réglage de l'équipe entre-temps est respecté. L'état d'origine est écrit en base avant la modification.
+- **Anti-ping du propriétaire et spam de mentions** : suppression seule, jamais sur une modification ni pour la liste blanche ; un salon où l'on mentionne souvent le propriétaire (support) gagne à être ignoré.
+- **Messages de webhook** : un webhook d'intégration légitime (alertes, flux RSS) qui poste 5 messages en 5 s ou mentionne 5 rôles voit ses messages supprimés ; ignorez son salon. Jamais de sanction, et jamais les messages de FoxSecura.
+- **Applications externes** : un administrateur hors liste blanche qui accorde « Utiliser des applications externes » voit **seul ce bit** retiré et est mis en quarantaine (retrait des rôles dangereux) ; mettez l'équipe sur la liste blanche avant d'activer.
+- **Mono-instance** : rafales, suivi des ghost pings et marques de suppression vivent en mémoire d'un seul processus ; seules les lignes de mode lent automatique survivent à un redémarrage.
+
 ## Modération IA
 
 L'IA doit être traitée comme un signal externe non déterministe. Les résultats doivent être validés contre un schéma, convertis vers le vocabulaire FoxSecura puis soumis à la politique locale.

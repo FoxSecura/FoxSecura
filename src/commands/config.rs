@@ -1832,7 +1832,8 @@ fn build_embed(
                         language,
                         content_filters::ANTI_SPAM_MODULES,
                         *modules,
-                    )),
+                    ))
+                    .fields([content_filters::message_protections_field(language)]),
                 (
                     content_filters::AUTOMOD_CATEGORY_ID,
                     Some(CategoryView::Automod { modules, bad_words }),

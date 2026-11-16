@@ -44,13 +44,15 @@ Priorités : corrélation avec les audit logs, identification fiable de l'exécu
 
 **Fait (tranche 9)** : restauration des salons et rôles supprimés (modes anti et auto), anti-permissions avec retour en arrière, alertes sur les réglages du serveur et l'URL personnalisée, surveillance des webhooks, rôle plafonné (migration 10), catégorie `/config` « Intégrité du serveur ».
 
-**Reste** : règles AutoMod natives et leur garde (`automod_rule_guard`), snapshots et sauvegardes du serveur (restauration complète, au-delà de l'objet supprimé), filtre de profil des membres, applications externes ; état partagé si plusieurs instances.
+**Fait (tranche 10)** : applications externes (`anti_external_application`, retrait du seul bit, combiné à l'anti-permissions), messages de webhook (interrupteur `webhook_watch`).
+
+**Reste** : règles AutoMod natives et leur garde (`automod_rule_guard`), snapshots et sauvegardes du serveur (restauration complète, au-delà de l'objet supprimé), filtre de profil des membres ; état partagé si plusieurs instances.
 
 ## 5. Anti-Raid et Anti-Spam
 
 Priorités : états temporels efficaces, nettoyage des fenêtres, configuration par serveur, cohérence des exemptions et contrôle des faux positifs.
 
-L'anti-spam par rafales est branché au runtime. La liste blanche et les salons ignorés sont appliqués. Les neuf filtres de contenu sont branchés, dont l'anti-arnaque avec sanctions. Côté arrivées : liste noire, anti-raid par rafales (avec verrouillage temporaire du serveur), anti-bot, nouveaux comptes (avec quarantaine de repli), doubles comptes, usurpation d'identité et pseudos hoistés sont branchés, ainsi que la quarantaine et le honeypot. Restent notamment : limitation du volume d'incidents pendant une rafale (un incident par arrivée au-delà du seuil) et, si le bot doit tourner sur plusieurs instances, un état partagé (anti-spam, fenêtres d'arrivées, minuteries de verrouillage et invalidation du cache de configuration).
+L'anti-spam par rafales est branché au runtime. La liste blanche et les salons ignorés sont appliqués. Les neuf filtres de contenu sont branchés, dont l'anti-arnaque avec sanctions. Côté arrivées : liste noire, anti-raid par rafales (avec verrouillage temporaire du serveur), anti-bot, nouveaux comptes (avec quarantaine de repli), doubles comptes, usurpation d'identité et pseudos hoistés sont branchés, ainsi que la quarantaine et le honeypot. **Fait (tranche 10)** : anti-ping du propriétaire, anti-spam de mentions (étape « mentions » de la chaîne, ordre V1), anti-ghost-ping (suppressions, modifications, récidive), mode lent automatique (migration 11). Restent notamment : limitation du volume d'incidents pendant une rafale (un incident par arrivée au-delà du seuil) et, si le bot doit tourner sur plusieurs instances, un état partagé (anti-spam, fenêtres d'arrivées, minuteries de verrouillage et invalidation du cache de configuration).
 
 ## 6. AutoMod natif
 

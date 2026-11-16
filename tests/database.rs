@@ -3317,3 +3317,47 @@ fn migration_ten_to_eleven_adds_the_auto_slowmode_table_and_keeps_data() {
     drop(database);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn tranche_ten_module_toggles_reach_the_message_context_immediately() {
+    let database = Database::open_in_memory().unwrap();
+    let modules = [
+        ProtectionModule::AntiPingOwner,
+        ProtectionModule::AntiSpamPing,
+        ProtectionModule::AntiGhostPing,
+        ProtectionModule::AutoSlowmode,
+        ProtectionModule::AntiExternalApplication,
+        ProtectionModule::WebhookWatch,
+    ];
+    // Lecture qui remplit le cache de la guilde.
+    assert!(
+        database
+            .message_guard_context(123, 1, 2)
+            .unwrap()
+            .enabled_modules
+            .is_empty()
+    );
+    for module in modules {
+        database.set_protection_module(123, module, true).unwrap();
+        // L'écriture invalide le cache : le moteur l'applique au message
+        // suivant.
+        assert!(
+            database
+                .message_guard_context(123, 1, 2)
+                .unwrap()
+                .enabled_modules
+                .contains(module),
+            "{module}"
+        );
+    }
+    database
+        .set_protection_module(123, ProtectionModule::AutoSlowmode, false)
+        .unwrap();
+    assert!(
+        !database
+            .message_guard_context(123, 1, 2)
+            .unwrap()
+            .enabled_modules
+            .contains(ProtectionModule::AutoSlowmode)
+    );
+}
