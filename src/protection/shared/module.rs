@@ -54,11 +54,12 @@ pub enum ProtectionModule {
     LimitRole,
     AntiPingOwner,
     AntiSpamPing,
+    AntiGhostPing,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 37] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -95,6 +96,7 @@ impl ProtectionModule {
         Self::LimitRole,
         Self::AntiPingOwner,
         Self::AntiSpamPing,
+        Self::AntiGhostPing,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -136,6 +138,7 @@ impl ProtectionModule {
             Self::LimitRole => "limit_role",
             Self::AntiPingOwner => "anti_ping_owner",
             Self::AntiSpamPing => "anti_spam_ping",
+            Self::AntiGhostPing => "anti_ghost_ping",
         }
     }
 

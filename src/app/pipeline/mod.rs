@@ -11,6 +11,7 @@ pub mod anti_nuke;
 mod anti_spam;
 mod content_filter;
 mod delete;
+pub mod ghost_ping;
 mod honeypot;
 mod incident_log;
 mod limit_role;

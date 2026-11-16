@@ -561,7 +561,8 @@ fn trigger(module: ProtectionModule) -> MessageContent {
         | ProtectionModule::WebhookWatch
         | ProtectionModule::LimitRole
         | ProtectionModule::AntiPingOwner
-        | ProtectionModule::AntiSpamPing => {
+        | ProtectionModule::AntiSpamPing
+        | ProtectionModule::AntiGhostPing => {
             unreachable!("module hors filtres de contenu, absent de CONTENT_FILTERS")
         }
     }

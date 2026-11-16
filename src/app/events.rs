@@ -24,6 +24,24 @@ pub async fn handle(
         serenity::FullEvent::MessageUpdate { event, .. } => {
             pipeline::message::handle_update(ctx, data, event).await;
         }
+        serenity::FullEvent::MessageDelete {
+            deleted_message_id,
+            guild_id,
+            ..
+        } => {
+            pipeline::ghost_ping::handle_delete(ctx, data, *guild_id, *deleted_message_id).await;
+        }
+        serenity::FullEvent::MessageDeleteBulk {
+            multiple_deleted_messages_ids,
+            guild_id,
+            ..
+        } => {
+            pipeline::ghost_ping::handle_delete_bulk(
+                data,
+                *guild_id,
+                multiple_deleted_messages_ids,
+            );
+        }
         serenity::FullEvent::GuildMemberAddition { new_member } => {
             pipeline::member::handle_join(ctx, data, new_member).await;
         }

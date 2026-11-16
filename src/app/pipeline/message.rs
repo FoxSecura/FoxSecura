@@ -11,11 +11,12 @@ use foxsecura::protection::content_filter::{
     MessageUpdate, MissingFields, route_message_with,
 };
 use foxsecura::protection::shared::{
-    AuthorWhitelist, MessageSnapshot, ProtectionModule, is_author_exempt, message_scope,
-    screen_message, snowflake_timestamp,
+    AuthorWhitelist, MessageScope, MessageSnapshot, ProtectionModule, is_author_exempt,
+    message_scope, screen_message, snowflake_timestamp,
 };
 use poise::serenity_prelude as serenity;
 
+use super::ghost_ping::{self, ObservedMentions};
 use super::{anti_spam, bot_assigned_roles, content_filter, honeypot, unix_duration};
 use crate::app::{AppData, run_database};
 
@@ -32,9 +33,9 @@ struct InspectedMessage {
     author: AuthorContext,
     /// `None` si Discord n'a pas joint le membre : aucune exemption par rôle.
     member_roles: Option<Vec<u64>>,
-    /// Mentions résolues par Discord (créations seulement : vides pour une
-    /// modification, que l'étape « mentions » n'analyse jamais).
-    mentions: Mentions,
+    /// Mentions résolues par Discord ; `None` si une modification les omet.
+    /// L'étape « mentions » ne les lit que pour une création.
+    mentions: Option<Mentions>,
 }
 
 /// Utilisateurs et rôles réellement mentionnés, dédoublonnés.
@@ -46,12 +47,12 @@ struct Mentions {
 
 impl Mentions {
     fn of(message: &serenity::Message) -> Self {
-        let mut users: Vec<u64> = message.mentions.iter().map(|user| user.id.get()).collect();
-        let mut roles: Vec<u64> = message
-            .mention_roles
-            .iter()
-            .map(|role| role.get())
-            .collect();
+        Self::new(&message.mentions, &message.mention_roles)
+    }
+
+    fn new(users: &[serenity::User], roles: &[serenity::RoleId]) -> Self {
+        let mut users: Vec<u64> = users.iter().map(|user| user.id.get()).collect();
+        let mut roles: Vec<u64> = roles.iter().map(|role| role.get()).collect();
         users.sort_unstable();
         users.dedup();
         roles.sort_unstable();
@@ -80,7 +81,7 @@ pub async fn handle(ctx: &serenity::Context, data: &AppData, message: &serenity:
             member,
         ),
         member_roles: member_roles(member),
-        mentions: Mentions::of(message),
+        mentions: Some(Mentions::of(message)),
     };
 
     process(ctx, data, inspected, MessageEvent::Created).await;
@@ -128,7 +129,11 @@ pub async fn handle_update(
         }),
         author: author_context(author.id, unix_duration(edited_at), member),
         member_roles: member_roles(member),
-        mentions: Mentions::default(),
+        mentions: event
+            .mentions
+            .as_deref()
+            .zip(event.mention_roles.as_deref())
+            .map(|(users, roles)| Mentions::new(users, roles)),
     };
 
     process(ctx, data, inspected, MessageEvent::Edited).await;
@@ -189,6 +194,23 @@ async fn process(
         .guild_config
         .as_ref()
         .map_or(DEFAULT_LANGUAGE, |guild_config| guild_config.language);
+
+    // Anti-ghost-ping : suivi à la création, comparaison à la modification,
+    // avant toute suppression par la chaîne (marquée, donc jamais comptée).
+    if scope != MessageScope::IgnoredChannel
+        && context
+            .enabled_modules
+            .contains(ProtectionModule::AntiGhostPing)
+    {
+        let mentions = inspected
+            .mentions
+            .as_ref()
+            .map(|mentions| ObservedMentions {
+                users: &mentions.users,
+                roles: &mentions.roles,
+            });
+        ghost_ping::observe(ctx, data, &guild_message, event, scope, mentions).await;
+    }
 
     // Honeypot, avant tous les filtres. Le cache n'est lu que pour un
     // message du salon piège.
@@ -255,6 +277,8 @@ async fn process(
         .flatten();
     let route = {
         let mut bursts = mention_modules.then(|| data.protection.mention_bursts());
+        let none = Mentions::default();
+        let mentions = inspected.mentions.as_ref().unwrap_or(&none);
         let stage = bursts.as_deref_mut().map(|bursts| MentionStage {
             bursts,
             facts: MentionFacts {
@@ -262,8 +286,8 @@ async fn process(
                 author_id,
                 timestamp: guild_message.timestamp,
                 owner_id,
-                users: &inspected.mentions.users,
-                roles: &inspected.mentions.roles,
+                users: &mentions.users,
+                roles: &mentions.roles,
             },
         });
         route_message_with(

@@ -2041,5 +2041,60 @@ catalog! {
         en: "Mentioned target",
         fr: "Cible mentionnée",
         de: "Erwähntes Ziel"
+    },
+    ModuleAntiGhostPing => {
+        en: "Ghost ping",
+        fr: "Ghost ping",
+        de: "Ghost-Ping"
+    },
+    AntiGhostPingSummary => {
+        en: "Mass ghost ping: a message mentioning many members or roles disappeared shortly after being sent.",
+        fr: "Ghost ping de masse : un message qui mentionnait de nombreux membres ou rôles a disparu peu après son envoi.",
+        de: "Massen-Ghost-Ping: Eine Nachricht mit vielen erwähnten Mitgliedern oder Rollen verschwand kurz nach dem Senden."
+    },
+    AntiGhostPingRepeatSummary => {
+        en: "Repeated mass ghost ping: author timed out for 5 minutes.",
+        fr: "Ghost ping de masse répété : auteur exclu 5 minutes.",
+        de: "Wiederholter Massen-Ghost-Ping: Autor für 5 Minuten stummgeschaltet."
+    },
+    AntiGhostPingEvidenceTargets => {
+        en: "Removed mentions",
+        fr: "Mentions retirées",
+        de: "Entfernte Erwähnungen"
+    },
+    AntiGhostPingEvidenceAttribution => {
+        en: "Attribution",
+        fr: "Attribution",
+        de: "Zuordnung"
+    },
+    AntiGhostPingAttributionAuthor => {
+        en: "message author (Discord does not say who deleted it)",
+        fr: "auteur du message (Discord ne dit pas qui l'a supprimé)",
+        de: "Autor der Nachricht (Discord gibt nicht an, wer sie gelöscht hat)"
+    },
+    AntiGhostPingEventDeleted => {
+        en: "deleted",
+        fr: "supprimé",
+        de: "gelöscht"
+    },
+    AntiGhostPingEvidenceRepeat => {
+        en: "Repeat rule",
+        fr: "Règle de récidive",
+        de: "Wiederholungsregel"
+    },
+    AntiGhostPingRecommendation => {
+        en: "Check whether the author or a moderator removed the message before acting: the deletion is attributed to the author.",
+        fr: "Vérifiez si l'auteur ou un modérateur a retiré le message avant d'agir : la suppression est attribuée à l'auteur.",
+        de: "Prüfe, ob der Autor oder ein Moderator die Nachricht entfernt hat, bevor du handelst: Die Löschung wird dem Autor zugeordnet."
+    },
+    AntiGhostPingRecommendationRepeat => {
+        en: "Repeat offense: review the member's recent messages and extend the sanction if needed.",
+        fr: "Récidive : examinez les messages récents du membre et prolongez la sanction si besoin.",
+        de: "Wiederholung: Prüfe die letzten Nachrichten des Mitglieds und verlängere die Sanktion bei Bedarf."
+    },
+    AntiGhostPingRecommendationSanctionFailed => {
+        en: "The timeout was not applied: check FoxSecura's Moderate Members permission and role position.",
+        fr: "Le timeout n'a pas été appliqué : vérifiez la permission Modérer les membres et la position du rôle de FoxSecura.",
+        de: "Der Timeout wurde nicht angewendet: Prüfe die Berechtigung Mitglieder moderieren und die Rollenposition von FoxSecura."
     }
 }

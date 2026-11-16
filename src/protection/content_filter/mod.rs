@@ -478,7 +478,9 @@ fn detect_module(
         | ProtectionModule::LimitRole
         // Étape « mentions » : rafales comptées par `MentionBursts`.
         | ProtectionModule::AntiPingOwner
-        | ProtectionModule::AntiSpamPing => None,
+        | ProtectionModule::AntiSpamPing
+        // Anti-ghost-ping : suppressions et modifications suivies à part.
+        | ProtectionModule::AntiGhostPing => None,
     }
 }
 

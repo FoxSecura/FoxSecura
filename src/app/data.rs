@@ -9,6 +9,7 @@ use foxsecura::protection::anti_nuke::audit::{AuditEntryDedup, RecentAuditAuthor
 use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
 use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
+use foxsecura::protection::anti_spam::anti_ghost_ping::{AntiGhostPingDetector, BotDeletionMarks};
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
 use foxsecura::protection::content_filter::MentionBursts;
@@ -44,6 +45,8 @@ impl AppData {
 pub struct ProtectionState {
     message_flood: Mutex<MessageFloodTracker>,
     mention_bursts: Mutex<MentionBursts>,
+    ghost_pings: Mutex<AntiGhostPingDetector>,
+    bot_deletions: Mutex<BotDeletionMarks>,
     join_bursts: Mutex<JoinBurstDetector>,
     bad_words: Mutex<BadWordsMatcherCache>,
     quarantine_locks: Arc<MemberLocks>,
@@ -75,6 +78,27 @@ impl ProtectionState {
     /// horodatages.
     pub fn mention_bursts(&self) -> MutexGuard<'_, MentionBursts> {
         self.mention_bursts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Messages de masse suivis par l'anti-ghost-ping et récidives (bornés).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants et des horodatages.
+    pub fn ghost_pings(&self) -> MutexGuard<'_, AntiGhostPingDetector> {
+        self.ghost_pings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Messages que FoxSecura supprime lui-même (bornés) : leur suppression
+    /// n'est jamais un ghost ping.
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants et des horodatages.
+    pub fn bot_deletions(&self) -> MutexGuard<'_, BotDeletionMarks> {
+        self.bot_deletions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

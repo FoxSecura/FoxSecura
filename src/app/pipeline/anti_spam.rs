@@ -35,7 +35,7 @@ pub async fn run(
         return Ok(());
     };
 
-    let outcome = delete::delete_message(ctx, &plan).await;
+    let outcome = delete::delete_message(ctx, data, &plan).await;
     let language = guild_config.map_or(DEFAULT_LANGUAGE, |guild_config| guild_config.language);
     let incident = build_incident(language, message, &detection, &outcome);
     incident_log::publish(ctx, data, guild_id, language, &incident).await;
