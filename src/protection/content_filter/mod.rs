@@ -482,7 +482,9 @@ fn detect_module(
         // Anti-ghost-ping : suppressions et modifications suivies à part.
         | ProtectionModule::AntiGhostPing
         // Mode lent automatique : rafale par salon, avant la liste blanche.
-        | ProtectionModule::AutoSlowmode => None,
+        | ProtectionModule::AutoSlowmode
+        // Applications externes : entrées du journal d'audit.
+        | ProtectionModule::AntiExternalApplication => None,
     }
 }
 

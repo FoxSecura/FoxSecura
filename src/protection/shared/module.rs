@@ -56,11 +56,12 @@ pub enum ProtectionModule {
     AntiSpamPing,
     AntiGhostPing,
     AutoSlowmode,
+    AntiExternalApplication,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -99,6 +100,7 @@ impl ProtectionModule {
         Self::AntiSpamPing,
         Self::AntiGhostPing,
         Self::AutoSlowmode,
+        Self::AntiExternalApplication,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -142,6 +144,7 @@ impl ProtectionModule {
             Self::AntiSpamPing => "anti_spam_ping",
             Self::AntiGhostPing => "anti_ghost_ping",
             Self::AutoSlowmode => "auto_slowmode",
+            Self::AntiExternalApplication => "anti_external_application",
         }
     }
 

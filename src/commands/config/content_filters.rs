@@ -83,6 +83,7 @@ pub const SERVER_INTEGRITY_MODULES: &[ProtectionModule] = &[
     ProtectionModule::AntiVanityChange,
     ProtectionModule::WebhookWatch,
     ProtectionModule::LimitRole,
+    ProtectionModule::AntiExternalApplication,
 ];
 
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
@@ -269,6 +270,7 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiVanityChange => TextKey::ModuleAntiVanityChange,
         ProtectionModule::WebhookWatch => TextKey::ModuleWebhookWatch,
         ProtectionModule::LimitRole => TextKey::ModuleLimitRole,
+        ProtectionModule::AntiExternalApplication => TextKey::ModuleAntiExternalApplication,
         ProtectionModule::AutoSlowmode => TextKey::ModuleAutoSlowmode,
         ProtectionModule::AntiGhostPing => TextKey::ModuleAntiGhostPing,
         ProtectionModule::AntiSpamPing => TextKey::ModuleAntiSpamPing,

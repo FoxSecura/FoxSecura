@@ -2146,5 +2146,20 @@ catalog! {
         en: "Check who owns this webhook and delete it in the channel settings if it is not legitimate.",
         fr: "Vérifiez à qui appartient ce webhook et supprimez-le dans les réglages du salon s'il n'est pas légitime.",
         de: "Prüfe, wem dieser Webhook gehört, und lösche ihn in den Kanaleinstellungen, falls er nicht legitim ist."
+    },
+    ModuleAntiExternalApplication => {
+        en: "External apps",
+        fr: "Applications externes",
+        de: "Externe Apps"
+    },
+    AntiExternalApplicationSummary => {
+        en: "\"Use External Apps\" permission added to a role: permission removed and author contained.",
+        fr: "Permission « Utiliser des applications externes » ajoutée à un rôle : permission retirée et auteur confiné.",
+        de: "Berechtigung „Externe Apps verwenden“ einer Rolle hinzugefügt: Berechtigung entfernt und Autor eingedämmt."
+    },
+    AntiExternalApplicationRecommendation => {
+        en: "Check why this permission was granted; if it is legitimate, whitelist the administrator, release them and grant it again.",
+        fr: "Vérifiez pourquoi cette permission a été accordée ; si c'est légitime, ajoutez l'administrateur à la liste blanche, libérez-le et accordez-la de nouveau.",
+        de: "Prüfe, warum diese Berechtigung vergeben wurde; falls legitim, setze den Administrator auf die Whitelist, gib ihn frei und vergib sie erneut."
     }
 }

@@ -130,20 +130,38 @@ pub fn plan_permission_rollback(
     if added.is_empty() {
         return PermissionPlan::Ignore(PermissionIgnore::NoDangerousAddition);
     }
+    match role_revert_precheck(guild_id, role_id, role, bot) {
+        Ok(precheck) => PermissionPlan::Respond { added, precheck },
+        Err(reason) => PermissionPlan::Ignore(reason),
+    }
+}
+
+/// Gardes communes à tout retour en arrière d'un rôle (anti-permissions,
+/// applications externes), dans l'ordre : `@everyone` → rôle du bot → rôle
+/// géré → rôle absent du cache → `MANAGE_ROLES` → hiérarchie.
+///
+/// `Err` : rôle jamais touché. `Ok(Some(_))` : retour en arrière impossible
+/// d'après le cache (l'auteur est tout de même confiné). `Ok(None)` : tenter.
+pub fn role_revert_precheck(
+    guild_id: u64,
+    role_id: u64,
+    role: Option<UpdatedRole>,
+    bot: Option<BotRoleStanding>,
+) -> Result<Option<IntegrityActionResult>, PermissionIgnore> {
     if is_everyone_role(guild_id, role_id) {
-        return PermissionPlan::Ignore(PermissionIgnore::Everyone);
+        return Err(PermissionIgnore::Everyone);
     }
     let Some(role) = role else {
-        return PermissionPlan::Ignore(PermissionIgnore::RoleUnknown);
+        return Err(PermissionIgnore::RoleUnknown);
     };
     if role.bot_role {
-        return PermissionPlan::Ignore(PermissionIgnore::BotRole);
+        return Err(PermissionIgnore::BotRole);
     }
     if role.managed {
-        return PermissionPlan::Ignore(PermissionIgnore::Managed);
+        return Err(PermissionIgnore::Managed);
     }
 
-    let precheck = bot.and_then(|bot| {
+    Ok(bot.and_then(|bot| {
         if !bot.manage_roles {
             Some(IntegrityActionResult::Skipped {
                 failure_code: Some(FailureCode::MissingPermission),
@@ -160,8 +178,7 @@ pub fn plan_permission_rollback(
         } else {
             None
         }
-    });
-    PermissionPlan::Respond { added, precheck }
+    }))
 }
 
 /// Résultat du retour en arrière pour un auteur exempté : non tenté.
