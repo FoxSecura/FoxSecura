@@ -1846,5 +1846,40 @@ catalog! {
         en: "Whitelisted author: confirm with them that this permission change was intended.",
         fr: "Auteur de la liste blanche : confirmez avec lui que ce changement de permissions était voulu.",
         de: "Urheber auf der Whitelist: Kläre mit ihm, ob diese Berechtigungsänderung beabsichtigt war."
+    },
+    ModuleAntiServerEdit => {
+        en: "Server settings (alert)",
+        fr: "Réglages du serveur (alerte)",
+        de: "Servereinstellungen (Warnung)"
+    },
+    ModuleAntiVanityChange => {
+        en: "Custom invite URL (alert)",
+        fr: "URL personnalisée (alerte)",
+        de: "Eigene Einladungs-URL (Warnung)"
+    },
+    AntiServerEditSummary => {
+        en: "Server settings changed (name, icon, verification or notifications): alert only",
+        fr: "Réglages du serveur modifiés (nom, icône, vérification ou notifications) : alerte seule",
+        de: "Servereinstellungen geändert (Name, Symbol, Verifizierung oder Benachrichtigungen): nur Warnung"
+    },
+    AntiServerEditRecommendation => {
+        en: "Nothing was reverted. Check that the change was intended; if not, restore the settings by hand and review the author's permissions.",
+        fr: "Rien n'a été annulé. Vérifiez que la modification était voulue ; sinon, rétablissez les réglages à la main et revoyez les permissions de l'auteur.",
+        de: "Nichts wurde rückgängig gemacht. Prüfe, ob die Änderung beabsichtigt war; falls nicht, stelle die Einstellungen manuell wieder her und überprüfe die Berechtigungen des Urhebers."
+    },
+    AntiVanityChangeSummary => {
+        en: "Custom invite URL changed: alert only",
+        fr: "URL personnalisée modifiée : alerte seule",
+        de: "Eigene Einladungs-URL geändert: nur Warnung"
+    },
+    AntiVanityChangeEvidence => {
+        en: "Custom URL (old->new)",
+        fr: "URL personnalisée (ancienne->nouvelle)",
+        de: "Eigene URL (alt->neu)"
+    },
+    AntiVanityChangeRecommendation => {
+        en: "Discord does not let a bot take back a released custom URL: act now (contact Discord support if it was stolen) and remove Manage Server from the author.",
+        fr: "Discord ne permet pas à un bot de reprendre une URL personnalisée libérée : agissez tout de suite (support Discord si elle a été volée) et retirez Gérer le serveur à l'auteur.",
+        de: "Discord erlaubt einem Bot nicht, eine freigegebene eigene URL zurückzuholen: Handle sofort (Discord-Support kontaktieren, falls sie gestohlen wurde) und entziehe dem Urheber Server verwalten."
     }
 }

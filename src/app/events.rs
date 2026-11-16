@@ -38,6 +38,18 @@ pub async fn handle(
             pipeline::member::handle_guild_create(ctx, data, guild).await;
             pipeline::anti_nuke::handle_guild_create(ctx, data, guild.id.get()).await;
         }
+        serenity::FullEvent::GuildUpdate {
+            old_data_if_available,
+            new_data,
+        } => {
+            pipeline::server_integrity::handle_guild_update(
+                ctx,
+                data,
+                old_data_if_available.as_ref(),
+                new_data,
+            )
+            .await;
+        }
         serenity::FullEvent::ChannelCreate { channel } => {
             pipeline::quarantine::handle_channel_create(ctx, data, channel).await;
         }

@@ -7,6 +7,9 @@
 //!
 //! - `RoleUpdate` : anti-permissions (retour en arrière du bitfield, puis
 //!   quarantaine de l'auteur non exempté).
+//! - `GuildUpdate` (événement Gateway, ancienne version du serveur d'après le
+//!   cache) : alertes server-edit et vanity, sans sanction ; l'auteur vient
+//!   de l'entrée d'audit `GuildUpdate` indexée par le socle.
 //!
 //! Les décisions sont dans `foxsecura::protection::anti_nuke::server_integrity` ;
 //! ce module relève l'état du cache (verrou relâché avant tout `.await`) et
@@ -15,14 +18,20 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use foxsecura::database::MemberGuardContext;
+use foxsecura::protection::anti_nuke::audit::ScreenedAuthor;
 use foxsecura::protection::anti_nuke::audit::{AuditAction, AuditEntry};
 use foxsecura::protection::anti_nuke::response::{
     ANTI_NUKE_AUDIT_LABEL, Containment, sends_panic_signal,
 };
+use foxsecura::protection::anti_nuke::server_integrity::alert::AlertAuthor;
 use foxsecura::protection::anti_nuke::server_integrity::anti_permissions::{
     ANTI_PERMISSIONS_ROLLBACK_REASON, PermissionIncidentInput, PermissionPlan, UpdatedRole,
     exempt_rollback_result, permission_incident, plan_permission_rollback,
 };
+use foxsecura::protection::anti_nuke::server_integrity::anti_server_edit::{
+    ServerSettings, changed_server_fields, server_edit_incident,
+};
+use foxsecura::protection::anti_nuke::server_integrity::anti_vanity_change::vanity_incident;
 use foxsecura::protection::anti_nuke::server_integrity::outcome::IntegrityActionResult;
 use foxsecura::protection::shared::{ProtectionModule, audit_reason};
 use poise::serenity_prelude as serenity;
@@ -30,6 +39,7 @@ use poise::serenity_prelude as serenity;
 use super::anti_nuke::{self, contain_author, language, read_context};
 use super::incident_log;
 use super::quarantine::{bot_role_standing, discord_failure};
+use super::restore::resolve_author;
 use crate::app::AppData;
 
 /// Traite une entrée de l'intégrité du serveur ; `false` si elle n'en
@@ -152,6 +162,113 @@ async fn role_update(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry
         &incident,
     )
     .await;
+}
+
+/// Serveur modifié (`GuildUpdate`) : alertes server-edit (`warning`) et
+/// vanity (`critical`, signal au mode panique). Aucune sanction, aucun retour
+/// en arrière. Sans ancienne version en cache, rien n'est comparable.
+pub async fn handle_guild_update(
+    ctx: &serenity::Context,
+    data: &AppData,
+    old: Option<&serenity::Guild>,
+    new: &serenity::PartialGuild,
+) {
+    let Some(old) = old else {
+        return;
+    };
+    let old = settings(
+        &old.name,
+        old.icon.as_ref(),
+        old.verification_level,
+        old.default_message_notifications,
+        old.vanity_url_code.as_deref(),
+    );
+    let new_settings = settings(
+        &new.name,
+        new.icon.as_ref(),
+        new.verification_level,
+        new.default_message_notifications,
+        new.vanity_url_code.as_deref(),
+    );
+    let fields = changed_server_fields(&old, &new_settings);
+    let vanity_changed = old.vanity_url_code != new_settings.vanity_url_code;
+    // Cas courant (salon système, bannière…) : aucune lecture en base.
+    if fields.is_empty() && !vanity_changed {
+        return;
+    }
+
+    let guild_id = new.id.get();
+    let Some(context) = read_context(data, guild_id, 0).await else {
+        return;
+    };
+    let server_edit = context
+        .enabled_modules
+        .contains(ProtectionModule::AntiServerEdit)
+        && !fields.is_empty();
+    let vanity = context
+        .enabled_modules
+        .contains(ProtectionModule::AntiVanityChange)
+        && vanity_changed;
+    if !server_edit && !vanity {
+        return;
+    }
+
+    let author = match resolve_author(data, guild_id, AuditAction::GuildUpdate, None).await {
+        // Propriétaire libre d'agir ; FoxSecura ne modifie pas le serveur.
+        ScreenedAuthor::Owner | ScreenedAuthor::Bot => return,
+        ScreenedAuthor::Unresolved => AlertAuthor::Unresolved,
+        ScreenedAuthor::Counted(author_id) => {
+            let Some(author_context) = read_context(data, guild_id, author_id).await else {
+                return;
+            };
+            if anti_nuke::is_author_exempt(ctx, &author_context, guild_id, author_id).await {
+                AlertAuthor::Exempt(author_id)
+            } else {
+                AlertAuthor::Resolved(author_id)
+            }
+        }
+    };
+    let language = language(&context);
+
+    if server_edit && let Some(incident) = server_edit_incident(language, guild_id, &fields, author)
+    {
+        incident_log::publish(ctx, data, guild_id, language, &incident).await;
+    }
+    if vanity
+        && let Some(incident) = vanity_incident(
+            language,
+            guild_id,
+            old.vanity_url_code.as_deref(),
+            new_settings.vanity_url_code.as_deref(),
+            author,
+        )
+    {
+        publish_critical(
+            ctx,
+            data,
+            &context,
+            guild_id,
+            ProtectionModule::AntiVanityChange,
+            &incident,
+        )
+        .await;
+    }
+}
+
+fn settings(
+    name: &str,
+    icon: Option<&serenity::ImageHash>,
+    verification_level: serenity::VerificationLevel,
+    default_notifications: serenity::DefaultMessageNotificationLevel,
+    vanity_url_code: Option<&str>,
+) -> ServerSettings {
+    ServerSettings {
+        name: name.to_owned(),
+        icon: icon.map(ToString::to_string),
+        verification_level: u8::from(verification_level),
+        default_notifications: u8::from(default_notifications),
+        vanity_url_code: vanity_url_code.map(str::to_owned),
+    }
 }
 
 /// Rétablit l'ancien bitfield du rôle.

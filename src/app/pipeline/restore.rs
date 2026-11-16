@@ -76,7 +76,13 @@ pub async fn handle_channel_delete(
             .collect(),
     });
 
-    let author = resolve_author(data, guild_id, AuditAction::ChannelDelete, channel.id.get()).await;
+    let author = resolve_author(
+        data,
+        guild_id,
+        AuditAction::ChannelDelete,
+        Some(channel.id.get()),
+    )
+    .await;
     if matches!(author, ScreenedAuthor::Owner | ScreenedAuthor::Bot) {
         // Propriétaire libre d'agir ; les actions de FoxSecura (dont ses
         // propres restaurations ratées) ne sont jamais combattues.
@@ -132,7 +138,7 @@ pub async fn handle_role_delete(
         managed: role.managed,
     });
 
-    let author = resolve_author(data, guild_id, AuditAction::RoleDelete, role_id.get()).await;
+    let author = resolve_author(data, guild_id, AuditAction::RoleDelete, Some(role_id.get())).await;
     if matches!(author, ScreenedAuthor::Owner | ScreenedAuthor::Bot) {
         return;
     }
@@ -387,11 +393,11 @@ async fn restore_role(
 
 /// Auteur de la suppression, d'après l'index des entrées récentes ; consulté
 /// plusieurs fois, l'ordre des événements n'étant pas garanti.
-async fn resolve_author(
+pub(super) async fn resolve_author(
     data: &AppData,
     guild_id: u64,
     action: AuditAction,
-    target_id: u64,
+    target_id: Option<u64>,
 ) -> ScreenedAuthor {
     for attempt in 0..AUTHOR_LOOKUP_ATTEMPTS {
         if attempt > 0 {
@@ -400,7 +406,7 @@ async fn resolve_author(
         let resolved = data.protection.audit_authors().resolve(
             guild_id,
             action,
-            Some(target_id),
+            target_id,
             now(),
             RESOURCE_AUTHOR_MAX_AGE,
         );

@@ -12,6 +12,7 @@
 //! `automod_rule_guard` reste un socle non branché : la V2 ne crée pas encore
 //! de règles AutoMod natives à protéger.
 
+pub mod alert;
 pub mod anti_external_application;
 pub mod anti_permissions;
 pub mod anti_server_edit;
