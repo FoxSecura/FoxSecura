@@ -344,6 +344,35 @@ fn finding_evidence(language: Language, finding: &ContentFinding) -> Vec<Securit
             label: text(language, TextKey::ContentFilterEvidenceMention).to_owned(),
             value: "@everyone / @here".to_owned(),
         },
+        ContentFinding::MentionSpam {
+            target,
+            count,
+            threshold,
+            window,
+        } => {
+            return vec![
+                SecurityEvidence::Threshold {
+                    observed: *count as u64,
+                    threshold: *threshold as u64,
+                    window_seconds: Some(window.as_secs()),
+                    unit: ThresholdUnit::Messages,
+                },
+                SecurityEvidence::Text {
+                    label: text(language, TextKey::ContentFilterEvidenceTarget).to_owned(),
+                    value: format!("{}:{}", target.kind.as_str(), target.id),
+                },
+            ];
+        }
+        ContentFinding::OwnerPing {
+            count,
+            threshold,
+            window,
+        } => SecurityEvidence::Threshold {
+            observed: *count as u64,
+            threshold: *threshold as u64,
+            window_seconds: Some(window.as_secs()),
+            unit: ThresholdUnit::Messages,
+        },
         ContentFinding::MassMention { count, threshold } => SecurityEvidence::Threshold {
             observed: *count as u64,
             threshold: *threshold as u64,
@@ -390,5 +419,10 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiVanityChange => TextKey::AntiVanityChangeSummary,
         ProtectionModule::WebhookWatch => TextKey::WebhookWatchCreatedSummary,
         ProtectionModule::LimitRole => TextKey::LimitRoleSummary,
+        ProtectionModule::AntiExternalApplication => TextKey::AntiExternalApplicationSummary,
+        ProtectionModule::AutoSlowmode => TextKey::AutoSlowmodeSummary,
+        ProtectionModule::AntiGhostPing => TextKey::AntiGhostPingSummary,
+        ProtectionModule::AntiSpamPing => TextKey::AntiSpamPingSummary,
+        ProtectionModule::AntiPingOwner => TextKey::AntiPingOwnerSummary,
     }
 }

@@ -3,6 +3,7 @@
 
 use std::time::Duration;
 
+use super::plan::{AUTO_SLOWMODE_THRESHOLD, AUTO_SLOWMODE_WINDOW};
 use crate::protection::shared::{ActionBurstDetector, ActionBurstInput, ProtectionDecision};
 
 const ACTION_KEY: &str = "auto_slowmode_channel_burst";
@@ -25,8 +26,8 @@ impl Default for AutoSlowmodeDetector {
     fn default() -> Self {
         Self {
             burst: ActionBurstDetector::default(),
-            threshold: 12,
-            window: Duration::from_secs(7),
+            threshold: AUTO_SLOWMODE_THRESHOLD,
+            window: AUTO_SLOWMODE_WINDOW,
         }
     }
 }

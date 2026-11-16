@@ -7,17 +7,26 @@ use foxsecura::i18n::DEFAULT_LANGUAGE;
 use foxsecura::protection::anti_raid::honeypot::{HoneypotRoute, route_honeypot};
 use foxsecura::protection::automod::bad_words::DEFAULT_BAD_WORDS_LANGUAGE;
 use foxsecura::protection::content_filter::{
-    AuthorContext, MessageContent, MessageEvent, MessageRoute, MessageUpdate, MissingFields,
-    route_message,
+    AuthorContext, MentionFacts, MentionStage, MessageContent, MessageEvent, MessageRoute,
+    MessageUpdate, MissingFields, route_message_with,
 };
 use foxsecura::protection::shared::{
-    AuthorWhitelist, MessageSnapshot, ProtectionModule, is_author_exempt, message_scope,
-    screen_message, snowflake_timestamp,
+    AuthorWhitelist, MessageScope, MessageSnapshot, ProtectionModule, is_author_exempt,
+    message_scope, screen_message, snowflake_timestamp,
 };
 use poise::serenity_prelude as serenity;
 
-use super::{anti_spam, bot_assigned_roles, content_filter, honeypot, unix_duration};
+use super::ghost_ping::{self, ObservedMentions};
+use super::{
+    anti_spam, auto_slowmode, bot_assigned_roles, content_filter, honeypot, unix_duration,
+};
 use crate::app::{AppData, run_database};
+
+/// Modules de l'étape « mentions » de la chaîne.
+const MENTION_MODULES: [ProtectionModule; 2] = [
+    ProtectionModule::AntiPingOwner,
+    ProtectionModule::AntiSpamPing,
+];
 
 /// Message converti depuis un événement Discord, prêt pour le pipeline.
 struct InspectedMessage {
@@ -26,10 +35,42 @@ struct InspectedMessage {
     author: AuthorContext,
     /// `None` si Discord n'a pas joint le membre : aucune exemption par rôle.
     member_roles: Option<Vec<u64>>,
+    /// Mentions résolues par Discord ; `None` si une modification les omet.
+    /// L'étape « mentions » ne les lit que pour une création.
+    mentions: Option<Mentions>,
+}
+
+/// Utilisateurs et rôles réellement mentionnés, dédoublonnés.
+#[derive(Debug, Clone, Default)]
+struct Mentions {
+    users: Vec<u64>,
+    roles: Vec<u64>,
+}
+
+impl Mentions {
+    fn of(message: &serenity::Message) -> Self {
+        Self::new(&message.mentions, &message.mention_roles)
+    }
+
+    fn new(users: &[serenity::User], roles: &[serenity::RoleId]) -> Self {
+        let mut users: Vec<u64> = users.iter().map(|user| user.id.get()).collect();
+        let mut roles: Vec<u64> = roles.iter().map(|role| role.get()).collect();
+        users.sort_unstable();
+        users.dedup();
+        roles.sort_unstable();
+        roles.dedup();
+        Self { users, roles }
+    }
 }
 
 /// Création d'un message.
 pub async fn handle(ctx: &serenity::Context, data: &AppData, message: &serenity::Message) {
+    // Messages de webhook : écartés par les gardes communes, ils suivent le
+    // chemin propre au module `webhook_watch`.
+    if message.webhook_id.is_some() {
+        super::webhook_message::handle(ctx, data, message).await;
+        return;
+    }
     let member = message.member.as_deref();
     let inspected = InspectedMessage {
         snapshot: MessageSnapshot {
@@ -48,6 +89,7 @@ pub async fn handle(ctx: &serenity::Context, data: &AppData, message: &serenity:
             member,
         ),
         member_roles: member_roles(member),
+        mentions: Some(Mentions::of(message)),
     };
 
     process(ctx, data, inspected, MessageEvent::Created).await;
@@ -95,6 +137,11 @@ pub async fn handle_update(
         }),
         author: author_context(author.id, unix_duration(edited_at), member),
         member_roles: member_roles(member),
+        mentions: event
+            .mentions
+            .as_deref()
+            .zip(event.mention_roles.as_deref())
+            .map(|(users, roles)| Mentions::new(users, roles)),
     };
 
     process(ctx, data, inspected, MessageEvent::Edited).await;
@@ -104,8 +151,9 @@ pub async fn handle_update(
 ///
 /// Gardes (hors guilde, webhook, bot), puis une seule lecture en base
 /// (configuration, salon ignoré, liste blanche, modules activés, mots
-/// interdits), puis le honeypot, les filtres de contenu et enfin
-/// l'anti-spam. Chaque module est isolé : son erreur est journalisée sans
+/// interdits), puis le honeypot et la chaîne des messages
+/// (`foxsecura::protection::content_filter::MESSAGE_CHAIN` : filtres de
+/// contenu, étape « mentions », mots interdits) et enfin l'anti-spam. Chaque module est isolé : son erreur est journalisée sans
 /// interrompre le pipeline ni le client.
 ///
 /// Honeypot : après les gardes salon ignoré, webhook et bot, avant tous les
@@ -154,6 +202,34 @@ async fn process(
         .guild_config
         .as_ref()
         .map_or(DEFAULT_LANGUAGE, |guild_config| guild_config.language);
+
+    // Mode lent automatique : réglage du salon, évalué avant la liste
+    // blanche ; le message continue ensuite dans la chaîne.
+    if event == MessageEvent::Created
+        && scope != MessageScope::IgnoredChannel
+        && context
+            .enabled_modules
+            .contains(ProtectionModule::AutoSlowmode)
+    {
+        auto_slowmode::observe(ctx, data, &guild_message);
+    }
+
+    // Anti-ghost-ping : suivi à la création, comparaison à la modification,
+    // avant toute suppression par la chaîne (marquée, donc jamais comptée).
+    if scope != MessageScope::IgnoredChannel
+        && context
+            .enabled_modules
+            .contains(ProtectionModule::AntiGhostPing)
+    {
+        let mentions = inspected
+            .mentions
+            .as_ref()
+            .map(|mentions| ObservedMentions {
+                users: &mentions.users,
+                roles: &mentions.roles,
+            });
+        ghost_ping::observe(ctx, data, &guild_message, event, scope, mentions).await;
+    }
 
     // Honeypot, avant tous les filtres. Le cache n'est lu que pour un
     // message du salon piège.
@@ -206,14 +282,45 @@ async fn process(
                 .matcher(language, &context.custom_bad_words)
         });
 
-    match route_message(
-        scope,
-        event,
-        context.enabled_modules,
-        &inspected.content,
-        inspected.author,
-        bad_words.as_deref(),
-    ) {
+    // Étape « mentions » : verrou tenu pendant l'évaluation synchrone
+    // seulement, jamais à travers un `.await`.
+    let mention_modules = MENTION_MODULES
+        .iter()
+        .any(|module| context.enabled_modules.contains(*module));
+    let owner_id = mention_modules
+        .then(|| {
+            ctx.cache
+                .guild(serenity::GuildId::new(guild_id))
+                .map(|guild| guild.owner_id.get())
+        })
+        .flatten();
+    let route = {
+        let mut bursts = mention_modules.then(|| data.protection.mention_bursts());
+        let none = Mentions::default();
+        let mentions = inspected.mentions.as_ref().unwrap_or(&none);
+        let stage = bursts.as_deref_mut().map(|bursts| MentionStage {
+            bursts,
+            facts: MentionFacts {
+                guild_id,
+                author_id,
+                timestamp: guild_message.timestamp,
+                owner_id,
+                users: &mentions.users,
+                roles: &mentions.roles,
+            },
+        });
+        route_message_with(
+            scope,
+            event,
+            context.enabled_modules,
+            &inspected.content,
+            inspected.author,
+            bad_words.as_deref(),
+            stage,
+        )
+    };
+
+    match route {
         MessageRoute::Skip => {}
         MessageRoute::Filter(detection) => {
             content_filter::run(

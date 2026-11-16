@@ -36,7 +36,13 @@ Le dossier `src/protection` constitue le cœur fonctionnel de FoxSecura. Les mod
 | Réglages du serveur (`anti_server_edit`) et URL personnalisée (`anti_vanity_change`), alertes | **oui**, `GUILD_UPDATE` + auteur d'audit | `/config` → Intégrité du serveur, désactivés par défaut |
 | Surveillance des webhooks (`webhook_watch`), **suppression du webhook** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` (`Webhook*`) | `/config` → Intégrité du serveur, désactivé par défaut |
 | Rôle plafonné (`limit_role`), **retrait du rôle** | **oui**, `GUILD_MEMBER_UPDATE` | `/config` → Intégrité du serveur, désactivé, aucun rôle par défaut |
-| Tous les autres modules (dont applications externes, règles AutoMod natives) | non (moteurs testés isolément) | — |
+| Anti-ping du propriétaire (`anti_ping_owner`), suppression | **oui**, `MESSAGE_CREATE` (créations seulement) | `/config` → Anti-Spam, désactivé par défaut, 3 en 30 s |
+| Anti-spam de mentions (`anti_spam_ping`), suppression | **oui**, `MESSAGE_CREATE` (créations seulement) | `/config` → Anti-Spam, désactivé par défaut, 3 en 10 s par cible |
+| Anti-ghost-ping (`anti_ghost_ping`), alerte, **timeout en récidive** | **oui**, `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_DELETE_BULK` | `/config` → Anti-Spam, désactivé par défaut |
+| Mode lent automatique (`auto_slowmode`), **mode lent 10 s** | **oui**, `MESSAGE_CREATE` + maintenance toutes les 5 s, reprise au démarrage | `/config` → Anti-Spam, désactivé par défaut, 12 messages en 7 s par salon |
+| Messages de webhook (`webhook_message`), suppression | **oui**, `MESSAGE_CREATE` d'un webhook | interrupteur `webhook_watch` (`/config` → Intégrité du serveur) |
+| Applications externes (`anti_external_application`), **retrait du bit + quarantaine** | **oui**, `GUILD_AUDIT_LOG_ENTRY_CREATE` (`RoleUpdate`) | `/config` → Intégrité du serveur, désactivé par défaut |
+| Tous les autres modules (dont règles AutoMod natives) | non (moteurs testés isolément) | — |
 
 ## Anti-Nuke
 
@@ -128,6 +134,16 @@ Réponses **unitaires** (aucune rafale, aucun seuil) appuyées sur le même socl
 - `warning` ; `critical` si le webhook reste actif (`MANAGE_WEBHOOKS` manquant d'après le cache, refus ou indisponibilité de Discord). Webhook déjà introuvable → `skipped` / `resource_missing`, non critique.
 - Différence avec la V1 : la V1 relisait le journal après `WEBHOOKS_UPDATE` et alertait « auteur non résolu » ; la V2 consomme l'entrée poussée, et une entrée sans auteur est écartée par le socle (**aucun traitement**).
 
+**Messages de webhook (tranche 10)** : le même interrupteur active, comme dans la V1, l'analyse des messages postés par un webhook (écartés par les gardes communes du pipeline). Suppression si le message contient une invitation, un lien malveillant, un vrai `@everyone`/`@here`, au moins 5 mentions (utilisateurs et rôles), ou si le même webhook a posté au moins 5 messages en 5 s. Incident avec les raisons (`discord_invite`, `malicious_link`, `everyone_here`, `mass_mention`, `webhook_spam`), les seuils atteints, l'identifiant et le nom du webhook (rendu par `inline_literal`) et un extrait. **Jamais de sanction** : un webhook n'est pas un membre ; l'équipe supprime le webhook. Jamais traités : les messages de FoxSecura lui-même (son compte, ses réponses d'interaction, les webhooks de son application) et ceux d'un salon ignoré. Permission : `MANAGE_MESSAGES`.
+
+#### Applications externes (`anti_external_application`, tranche 10)
+
+- Sur une entrée `RoleUpdate` : si `USE_EXTERNAL_APPS` (bit 50) vient d'être **ajouté** à un rôle qui n'est ni `@everyone`, ni géré, ni le rôle du bot, par un auteur ni propriétaire (garde du socle) ni sur la liste blanche → **seul ce bit est retiré** (`FoxSecura Anti-External Application revert`), les autres changements de la même modification restent. Puis quarantaine de l'auteur (retrait des rôles dangereux, sans repli timeout). Incident `critical`, signal au mode panique.
+- Mêmes pré-vérifications que l'anti-permissions (`role_revert_precheck`) : rôle absent du cache ignoré, `MANAGE_ROLES` manquant ou rôle au-dessus de FoxSecura → retrait non tenté (`skipped`), l'auteur est tout de même confiné.
+- **Combinaison** : si le même `RoleUpdate` ajoute aussi une permission dangereuse et que l'anti-permissions est actif, un seul retour en arrière (l'ancien bitfield, qui ne contient pas le bit non plus) et **un seul incident**, celui de l'anti-permissions, qui cite `USE_EXTERNAL_APPS` parmi les permissions ajoutées.
+- Auteur de la liste blanche : rien (ni retrait, ni incident), comme la V1.
+- Anti-boucle : le retrait est un `RoleUpdate` du bot avec une raison FoxSecura, écarté par le socle (`FoxSecuraAction`).
+
 #### Rôle plafonné (`limit_role`)
 
 - Réglages (migration 10) : `limit_role_id` (jamais `@everyone`) et `limit_role_max_members` (5 par défaut, 1 à 1000).
@@ -139,7 +155,7 @@ Réponses **unitaires** (aucune rafale, aucun seuil) appuyées sur le même socl
 
 ### Briques non branchées
 
-`action_guard.rs` (`evaluate_executor_action`), `server_integrity::anti_external_application`, `automod_rule_guard` (la V2 ne crée pas encore de règles AutoMod natives à protéger) et `server_guard` restent des moteurs testés isolément.
+`action_guard.rs` (`evaluate_executor_action`), le détecteur hérité `detect_external_application_permission_added` (la réponse branchée est `plan_role_update`), `automod_rule_guard` (la V2 ne crée pas encore de règles AutoMod natives à protéger) et `server_guard` restent des moteurs testés isolément.
 
 ## Anti-Raid
 
@@ -412,6 +428,41 @@ Cœur pur, testé sans Discord, partagé par tout module qui sanctionnera un mem
 **Intents et permissions requis** : `GUILD_MESSAGES` et **`MESSAGE_CONTENT` (privilégié)** ; sans ce dernier, Discord livre des messages vides et aucun filtre ne peut déclencher. Permissions : `MANAGE_MESSAGES` dans les salons protégés, `READ_MESSAGE_HISTORY` pour relire un message modifié, `VIEW_CHANNEL` et `SEND_MESSAGES` dans le salon de logs. Pour l'anti-arnaque : **`MODERATE_MEMBERS`** (timeout), **`BAN_MEMBERS`** (ban) et un **rôle de FoxSecura placé au-dessus** des rôles des membres à sanctionner.
 
 **Cache de configuration** : le pipeline lit la configuration, les salons ignorés, la liste blanche, les modules et les mots personnalisés depuis un cache mémoire par guilde (1 024 guildes au plus), chargé au premier message puis après chaque écriture depuis `/config`. Voir [Sécurité](Security#cache-de-configuration).
+
+### Mentions, ghost pings et mode lent (branchés au runtime, tranche 10)
+
+Spécification de la V1. Seuils **fixes**, non réglables : seul l'interrupteur de chaque module est exposé dans `/config` → Anti-Spam.
+
+**Ordre dans la chaîne des messages** (`content_filter::MESSAGE_CHAIN`) : les neuf filtres de contenu jusqu'aux mentions de masse, puis **anti-ping du propriétaire → anti-spam de mentions → mots interdits**, puis l'anti-spam par rafales. Court-circuit inchangé : un seul module répond, un seul incident par message. L'étape « mentions » ne s'applique qu'aux **créations** d'auteurs **non exemptés** (ce ne sont pas des corrections de contenu) ; les mots interdits restent appliqués aux modifications et à la liste blanche. Un module compte un message dès qu'il l'évalue : un message ensuite retenu par les mots interdits a déjà été compté par l'étape « mentions ».
+
+#### Anti-ping du propriétaire (`anti_ping_owner`)
+
+- Rafale par `(guilde, auteur)` des messages qui **mentionnent réellement** le propriétaire (liste des mentions résolues par Discord, jamais le texte) : **3 en 30 s**. Jamais pour le propriétaire lui-même ; propriétaire absent du cache → jamais de déclenchement.
+- Au seuil, et pour chaque message suivant dans la fenêtre : suppression du message déclencheur, incident (`warning` si supprimé, `critical` s'il reste visible), preuve observé/seuil/fenêtre. **Pas de sanction.**
+
+#### Anti-spam de mentions (`anti_spam_ping`)
+
+- Rafale par `(guilde, auteur, cible)`, la cible étant un utilisateur ou un rôle mentionné (un utilisateur et un rôle de même identifiant sont distincts) : **3 en 10 s**. La première cible qui atteint le seuil déclenche ; les cibles suivantes du même message ne sont pas comptées.
+- Suppression et incident (preuve observé/seuil/fenêtre et cible `user:…`/`role:…`). **Pas de sanction.**
+
+#### Anti-ghost-ping (`anti_ghost_ping`)
+
+- **Suivi** : à sa création, un message d'un auteur non exempté qui mentionne **au moins 5 utilisateurs ou rôles** est mémorisé (5 minutes, 5 000 messages et 5 000 auteurs au plus). Jamais suivis : salon ignoré, bots, webhooks, liste blanche. `@everyone` n'est pas compté.
+- **Ghost ping** : le message suivi est supprimé (`MESSAGE_DELETE`) dans les 5 minutes, ou modifié en retirant au moins 5 mentions (comparaison avec la version suivie). **Un message produit au plus un incident** : il quitte le suivi au premier déclenchement. Une modification ne fait jamais entrer un message dans le suivi et garde son heure de création. `MESSAGE_DELETE_BULK` (purge) oublie simplement les messages, sans incident.
+- **Suppressions de FoxSecura** (filtres, anti-spam, honeypot, webhooks) : `delete_message` marque le message **avant** l'appel (Discord peut envoyer l'événement avant la réponse HTTP) et retire la marque si l'appel échoue ; la marque (bornée, 5 minutes) est consommée à la réception de `MESSAGE_DELETE`, qui est alors ignoré.
+- **Attribution** : le journal d'audit ne journalise pas l'auto-suppression par l'auteur et regroupe celles des modérateurs : le ghost ping est attribué à **l'auteur du message**, ce que l'incident dit explicitement. Premier ghost ping : alerte `warning` (`record_alert`), sans sanction.
+- **Récidive** : 2 ghost pings du même auteur en 10 minutes → **timeout de 5 minutes** (`FoxSecura Anti-Ghost Ping repeat offense`, socle des sanctions : jamais le propriétaire, ni le bot, hiérarchie vérifiée) ; auteur de la liste blanche (identifiant, ou rôle d'après le cache) : `ignore_exempt_member`. Incident `critical`.
+
+#### Mode lent automatique (`auto_slowmode`)
+
+- Rafale **par salon**, tous auteurs confondus : **12 messages en 7 s**. Évaluée avant la liste blanche (c'est un réglage du salon, pas une sanction), jamais dans un salon ignoré ; le message continue ensuite dans la chaîne normale. La pose part dans une tâche à part, une seule à la fois par salon.
+- **Pose** : mode lent de **10 s**, sauf si le salon a déjà un mode lent d'au moins 10 s (**jamais réduit**). Le mode lent actuel est lu par l'API (le cache peut retarder), puis l'ancien mode lent est **enregistré en base avant la modification** (migration 11, `guild_auto_slowmodes`). Échec de la pose → ligne supprimée. Incident `warning` (`apply_slowmode`), raison d'audit `FoxSecura Auto Slowmode: channel burst`.
+- **Levée** : tant que la rafale continue, chaque déclenchement repousse la levée (jamais avancée) ; levée **90 s après le dernier déclenchement**. L'ancien mode lent n'est rendu que si le salon porte **encore** 10 s (l'équipe a pu le changer : on n'y touche pas). Échec, salon illisible → nouvelle tentative toutes les **30 s**. Salon disparu → ligne oubliée. Une maintenance relit les levées échues **toutes les 5 s** (levée entre 90 et 95 s) ; elle reprend aussi les levées après un redémarrage.
+- **Verrouillage** : si un verrouillage est actif dans la guilde, rien n'est posé (le verrouillage gère déjà le mode lent de tous les salons). Une levée qui tombe pendant un verrouillage est repoussée de 30 s : le verrouillage a enregistré notre mode lent comme état d'origine et le rendra à sa levée ; notre levée rend ensuite l'ancien mode lent.
+
+**Permissions** : `MANAGE_MESSAGES` (suppressions), `MANAGE_CHANNELS` (mode lent), `MODERATE_MEMBERS` (timeout de récidive, rôle de FoxSecura au-dessus de l'auteur).
+
+**Limites** : rafales, suivi des ghost pings et marques de suppression en mémoire d'un seul processus (perdus au redémarrage, non partagés entre instances) ; seules les lignes de mode lent survivent à un redémarrage. **Faux positifs possibles** : un modérateur qui supprime un message de masse produit une alerte au nom de son auteur (deux suppressions en 10 minutes mènent au timeout de l'auteur) ; un ban avec purge envoie des suppressions qui peuvent compter ; un salon très actif (annonce, événement) reçoit un mode lent de 10 s pendant au moins 90 s.
 
 ### Liens suspects
 

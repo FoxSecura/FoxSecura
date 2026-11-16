@@ -25,6 +25,10 @@ pub const ANTI_SPAM_MODULES: &[ProtectionModule] = &[
     ProtectionModule::MaliciousLink,
     ProtectionModule::AntiEveryone,
     ProtectionModule::AntiMassMention,
+    ProtectionModule::AntiPingOwner,
+    ProtectionModule::AntiSpamPing,
+    ProtectionModule::AntiGhostPing,
+    ProtectionModule::AutoSlowmode,
 ];
 
 /// Filtres affichés dans la catégorie AutoMod.
@@ -79,6 +83,7 @@ pub const SERVER_INTEGRITY_MODULES: &[ProtectionModule] = &[
     ProtectionModule::AntiVanityChange,
     ProtectionModule::WebhookWatch,
     ProtectionModule::LimitRole,
+    ProtectionModule::AntiExternalApplication,
 ];
 
 pub const AUTOMOD_CATEGORY_ID: &str = "automod";
@@ -181,6 +186,16 @@ pub fn state_fields(
     )]
 }
 
+/// Avertissement des protections de mentions, ghost pings et mode lent,
+/// affiché dans la catégorie Anti-Spam : seuils fixes de la V1.
+pub fn message_protections_field(language: Language) -> (&'static str, String, bool) {
+    (
+        text(language, TextKey::ConfigMessageProtectionsTitle),
+        text(language, TextKey::ConfigMessageProtectionsNotice).to_owned(),
+        false,
+    )
+}
+
 /// Un bouton par module, en rangées de cinq au plus (limite Discord).
 pub fn buttons(
     language: Language,
@@ -265,6 +280,11 @@ const fn module_label(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiVanityChange => TextKey::ModuleAntiVanityChange,
         ProtectionModule::WebhookWatch => TextKey::ModuleWebhookWatch,
         ProtectionModule::LimitRole => TextKey::ModuleLimitRole,
+        ProtectionModule::AntiExternalApplication => TextKey::ModuleAntiExternalApplication,
+        ProtectionModule::AutoSlowmode => TextKey::ModuleAutoSlowmode,
+        ProtectionModule::AntiGhostPing => TextKey::ModuleAntiGhostPing,
+        ProtectionModule::AntiSpamPing => TextKey::ModuleAntiSpamPing,
+        ProtectionModule::AntiPingOwner => TextKey::ModuleAntiPingOwner,
     }
 }
 
@@ -342,6 +362,59 @@ mod tests {
             toggle(ProtectionModule::MaliciousLink).category_id(),
             super::super::anti_spam::CATEGORY_ID
         );
+    }
+
+    #[test]
+    fn tranche_ten_modules_have_a_toggle_in_their_category() {
+        for module in [
+            ProtectionModule::AntiPingOwner,
+            ProtectionModule::AntiSpamPing,
+            ProtectionModule::AntiGhostPing,
+            ProtectionModule::AutoSlowmode,
+        ] {
+            let toggle = ModuleToggle {
+                module,
+                enabled: true,
+            };
+            assert_eq!(toggle.category_id(), super::super::anti_spam::CATEGORY_ID);
+            assert_eq!(parse_toggle(&toggle.custom_id()), Some(Ok(toggle)));
+        }
+        let external = ModuleToggle {
+            module: ProtectionModule::AntiExternalApplication,
+            enabled: false,
+        };
+        assert_eq!(external.category_id(), SERVER_INTEGRITY_CATEGORY_ID);
+        assert_eq!(parse_toggle(&external.custom_id()), Some(Ok(external)));
+        // Les messages de webhook suivent l'interrupteur existant.
+        assert!(SERVER_INTEGRITY_MODULES.contains(&ProtectionModule::WebhookWatch));
+    }
+
+    #[test]
+    fn panel_fields_and_buttons_stay_within_discord_limits() {
+        for language in [Language::English, Language::French, Language::German] {
+            let all: ModuleSet = ProtectionModule::ALL.into_iter().collect();
+            for (_, value, _) in state_fields(language, ANTI_SPAM_MODULES, all) {
+                assert!(value.chars().count() <= 1024, "{language:?}");
+            }
+            let (_, notice, _) = message_protections_field(language);
+            assert!(notice.chars().count() <= 1024, "{language:?}");
+            assert!(
+                text(language, TextKey::ConfigExternalAppsNotice)
+                    .chars()
+                    .count()
+                    <= 1024,
+                "{language:?}"
+            );
+            for module in ANTI_SPAM_MODULES.iter().chain(SERVER_INTEGRITY_MODULES) {
+                // Libellé de bouton « module : état » : 80 caractères au plus.
+                let label = format!(
+                    "{} : {}",
+                    text(language, module_label(*module)),
+                    text(language, TextKey::ConfigModuleDisabled)
+                );
+                assert!(label.chars().count() <= 80, "{label}");
+            }
+        }
     }
 
     #[test]

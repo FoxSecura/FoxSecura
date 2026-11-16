@@ -7,9 +7,17 @@ use foxsecura::logs::FailureCode;
 use foxsecura::protection::shared::{DeleteMessageOutcome, DeleteMessagePlan};
 use poise::serenity_prelude as serenity;
 
+use crate::app::AppData;
+
 /// Supprime le message et classe le résultat.
+///
+/// Le message est marqué comme supprimé par FoxSecura **avant** l'appel
+/// (l'événement `MESSAGE_DELETE` peut précéder la réponse HTTP), et la marque
+/// est retirée si l'appel échoue : l'anti-ghost-ping ne compte jamais une
+/// suppression du bot.
 pub async fn delete_message(
     ctx: &serenity::Context,
+    data: &AppData,
     plan: &DeleteMessagePlan,
 ) -> DeleteMessageOutcome {
     // Évite un appel voué au 403 : Discord limite le volume de requêtes
@@ -18,9 +26,17 @@ pub async fn delete_message(
         return DeleteMessageOutcome::NotDeletable;
     }
 
+    data.protection
+        .bot_deletions()
+        .mark(plan.guild_id, plan.message_id, wall_clock());
     let result = serenity::ChannelId::new(plan.channel_id)
         .delete_message(&ctx.http, serenity::MessageId::new(plan.message_id))
         .await;
+    if result.is_err() {
+        data.protection
+            .bot_deletions()
+            .unmark(plan.guild_id, plan.message_id);
+    }
 
     match result {
         Ok(()) => DeleteMessageOutcome::Deleted,
@@ -38,6 +54,14 @@ pub async fn delete_message(
             details: error.to_string(),
         },
     }
+}
+
+/// Maintenant, depuis l'époque Unix (horloge murale, comme les horodatages
+/// des identifiants Discord).
+pub fn wall_clock() -> std::time::Duration {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
 }
 
 /// Code HTTP d'une erreur Discord, s'il y en a un.

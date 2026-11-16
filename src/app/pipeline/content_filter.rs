@@ -48,9 +48,9 @@ pub async fn run(ctx: &serenity::Context, data: &AppData, filtered: FilteredMess
 
     let plan = DeleteMessagePlan::for_message(message);
     let deletion = match event {
-        MessageEvent::Created => delete::delete_message(ctx, &plan).await,
+        MessageEvent::Created => delete::delete_message(ctx, data, &plan).await,
         MessageEvent::Edited => match current_revision(ctx, &plan, content).await {
-            Ok(RevisionCheck::Current) => delete::delete_message(ctx, &plan).await,
+            Ok(RevisionCheck::Current) => delete::delete_message(ctx, data, &plan).await,
             Ok(check) => {
                 println!(
                     "[content_filter] {} : message {} non supprimé, version analysée obsolète ({check:?})",

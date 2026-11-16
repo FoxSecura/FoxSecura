@@ -1,6 +1,17 @@
 // SPDX-FileCopyrightText: 2026 FoxSecura contributors
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! Anti-applications externes : détecteur hérité de l'archive et réponse
+//! branchée au runtime ([`plan_role_update`]).
+
+mod response;
+
+pub use response::{
+    ANTI_EXTERNAL_APPLICATION_REVERT_REASON, EXTERNAL_APPS_PERMISSION,
+    ExternalApplicationIncidentInput, RoleUpdateModules, RoleUpdateResponse,
+    external_application_incident, external_apps_added, plan_role_update,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExternalApplicationInput {
     pub enabled: bool,
@@ -30,7 +41,11 @@ pub fn detect_external_application_permission_added(
     }
 
     let Some(permission_flag) = input.permission_flag else {
-        return result(false, true, "Use External Apps permission flag is unavailable");
+        return result(
+            false,
+            true,
+            "Use External Apps permission flag is unavailable",
+        );
     };
 
     if input.role_is_in_flight {
@@ -48,11 +63,19 @@ pub fn detect_external_application_permission_added(
     let was_added = input.old_permissions & permission_flag == 0
         && input.new_permissions & permission_flag != 0;
     if !was_added {
-        return result(false, false, "Use External Apps permission was not newly added");
+        return result(
+            false,
+            false,
+            "Use External Apps permission was not newly added",
+        );
     }
 
     if input.executor_id.is_none() {
-        return result(false, true, "Role update executor could not be resolved safely");
+        return result(
+            false,
+            true,
+            "Role update executor could not be resolved safely",
+        );
     }
 
     if input.executor_is_owner {
@@ -66,11 +89,7 @@ pub fn detect_external_application_permission_added(
     result(true, false, "Use External Apps permission was newly added")
 }
 
-const fn result(
-    triggered: bool,
-    warning: bool,
-    reason: &'static str,
-) -> ExternalApplicationResult {
+const fn result(triggered: bool, warning: bool, reason: &'static str) -> ExternalApplicationResult {
     ExternalApplicationResult {
         triggered,
         warning,

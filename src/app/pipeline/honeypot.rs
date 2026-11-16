@@ -72,7 +72,8 @@ pub async fn run(
     member_roles: Option<&[u64]>,
     language: Language,
 ) {
-    let deletion = delete::delete_message(ctx, &DeleteMessagePlan::for_message(message)).await;
+    let deletion =
+        delete::delete_message(ctx, data, &DeleteMessagePlan::for_message(message)).await;
     let quarantine = match (plan, member_roles) {
         (HoneypotPlan::Exempt(_), _) => return,
         (HoneypotPlan::Quarantine, Some(roles)) => Some(

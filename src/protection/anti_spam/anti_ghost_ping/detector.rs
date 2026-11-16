@@ -92,10 +92,12 @@ impl AntiGhostPingDetector {
         }
     }
 
+    /// Suit un message récent ; `false` s'il mentionne moins de
+    /// `mention_threshold` cibles (il ne sera jamais un ghost ping de masse).
     pub fn record(&mut self, message: GhostPingMessage) -> bool {
         self.sweep_messages(message.timestamp);
 
-        if mention_count(&message) == 0 {
+        if mention_count(&message) < self.config.mention_threshold {
             return false;
         }
 
@@ -119,24 +121,20 @@ impl AntiGhostPingDetector {
         self.evaluate_incident(previous, timestamp)
     }
 
-    pub fn detect_updated(
-        &mut self,
-        current: GhostPingMessage,
-    ) -> GhostPingDetectionResult {
+    pub fn detect_updated(&mut self, current: GhostPingMessage) -> GhostPingDetectionResult {
         self.sweep_messages(current.timestamp);
         let key = (current.guild_id, current.message_id);
-        let previous = self.messages.get(&key).cloned();
-
-        if mention_count(&current) == 0 {
-            self.messages.remove(&key);
-        } else {
-            self.ensure_message_capacity(&key);
-            self.messages.insert(key, current.clone());
-        }
-
-        let Some(previous) = previous else {
+        // Seul un message déjà suivi est comparé : une modification ne fait
+        // jamais entrer un message dans le suivi.
+        let Some(previous) = self.messages.get(&key).cloned() else {
             return empty_result(self.config.mention_threshold);
         };
+
+        // La version suivie garde l'horodatage de création : la mémoire de
+        // 5 minutes court depuis l'envoi, pas depuis la dernière modification.
+        let mut tracked = current.clone();
+        tracked.timestamp = previous.timestamp;
+        self.messages.insert(key, tracked);
 
         let current_users: HashSet<u64> = current.mention_ids.iter().copied().collect();
         let current_roles: HashSet<u64> = current.role_mention_ids.iter().copied().collect();
@@ -153,7 +151,8 @@ impl AntiGhostPingDetector {
             .filter(|id| !current_roles.contains(id))
             .collect();
         let removed_everyone = previous.mentions_everyone && !current.mentions_everyone;
-        let removed_count = removed_users.len() + removed_roles.len() + usize::from(removed_everyone);
+        let removed_count =
+            removed_users.len() + removed_roles.len() + usize::from(removed_everyone);
 
         if removed_count < self.config.mention_threshold {
             return GhostPingDetectionResult {
@@ -171,14 +170,14 @@ impl AntiGhostPingDetector {
 
         self.messages.remove(&key);
         self.build_triggered_result(
-            previous.author_id,
-            previous.channel_id,
-            removed_users,
-            removed_roles,
-            removed_everyone,
-            removed_count,
+            &previous,
+            Removed {
+                users: removed_users,
+                roles: removed_roles,
+                everyone: removed_everyone,
+                count: removed_count,
+            },
             current.timestamp,
-            current.guild_id,
         )
     }
 
@@ -220,32 +219,24 @@ impl AntiGhostPingDetector {
             };
         }
 
-        self.build_triggered_result(
-            previous.author_id,
-            previous.channel_id,
-            previous.mention_ids,
-            previous.role_mention_ids,
-            previous.mentions_everyone,
+        let removed = Removed {
+            users: previous.mention_ids.clone(),
+            roles: previous.role_mention_ids.clone(),
+            everyone: previous.mentions_everyone,
             count,
-            timestamp,
-            previous.guild_id,
-        )
+        };
+        self.build_triggered_result(&previous, removed, timestamp)
     }
 
     fn build_triggered_result(
         &mut self,
-        author_id: u64,
-        channel_id: u64,
-        mention_ids: Vec<u64>,
-        role_mention_ids: Vec<u64>,
-        mentions_everyone: bool,
-        mention_count: usize,
+        message: &GhostPingMessage,
+        removed: Removed,
         timestamp: Duration,
-        guild_id: u64,
     ) -> GhostPingDetectionResult {
         let repeat = self.repeat_detector.detect(ActionBurstInput::new(
-            guild_id,
-            author_id,
+            message.guild_id,
+            message.author_id,
             REPEAT_ACTION_KEY,
             self.config.repeat_threshold,
             self.config.repeat_window,
@@ -254,25 +245,25 @@ impl AntiGhostPingDetector {
 
         GhostPingDetectionResult {
             decision: ProtectionDecision::Block,
-            author_id: Some(author_id),
-            channel_id: Some(channel_id),
-            mention_ids,
-            role_mention_ids,
-            mentions_everyone,
-            mention_count,
+            author_id: Some(message.author_id),
+            channel_id: Some(message.channel_id),
+            mention_ids: removed.users,
+            role_mention_ids: removed.roles,
+            mentions_everyone: removed.everyone,
+            mention_count: removed.count,
             threshold: self.config.mention_threshold,
             repeat_offense: repeat.decision == ProtectionDecision::Block,
         }
     }
 
     fn sweep_messages(&mut self, now: Duration) {
-        self.messages.retain(|_, message| {
-            now.saturating_sub(message.timestamp) <= self.config.message_ttl
-        });
+        self.messages
+            .retain(|_, message| now.saturating_sub(message.timestamp) <= self.config.message_ttl);
     }
 
     fn ensure_message_capacity(&mut self, key: &(u64, u64)) {
-        if self.messages.contains_key(key) || self.messages.len() < self.config.max_tracked_messages {
+        if self.messages.contains_key(key) || self.messages.len() < self.config.max_tracked_messages
+        {
             return;
         }
 
@@ -286,6 +277,15 @@ impl AntiGhostPingDetector {
             self.messages.remove(&oldest);
         }
     }
+}
+
+/// Mentions retirées (suppression : toutes ; modification : celles qui ont
+/// disparu).
+struct Removed {
+    users: Vec<u64>,
+    roles: Vec<u64>,
+    everyone: bool,
+    count: usize,
 }
 
 fn mention_count(message: &GhostPingMessage) -> usize {

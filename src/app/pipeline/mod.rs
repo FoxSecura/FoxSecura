@@ -9,8 +9,10 @@
 
 pub mod anti_nuke;
 mod anti_spam;
+pub mod auto_slowmode;
 mod content_filter;
 mod delete;
+pub mod ghost_ping;
 mod honeypot;
 mod incident_log;
 mod limit_role;
@@ -21,6 +23,7 @@ pub mod quarantine;
 pub mod restore;
 mod sanction;
 pub mod server_integrity;
+mod webhook_message;
 
 use std::time::Duration;
 

@@ -2016,5 +2016,165 @@ catalog! {
         en: "Role not found in FoxSecura's cache. Nothing was changed.",
         fr: "Rôle introuvable dans le cache de FoxSecura. Rien n'a été modifié.",
         de: "Rolle nicht im Cache von FoxSecura gefunden. Nichts wurde geändert."
+    },
+    ModuleAntiPingOwner => {
+        en: "Owner ping",
+        fr: "Ping du propriétaire",
+        de: "Owner-Ping"
+    },
+    AntiPingOwnerSummary => {
+        en: "Repeated mentions of the server owner: message deleted.",
+        fr: "Mentions répétées du propriétaire du serveur : message supprimé.",
+        de: "Wiederholte Erwähnungen des Serverbesitzers: Nachricht gelöscht."
+    },
+    ModuleAntiSpamPing => {
+        en: "Mention spam",
+        fr: "Spam de mentions",
+        de: "Erwähnungsspam"
+    },
+    AntiSpamPingSummary => {
+        en: "Same user or role mentioned repeatedly: message deleted.",
+        fr: "Même utilisateur ou rôle mentionné en rafale : message supprimé.",
+        de: "Derselbe Nutzer oder dieselbe Rolle wiederholt erwähnt: Nachricht gelöscht."
+    },
+    ContentFilterEvidenceTarget => {
+        en: "Mentioned target",
+        fr: "Cible mentionnée",
+        de: "Erwähntes Ziel"
+    },
+    ModuleAntiGhostPing => {
+        en: "Ghost ping",
+        fr: "Ghost ping",
+        de: "Ghost-Ping"
+    },
+    AntiGhostPingSummary => {
+        en: "Mass ghost ping: a message mentioning many members or roles disappeared shortly after being sent.",
+        fr: "Ghost ping de masse : un message qui mentionnait de nombreux membres ou rôles a disparu peu après son envoi.",
+        de: "Massen-Ghost-Ping: Eine Nachricht mit vielen erwähnten Mitgliedern oder Rollen verschwand kurz nach dem Senden."
+    },
+    AntiGhostPingRepeatSummary => {
+        en: "Repeated mass ghost ping: author timed out for 5 minutes.",
+        fr: "Ghost ping de masse répété : auteur exclu 5 minutes.",
+        de: "Wiederholter Massen-Ghost-Ping: Autor für 5 Minuten stummgeschaltet."
+    },
+    AntiGhostPingEvidenceTargets => {
+        en: "Removed mentions",
+        fr: "Mentions retirées",
+        de: "Entfernte Erwähnungen"
+    },
+    AntiGhostPingEvidenceAttribution => {
+        en: "Attribution",
+        fr: "Attribution",
+        de: "Zuordnung"
+    },
+    AntiGhostPingAttributionAuthor => {
+        en: "message author (Discord does not say who deleted it)",
+        fr: "auteur du message (Discord ne dit pas qui l'a supprimé)",
+        de: "Autor der Nachricht (Discord gibt nicht an, wer sie gelöscht hat)"
+    },
+    AntiGhostPingEventDeleted => {
+        en: "deleted",
+        fr: "supprimé",
+        de: "gelöscht"
+    },
+    AntiGhostPingEvidenceRepeat => {
+        en: "Repeat rule",
+        fr: "Règle de récidive",
+        de: "Wiederholungsregel"
+    },
+    AntiGhostPingRecommendation => {
+        en: "Check whether the author or a moderator removed the message before acting: the deletion is attributed to the author.",
+        fr: "Vérifiez si l'auteur ou un modérateur a retiré le message avant d'agir : la suppression est attribuée à l'auteur.",
+        de: "Prüfe, ob der Autor oder ein Moderator die Nachricht entfernt hat, bevor du handelst: Die Löschung wird dem Autor zugeordnet."
+    },
+    AntiGhostPingRecommendationRepeat => {
+        en: "Repeat offense: review the member's recent messages and extend the sanction if needed.",
+        fr: "Récidive : examinez les messages récents du membre et prolongez la sanction si besoin.",
+        de: "Wiederholung: Prüfe die letzten Nachrichten des Mitglieds und verlängere die Sanktion bei Bedarf."
+    },
+    AntiGhostPingRecommendationSanctionFailed => {
+        en: "The timeout was not applied: check FoxSecura's Moderate Members permission and role position.",
+        fr: "Le timeout n'a pas été appliqué : vérifiez la permission Modérer les membres et la position du rôle de FoxSecura.",
+        de: "Der Timeout wurde nicht angewendet: Prüfe die Berechtigung Mitglieder moderieren und die Rollenposition von FoxSecura."
+    },
+    ModuleAutoSlowmode => {
+        en: "Auto slowmode",
+        fr: "Mode lent auto",
+        de: "Auto-Slowmode"
+    },
+    AutoSlowmodeSummary => {
+        en: "Message burst in a channel: 10-second slowmode applied temporarily.",
+        fr: "Rafale de messages dans un salon : mode lent de 10 secondes posé temporairement.",
+        de: "Nachrichtenflut in einem Kanal: 10-Sekunden-Slowmode vorübergehend gesetzt."
+    },
+    AutoSlowmodeEvidenceSlowmode => {
+        en: "Slowmode",
+        fr: "Mode lent",
+        de: "Slowmode"
+    },
+    AutoSlowmodeEvidenceLift => {
+        en: "Lifted after the last burst",
+        fr: "Levé après la dernière rafale",
+        de: "Aufgehoben nach der letzten Flut"
+    },
+    AutoSlowmodeRecommendation => {
+        en: "The previous slowmode is restored automatically 90 seconds after the burst ends, unless the staff changes it in the meantime.",
+        fr: "L'ancien mode lent est rendu automatiquement 90 secondes après la fin de la rafale, sauf si l'équipe le modifie entre-temps.",
+        de: "Der vorherige Slowmode wird 90 Sekunden nach Ende der Flut automatisch wiederhergestellt, sofern das Team ihn nicht zwischenzeitlich ändert."
+    },
+    AutoSlowmodeRecommendationFailed => {
+        en: "The slowmode was not applied: check FoxSecura's Manage Channels permission in this channel.",
+        fr: "Le mode lent n'a pas été posé : vérifiez la permission Gérer les salons de FoxSecura dans ce salon.",
+        de: "Der Slowmode wurde nicht gesetzt: Prüfe die Berechtigung Kanäle verwalten von FoxSecura in diesem Kanal."
+    },
+    WebhookMessageSummary => {
+        en: "Dangerous webhook message: message deleted.",
+        fr: "Message de webhook dangereux : message supprimé.",
+        de: "Gefährliche Webhook-Nachricht: Nachricht gelöscht."
+    },
+    WebhookMessageEvidenceReasons => {
+        en: "Reasons",
+        fr: "Raisons",
+        de: "Gründe"
+    },
+    WebhookMessageEvidenceWebhook => {
+        en: "Webhook",
+        fr: "Webhook",
+        de: "Webhook"
+    },
+    WebhookMessageRecommendation => {
+        en: "Check who owns this webhook and delete it in the channel settings if it is not legitimate.",
+        fr: "Vérifiez à qui appartient ce webhook et supprimez-le dans les réglages du salon s'il n'est pas légitime.",
+        de: "Prüfe, wem dieser Webhook gehört, und lösche ihn in den Kanaleinstellungen, falls er nicht legitim ist."
+    },
+    ModuleAntiExternalApplication => {
+        en: "External apps",
+        fr: "Applications externes",
+        de: "Externe Apps"
+    },
+    AntiExternalApplicationSummary => {
+        en: "\"Use External Apps\" permission added to a role: permission removed and author contained.",
+        fr: "Permission « Utiliser des applications externes » ajoutée à un rôle : permission retirée et auteur confiné.",
+        de: "Berechtigung „Externe Apps verwenden“ einer Rolle hinzugefügt: Berechtigung entfernt und Autor eingedämmt."
+    },
+    AntiExternalApplicationRecommendation => {
+        en: "Check why this permission was granted; if it is legitimate, whitelist the administrator, release them and grant it again.",
+        fr: "Vérifiez pourquoi cette permission a été accordée ; si c'est légitime, ajoutez l'administrateur à la liste blanche, libérez-le et accordez-la de nouveau.",
+        de: "Prüfe, warum diese Berechtigung vergeben wurde; falls legitim, setze den Administrator auf die Whitelist, gib ihn frei und vergib sie erneut."
+    },
+    ConfigMessageProtectionsTitle => {
+        en: "Mentions, ghost pings and slowmode",
+        fr: "Mentions, ghost pings et mode lent",
+        de: "Erwähnungen, Ghost-Pings und Slowmode"
+    },
+    ConfigMessageProtectionsNotice => {
+        en: "Fixed V1 thresholds, on/off only. Owner ping: 3 messages mentioning the owner in 30 s. Mention spam: same user or role 3 times in 10 s. Both delete the message, never sanction, and skip edits and whitelisted members. Ghost ping: a message with 5+ user or role mentions deleted or emptied within 5 min is attributed to its author (Discord does not say who deleted it); only a repeat (2 in 10 min) times out for 5 min, never the owner or whitelisted members. Auto slowmode: 12 messages in 7 s in a channel set a 10 s slowmode, never lowering an existing one and never during a lockdown; restored 90 s after the burst if unchanged. Requires Manage Messages, Manage Channels and Moderate Members.",
+        fr: "Seuils fixes de la V1, seul l'interrupteur est réglable. Ping du propriétaire : 3 messages qui le mentionnent en 30 s. Spam de mentions : même utilisateur ou rôle 3 fois en 10 s. Les deux suppriment le message, sans sanction, ni sur les modifications ni pour la liste blanche. Ghost ping : un message de 5 mentions ou plus supprimé ou vidé en moins de 5 min est attribué à son auteur (Discord ne dit pas qui l'a supprimé) ; seule la récidive (2 en 10 min) exclut 5 min, jamais le propriétaire ni la liste blanche. Mode lent auto : 12 messages en 7 s dans un salon posent un mode lent de 10 s, sans jamais réduire un mode lent existant ni pendant un verrouillage ; rendu 90 s après la rafale s'il n'a pas changé. Requiert Gérer les messages, Gérer les salons et Modérer les membres.",
+        de: "Feste V1-Schwellen, nur ein/aus. Besitzer-Ping: 3 Nachrichten mit Erwähnung des Besitzers in 30 s. Erwähnungsspam: derselbe Nutzer oder dieselbe Rolle 3-mal in 10 s. Beide löschen die Nachricht ohne Sanktion, nicht bei Bearbeitungen und nicht für die Whitelist. Ghost-Ping: Eine Nachricht mit 5+ Erwähnungen, die binnen 5 Min. gelöscht oder geleert wird, wird ihrem Autor zugeordnet (Discord sagt nicht, wer gelöscht hat); nur eine Wiederholung (2 in 10 Min.) führt zu 5 Min. Timeout, nie für Besitzer oder Whitelist. Auto-Slowmode: 12 Nachrichten in 7 s in einem Kanal setzen 10 s Slowmode, ohne bestehenden zu senken und nie während eines Lockdowns; 90 s nach der Flut zurückgesetzt, falls unverändert. Benötigt Nachrichten verwalten, Kanäle verwalten und Mitglieder moderieren."
+    },
+    ConfigExternalAppsNotice => {
+        en: "External apps: adding \"Use External Apps\" to a role (except @everyone, managed roles and FoxSecura's role) by a non-whitelisted member removes only that permission, then contains the author. Webhook watch also deletes webhook messages with an invite, a malicious link, @everyone/@here, 5+ mentions or 5 messages in 5 s (no sanction).",
+        fr: "Applications externes : l'ajout de « Utiliser des applications externes » à un rôle (hors @everyone, rôles gérés et rôle de FoxSecura) par un membre hors liste blanche retire uniquement cette permission, puis confine l'auteur. La surveillance des webhooks supprime aussi leurs messages contenant une invitation, un lien malveillant, @everyone/@here, 5 mentions ou plus, ou 5 messages en 5 s (sans sanction).",
+        de: "Externe Apps: Das Hinzufügen von „Externe Apps verwenden“ zu einer Rolle (außer @everyone, verwalteten Rollen und der Rolle von FoxSecura) durch ein Mitglied außerhalb der Whitelist entfernt nur diese Berechtigung und dämmt dann den Autor ein. Die Webhook-Überwachung löscht auch Webhook-Nachrichten mit Einladung, schädlichem Link, @everyone/@here, 5+ Erwähnungen oder 5 Nachrichten in 5 s (ohne Sanktion)."
     }
 }

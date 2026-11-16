@@ -9,12 +9,17 @@ use foxsecura::protection::anti_nuke::audit::{AuditEntryDedup, RecentAuditAuthor
 use foxsecura::protection::anti_nuke::burst::NukeBurstTracker;
 use foxsecura::protection::anti_nuke::panic_mode::PanicModeDetector;
 use foxsecura::protection::anti_raid::join_burst::JoinBurstDetector;
+use foxsecura::protection::anti_raid::webhook_message::WebhookMessageSpamDetector;
+use foxsecura::protection::anti_spam::anti_ghost_ping::{AntiGhostPingDetector, BotDeletionMarks};
+use foxsecura::protection::anti_spam::auto_slowmode::AutoSlowmodeDetector;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodTracker;
 use foxsecura::protection::automod::bad_words::BadWordsMatcherCache;
+use foxsecura::protection::content_filter::MentionBursts;
 use foxsecura::protection::lockdown::{GuildLocks, LockdownTimers};
 use foxsecura::protection::quarantine::MemberLocks;
 
 use super::Error;
+use super::pipeline::auto_slowmode::SlowmodeInFlight;
 
 /// État partagé par les commandes et les événements.
 pub struct AppData {
@@ -42,6 +47,12 @@ impl AppData {
 #[derive(Default)]
 pub struct ProtectionState {
     message_flood: Mutex<MessageFloodTracker>,
+    mention_bursts: Mutex<MentionBursts>,
+    ghost_pings: Mutex<AntiGhostPingDetector>,
+    bot_deletions: Mutex<BotDeletionMarks>,
+    auto_slowmode: Mutex<AutoSlowmodeDetector>,
+    webhook_spam: Mutex<WebhookMessageSpamDetector>,
+    slowmode_in_flight: Arc<SlowmodeInFlight>,
     join_bursts: Mutex<JoinBurstDetector>,
     bad_words: Mutex<BadWordsMatcherCache>,
     quarantine_locks: Arc<MemberLocks>,
@@ -64,6 +75,63 @@ impl ProtectionState {
         self.message_flood
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales de l'anti-ping du propriétaire et de l'anti-spam de mentions,
+    /// par auteur (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn mention_bursts(&self) -> MutexGuard<'_, MentionBursts> {
+        self.mention_bursts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Messages de masse suivis par l'anti-ghost-ping et récidives (bornés).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants et des horodatages.
+    pub fn ghost_pings(&self) -> MutexGuard<'_, AntiGhostPingDetector> {
+        self.ghost_pings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Messages que FoxSecura supprime lui-même (bornés) : leur suppression
+    /// n'est jamais un ghost ping.
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// identifiants et des horodatages.
+    pub fn bot_deletions(&self) -> MutexGuard<'_, BotDeletionMarks> {
+        self.bot_deletions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales du mode lent automatique, par salon (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn auto_slowmode(&self) -> MutexGuard<'_, AutoSlowmodeDetector> {
+        self.auto_slowmode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Rafales des messages de webhook, par webhook (bornées).
+    ///
+    /// Un verrou empoisonné est récupéré : l'état ne contient que des
+    /// horodatages.
+    pub fn webhook_spam(&self) -> MutexGuard<'_, WebhookMessageSpamDetector> {
+        self.webhook_spam
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Salons dont une pose de mode lent automatique est en cours.
+    pub fn slowmode_in_flight(&self) -> &Arc<SlowmodeInFlight> {
+        &self.slowmode_in_flight
     }
 
     /// Fenêtres glissantes des arrivées, par guilde (bornées).

@@ -65,6 +65,8 @@ La catégorie Anti-Spam est la première catégorie réellement persistée et lu
 
 Identifiants internes : `foxsecura:config:anti_spam:enable`, `foxsecura:config:anti_spam:disable`, `foxsecura:config:anti_spam:limits` et le modal `foxsecura:config:anti_spam:limits_modal`.
 
+**Mentions, ghost pings et mode lent (tranche 10)** : la catégorie porte aussi les interrupteurs `anti_ping_owner`, `anti_spam_ping`, `anti_ghost_ping` et `auto_slowmode` (table `guild_protection_modules`, désactivés par défaut, `Right::Config` revérifié à chaque clic, cache invalidé à chaque écriture). Leurs seuils sont **fixes** (V1) et rappelés dans le panneau : 3 pings du propriétaire en 30 s ; 3 mentions de la même cible en 10 s ; ghost ping d'un message de 5 mentions ou plus dans les 5 minutes, timeout de 5 minutes en récidive (2 en 10 minutes) ; mode lent de 10 s après 12 messages en 7 s dans un salon, rendu 90 s après la rafale. Voir [Modules de protection](Protection-Modules#mentions-ghost-pings-et-mode-lent-branchés-au-runtime-tranche-10). Les dix interrupteurs de la catégorie tiennent en deux rangées de boutons.
+
 ### Filtres de contenu (catégories Anti-Spam et AutoMod)
 
 Un interrupteur par module, persisté dans la table générique `guild_protection_modules` (migration 4) et relu par le pipeline (via le cache de la guilde, invalidé à chaque écriture). Tous les modules sont **désactivés par défaut**. Voir [Modules de protection](Protection-Modules#filtres-de-contenu-branchés-au-runtime) pour ce que chacun détecte.
@@ -164,12 +166,13 @@ Restaurations, anti-permissions, alertes et rôle plafonné (voir [Modules de pr
 | Réglage | Stockage | Défaut | Droit |
 | --- | --- | --- | --- |
 | `anti_channel_delete`, `auto_channel_restore`, `anti_role_delete`, `auto_role_restore` | `guild_protection_modules` | désactivés | `Right::Config` |
-| `anti_permissions`, `anti_server_edit`, `anti_vanity_change`, `webhook_watch`, `limit_role` | `guild_protection_modules` | désactivés | `Right::Config` |
+| `anti_permissions`, `anti_server_edit`, `anti_vanity_change`, `webhook_watch`, `limit_role`, `anti_external_application` | `guild_protection_modules` | désactivés | `Right::Config` |
 | Rôle plafonné | `guild_configs.limit_role_id` (migration 10) | aucun | `Right::Whitelist` |
 | Plafond du rôle | `guild_configs.limit_role_max_members` | 5 | 1 à 1000, `Right::Whitelist` |
 
 - Interrupteurs identiques aux autres catégories (`foxsecura:config:module:<clé>:on|off`). Les modes auto ne s'appliquent que si le mode anti de la même ressource est coupé. Activer un module sans `VIEW_AUDIT_LOG` le signale dans les logs locaux.
 - **Rôle plafonné** (propriétaire ou `ADMINISTRATOR` ; sélecteur et boutons masqués pour `MANAGE_GUILD`, droit revérifié à chaque composant et modal) : le rôle choisi est refusé, sans écriture, s'il est `@everyone`, géré par une intégration, non gérable par FoxSecura ou porteur d'une permission dangereuse. **Plafond du rôle plafonné** ouvre un modal prérempli (1 à 1000) ; **Retirer le rôle plafonné** efface le rôle et garde le plafond.
+- `webhook_watch` active aussi l'analyse des **messages** de webhook (invitation, lien malveillant, `@everyone`/`@here`, 5 mentions, 5 messages en 5 s → suppression, jamais de sanction), comme dans la V1. `anti_external_application` retire le seul bit « Utiliser des applications externes » ajouté à un rôle et confine l'auteur ; combiné à l'anti-permissions, un seul retour en arrière et un seul incident.
 - Chaque écriture invalide le cache de la guilde.
 
 > ⚠️ Avant d'activer : l'anti-permissions annule aussi une modification **légitime** d'un administrateur hors liste blanche et le met en quarantaine ; le mode anti des suppressions recrée un salon supprimé volontairement et confine son auteur. Mettez l'équipe sur la liste blanche.
@@ -256,7 +259,7 @@ La configuration par défaut active :
 - `GUILD_MODERATION` : bans et entrées du journal d'audit poussées par Discord (`GUILD_AUDIT_LOG_ENTRY_CREATE`, anti-nuke). Ces entrées exigent en plus la permission **`VIEW_AUDIT_LOG`** : sans elle, Discord n'en envoie aucune ;
 - `GUILDS` sert aussi à la quarantaine (`CHANNEL_CREATE` réapplique le verrou du rôle aux nouveaux salons), au verrouillage (état des salons et de l'overwrite de `@everyone` en cache) et au préchauffage des membres (`GUILD_CREATE`) ;
 - `GUILD_MEMBERS` (privilégié : **Server Members Intent**) : arrivées et mises à jour de membres (liste noire, anti-raid, anti-bot, nouveaux comptes, doubles comptes, usurpation d'identité, pseudos hoistés, rôle de quarantaine retiré à la main), cache des membres (noms protégés de l'usurpation, identités des doubles comptes) et demande des membres d'une guilde par la passerelle (préchauffage) ;
-- `GUILD_MESSAGES` : créations et modifications de messages (honeypot, anti-spam, filtres de contenu) ;
+- `GUILD_MESSAGES` : créations, modifications et suppressions de messages (honeypot, anti-spam, filtres de contenu, étape « mentions », mode lent automatique, messages de webhook ; `MESSAGE_DELETE` et `MESSAGE_DELETE_BULK` pour l'anti-ghost-ping, sans intent supplémentaire) ;
 - `MESSAGE_CONTENT` (privilégié : **Message Content Intent**) : texte et mentions des messages, lus par les filtres de contenu. Sans lui, Discord livre des messages vides.
 
 Si un intent privilégié n'est pas activé dans le portail développeur, Discord ferme la connexion avec le code **4014** et le bot ne démarre pas. FoxSecura intercepte ce cas et affiche quoi activer et où (Discord Developer Portal → application → **Bot** → **Privileged Gateway Intents**). Au-delà de 100 serveurs, ces intents doivent aussi être approuvés par Discord.
@@ -296,6 +299,10 @@ Permissions nécessaires aux fonctionnalités branchées :
 | Restauration des rôles supprimés, retour en arrière des permissions, rôle plafonné | `MANAGE_ROLES`, rôle de FoxSecura au-dessus du rôle visé | serveur |
 | Surveillance des webhooks (suppression) | `MANAGE_WEBHOOKS` | serveur |
 | Envoi des incidents de l'intégrité du serveur | `VIEW_CHANNEL`, `SEND_MESSAGES` | salons de logs `channel`, `role` et `server` |
+| Anti-ping du propriétaire, anti-spam de mentions, messages de webhook (suppression) | `MANAGE_MESSAGES` | salons protégés |
+| Anti-ghost-ping : timeout de 5 minutes en récidive | `MODERATE_MEMBERS`, rôle de FoxSecura au-dessus de l'auteur | serveur |
+| Mode lent automatique (pose, lecture et levée) | `MANAGE_CHANNELS` (`MANAGE_THREADS` pour un fil) | salons protégés |
+| Applications externes (retrait du bit, quarantaine) | `MANAGE_ROLES`, rôle de FoxSecura au-dessus du rôle visé ; `VIEW_AUDIT_LOG` | serveur |
 | Pseudos hoistés (renommage) | `MANAGE_NICKNAMES` | serveur |
 | Envoi des incidents des arrivées | `VIEW_CHANNEL`, `SEND_MESSAGES` | salon de logs `member` |
 | Toute sanction ou tout renommage | **rôle de FoxSecura au-dessus** du rôle le plus haut du membre visé | Paramètres du serveur → Rôles |

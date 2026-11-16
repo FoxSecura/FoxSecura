@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 
 use super::DatabaseError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 10;
+pub const LATEST_SCHEMA_VERSION: i64 = 11;
 
 struct Migration {
     version: i64,
@@ -307,6 +307,32 @@ ALTER TABLE guild_configs ADD COLUMN limit_role_id TEXT
     CHECK (limit_role_id IS NULL OR limit_role_id <> guild_id);
 ALTER TABLE guild_configs ADD COLUMN limit_role_max_members INTEGER NOT NULL DEFAULT 5
     CHECK (limit_role_max_members BETWEEN 1 AND 1000);
+"#,
+    },
+    Migration {
+        version: 11,
+        name: "auto_slowmode",
+        // Mode lent automatique : une ligne par salon ralenti, écrite
+        // **avant** la pose du mode lent (modèle du verrouillage).
+        // `previous_seconds` : mode lent d'origine, rendu à la levée si le
+        // salon porte encore `applied_seconds` (l'équipe a pu le changer).
+        // `lift_at` (secondes Unix) : levée prévue, repoussée tant que la
+        // rafale continue ou après un échec. Une ligne n'est supprimée
+        // qu'une fois le salon restauré, modifié par l'équipe ou disparu.
+        sql: r#"
+CREATE TABLE guild_auto_slowmodes (
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    previous_seconds INTEGER NOT NULL CHECK (previous_seconds BETWEEN 0 AND 21600),
+    applied_seconds INTEGER NOT NULL CHECK (applied_seconds BETWEEN 1 AND 21600),
+    lift_at INTEGER NOT NULL CHECK (lift_at >= 0),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (guild_id, channel_id),
+    FOREIGN KEY (guild_id) REFERENCES guild_configs(guild_id) ON DELETE CASCADE
+);
+
+CREATE INDEX guild_auto_slowmodes_by_lift_at ON guild_auto_slowmodes (lift_at);
 "#,
     },
 ];

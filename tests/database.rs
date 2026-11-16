@@ -17,6 +17,7 @@ use foxsecura::protection::anti_nuke::settings::{
     AntiNukeSettings, AntiNukeSettingsError, AntiNukeThresholds,
 };
 use foxsecura::protection::anti_raid::join_burst::{JoinBurstLimits, JoinBurstLimitsError};
+use foxsecura::protection::anti_spam::auto_slowmode::AutoSlowmode;
 use foxsecura::protection::anti_spam::message_flood::{
     MessageFloodConfig, MessageFloodConfigError,
 };
@@ -283,8 +284,8 @@ VALUES ('123', 'message', '456');
 }
 
 #[test]
-fn latest_schema_version_is_ten() {
-    assert_eq!(LATEST_SCHEMA_VERSION, 10);
+fn latest_schema_version_is_eleven() {
+    assert_eq!(LATEST_SCHEMA_VERSION, 11);
 }
 
 // --- Liste blanche et salons ignorés (migration 3) ---
@@ -3185,4 +3186,178 @@ fn limit_role_is_bounded_and_never_everyone() {
     );
     let cleared = database.set_limit_role(1, None, 42).unwrap();
     assert_eq!(cleared.limit_role.role_id, None);
+}
+
+// --- Mode lent automatique (migration 11) ---
+
+fn slowmode(channel_id: u64, previous: u16, lift_at: u64) -> AutoSlowmode {
+    AutoSlowmode {
+        guild_id: 123,
+        channel_id,
+        previous_seconds: previous,
+        applied_seconds: 10,
+        lift_at,
+    }
+}
+
+#[test]
+fn auto_slowmode_is_recorded_once_and_its_original_state_kept() {
+    let database = Database::open_in_memory().unwrap();
+    assert_eq!(database.auto_slowmode(123, 1).unwrap(), None);
+
+    assert!(database.begin_auto_slowmode(slowmode(1, 3, 100)).unwrap());
+    // Une pose concurrente ne remplace jamais l'état d'origine enregistré.
+    assert!(!database.begin_auto_slowmode(slowmode(1, 10, 500)).unwrap());
+    assert_eq!(
+        database.auto_slowmode(123, 1).unwrap(),
+        Some(slowmode(1, 3, 100))
+    );
+    // La pose crée la configuration de la guilde (clé étrangère).
+    assert!(database.find_guild_config(123).unwrap().is_some());
+}
+
+#[test]
+fn auto_slowmode_lift_is_only_ever_postponed_by_a_burst() {
+    let database = Database::open_in_memory().unwrap();
+    assert!(!database.extend_auto_slowmode(123, 1, 200).unwrap());
+
+    database.begin_auto_slowmode(slowmode(1, 0, 100)).unwrap();
+    assert!(database.extend_auto_slowmode(123, 1, 200).unwrap());
+    assert!(database.extend_auto_slowmode(123, 1, 150).unwrap());
+    assert_eq!(
+        database.auto_slowmode(123, 1).unwrap().unwrap().lift_at,
+        200
+    );
+
+    // Une nouvelle tentative fixe l'échéance, quelle qu'elle soit.
+    database.reschedule_auto_slowmode(123, 1, 130).unwrap();
+    assert_eq!(
+        database.auto_slowmode(123, 1).unwrap().unwrap().lift_at,
+        130
+    );
+}
+
+#[test]
+fn due_auto_slowmodes_are_listed_by_deadline_and_forgotten_after_lift() {
+    let database = Database::open_in_memory().unwrap();
+    database.begin_auto_slowmode(slowmode(3, 0, 300)).unwrap();
+    database.begin_auto_slowmode(slowmode(1, 0, 100)).unwrap();
+    database.begin_auto_slowmode(slowmode(2, 5, 50)).unwrap();
+
+    let due: Vec<u64> = database
+        .due_auto_slowmodes(100)
+        .unwrap()
+        .iter()
+        .map(|row| row.channel_id)
+        .collect();
+    assert_eq!(due, vec![2, 1]);
+
+    assert!(database.forget_auto_slowmode(123, 2).unwrap());
+    assert!(!database.forget_auto_slowmode(123, 2).unwrap());
+    assert_eq!(database.due_auto_slowmodes(u64::MAX).unwrap().len(), 2);
+}
+
+#[test]
+fn auto_slowmodes_survive_a_restart() {
+    let directory = temporary_directory("auto-slowmode-restart");
+    let path = directory.join("foxsecura.sqlite3");
+    {
+        let database = Database::open(&path).unwrap();
+        database.begin_auto_slowmode(slowmode(1, 4, 100)).unwrap();
+    }
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(
+        reopened.due_auto_slowmodes(100).unwrap(),
+        vec![slowmode(1, 4, 100)]
+    );
+    drop(reopened);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn migration_ten_to_eleven_adds_the_auto_slowmode_table_and_keeps_data() {
+    let directory = temporary_directory("migration-10-11");
+    let path = directory.join("foxsecura.sqlite3");
+    {
+        let database = Database::open(&path).unwrap();
+        database.set_guild_language(123, Language::German).unwrap();
+        database
+            .set_protection_module(123, ProtectionModule::AutoSlowmode, true)
+            .unwrap();
+    }
+    // Ramène la base à la version 10 : sans la table ni la ligne 11.
+    {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE guild_auto_slowmodes; DELETE FROM schema_migrations WHERE version = 11;",
+            )
+            .unwrap();
+        let version: i64 = connection
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 10);
+    }
+
+    let database = Database::open(&path).unwrap();
+    assert_eq!(database.schema_version().unwrap(), 11);
+    assert_eq!(
+        database.guild_config(123).unwrap().language,
+        Language::German
+    );
+    assert!(
+        database
+            .enabled_modules(123)
+            .unwrap()
+            .contains(ProtectionModule::AutoSlowmode)
+    );
+    assert!(database.begin_auto_slowmode(slowmode(1, 0, 100)).unwrap());
+    drop(database);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn tranche_ten_module_toggles_reach_the_message_context_immediately() {
+    let database = Database::open_in_memory().unwrap();
+    let modules = [
+        ProtectionModule::AntiPingOwner,
+        ProtectionModule::AntiSpamPing,
+        ProtectionModule::AntiGhostPing,
+        ProtectionModule::AutoSlowmode,
+        ProtectionModule::AntiExternalApplication,
+        ProtectionModule::WebhookWatch,
+    ];
+    // Lecture qui remplit le cache de la guilde.
+    assert!(
+        database
+            .message_guard_context(123, 1, 2)
+            .unwrap()
+            .enabled_modules
+            .is_empty()
+    );
+    for module in modules {
+        database.set_protection_module(123, module, true).unwrap();
+        // L'écriture invalide le cache : le moteur l'applique au message
+        // suivant.
+        assert!(
+            database
+                .message_guard_context(123, 1, 2)
+                .unwrap()
+                .enabled_modules
+                .contains(module),
+            "{module}"
+        );
+    }
+    database
+        .set_protection_module(123, ProtectionModule::AutoSlowmode, false)
+        .unwrap();
+    assert!(
+        !database
+            .message_guard_context(123, 1, 2)
+            .unwrap()
+            .enabled_modules
+            .contains(ProtectionModule::AutoSlowmode)
+    );
 }

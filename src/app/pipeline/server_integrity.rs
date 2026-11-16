@@ -5,8 +5,8 @@
 //! journal d'audit déjà retenues par les gardes du socle
 //! (`anti_nuke::handle_audit_entry`).
 //!
-//! - `RoleUpdate` : anti-permissions (retour en arrière du bitfield, puis
-//!   quarantaine de l'auteur non exempté).
+//! - `RoleUpdate` : anti-permissions et applications externes (un seul
+//!   retour en arrière, puis quarantaine de l'auteur non exempté).
 //! - `WebhookCreate` / `WebhookUpdate` / `WebhookDelete` : suppression d'un
 //!   webhook créé ou modifié par un auteur non autorisé, alerte sur une
 //!   suppression.
@@ -27,9 +27,13 @@ use foxsecura::protection::anti_nuke::response::{
     ANTI_NUKE_AUDIT_LABEL, Containment, sends_panic_signal,
 };
 use foxsecura::protection::anti_nuke::server_integrity::alert::AlertAuthor;
+use foxsecura::protection::anti_nuke::server_integrity::anti_external_application::{
+    ANTI_EXTERNAL_APPLICATION_REVERT_REASON, ExternalApplicationIncidentInput, RoleUpdateModules,
+    RoleUpdateResponse, external_application_incident, plan_role_update,
+};
 use foxsecura::protection::anti_nuke::server_integrity::anti_permissions::{
-    ANTI_PERMISSIONS_ROLLBACK_REASON, PermissionIncidentInput, PermissionPlan, UpdatedRole,
-    exempt_rollback_result, permission_incident, plan_permission_rollback,
+    ANTI_PERMISSIONS_ROLLBACK_REASON, PermissionIncidentInput, UpdatedRole, exempt_rollback_result,
+    permission_incident,
 };
 use foxsecura::protection::anti_nuke::server_integrity::anti_server_edit::{
     ServerSettings, changed_server_fields, server_edit_incident,
@@ -70,8 +74,13 @@ pub async fn handle_audit_entry(
     }
 }
 
-/// Rôle modifié : retour en arrière si une permission dangereuse est
-/// ajoutée, puis quarantaine de l'auteur non exempté.
+/// Rôle modifié : un seul retour en arrière pour l'anti-permissions et les
+/// applications externes, puis quarantaine de l'auteur non exempté.
+///
+/// - Permission dangereuse ajoutée (anti-permissions activé) : l'ancien
+///   bitfield est rétabli ; s'il retire aussi `USE_EXTERNAL_APPS`, l'incident
+///   de l'anti-permissions le cite (un seul incident).
+/// - `USE_EXTERNAL_APPS` ajouté seul (module activé) : seul ce bit est retiré.
 async fn role_update(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry, author_id: u64) {
     let (Some((old, new)), Some(role_id)) = (entry.permissions_change, entry.target_id) else {
         return;
@@ -80,10 +89,15 @@ async fn role_update(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry
     let Some(context) = read_context(data, guild_id, author_id).await else {
         return;
     };
-    if !context
-        .enabled_modules
-        .contains(ProtectionModule::AntiPermissions)
-    {
+    let modules = RoleUpdateModules {
+        anti_permissions: context
+            .enabled_modules
+            .contains(ProtectionModule::AntiPermissions),
+        external_application: context
+            .enabled_modules
+            .contains(ProtectionModule::AntiExternalApplication),
+    };
+    if !modules.anti_permissions && !modules.external_application {
         return;
     }
     let (old, new) = (
@@ -111,26 +125,42 @@ async fn role_update(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry
         }
     };
 
-    let (added, precheck) = match plan_permission_rollback(guild_id, role_id, role, bot, old, new) {
-        PermissionPlan::Ignore(reason) => {
-            println!(
-                "[anti-permissions] rôle {role_id} sur la guilde {guild_id} ignoré : {reason:?}"
-            );
-            return;
-        }
-        PermissionPlan::Respond { added, precheck } => (added, precheck),
+    let response = plan_role_update(guild_id, role_id, role, bot, (old, new), modules);
+    let Some(module) = response.module() else {
+        println!(
+            "[anti-permissions] rôle {role_id} sur la guilde {guild_id} ignoré : {response:?}"
+        );
+        return;
+    };
+    let (target, precheck, reason) = match &response {
+        RoleUpdateResponse::Ignore(_) => return,
+        RoleUpdateResponse::Rollback {
+            target, precheck, ..
+        } => (*target, precheck.clone(), ANTI_PERMISSIONS_ROLLBACK_REASON),
+        RoleUpdateResponse::RevertExternal { target, precheck } => (
+            *target,
+            precheck.clone(),
+            ANTI_EXTERNAL_APPLICATION_REVERT_REASON,
+        ),
     };
 
     let exempt = anti_nuke::is_author_exempt(ctx, &context, guild_id, author_id).await;
-    let (rollback, containment) = if exempt {
+    // Applications externes seules : un auteur exempté n'est ni annulé ni
+    // signalé (V1).
+    if exempt && module == ProtectionModule::AntiExternalApplication {
+        println!(
+            "[anti-external-application] rôle {role_id} sur la guilde {guild_id} par {author_id} (exempté) : rien"
+        );
+        return;
+    }
+    let (revert, containment) = if exempt {
         (exempt_rollback_result(), Containment::Exempt)
     } else {
         // Retour en arrière d'abord : la quarantaine peut prendre plusieurs
-        // appels, les permissions dangereuses ne doivent pas rester en place
-        // pendant ce temps.
-        let rollback = match precheck {
+        // appels, la permission ne doit pas rester en place pendant ce temps.
+        let revert = match precheck {
             Some(skipped) => skipped,
-            None => rollback_permissions(ctx, guild_id, role_id, old).await,
+            None => rollback_permissions(ctx, guild_id, role_id, target, reason).await,
         };
         let containment = contain_author(
             ctx,
@@ -138,41 +168,45 @@ async fn role_update(ctx: &serenity::Context, data: &AppData, entry: &AuditEntry
             &context,
             guild_id,
             author_id,
-            audit_reason(
-                ANTI_NUKE_AUDIT_LABEL,
-                ProtectionModule::AntiPermissions.key(),
-            ),
+            audit_reason(ANTI_NUKE_AUDIT_LABEL, module.key()),
         )
         .await;
-        (rollback, containment)
+        (revert, containment)
     };
     println!(
-        "[anti-permissions] rôle {role_id} sur la guilde {guild_id} par {author_id} : {} ajoutées, retour en arrière {rollback:?}",
-        added.bits()
+        "[{module}] rôle {role_id} sur la guilde {guild_id} par {author_id} : {} -> {}, retour en arrière {revert:?}",
+        old.bits(),
+        target.bits()
     );
 
-    let incident = permission_incident(
-        language(&context),
-        PermissionIncidentInput {
-            role_id,
-            role_name: role_name.as_deref(),
-            author_id,
-            old,
-            new,
-            added,
-        },
-        &rollback,
-        &containment,
-    );
-    publish_critical(
-        ctx,
-        data,
-        &context,
-        guild_id,
-        ProtectionModule::AntiPermissions,
-        &incident,
-    )
-    .await;
+    let incident = match response {
+        RoleUpdateResponse::Rollback { added, .. } => permission_incident(
+            language(&context),
+            PermissionIncidentInput {
+                role_id,
+                role_name: role_name.as_deref(),
+                author_id,
+                old,
+                new,
+                added,
+            },
+            &revert,
+            &containment,
+        ),
+        _ => external_application_incident(
+            language(&context),
+            ExternalApplicationIncidentInput {
+                role_id,
+                role_name: role_name.as_deref(),
+                author_id,
+                old,
+                new,
+            },
+            &revert,
+            &containment,
+        ),
+    };
+    publish_critical(ctx, data, &context, guild_id, module, &incident).await;
 }
 
 /// Webhook créé, modifié ou supprimé : suppression du webhook d'un auteur
@@ -368,20 +402,22 @@ fn settings(
     }
 }
 
-/// Rétablit l'ancien bitfield du rôle.
+/// Écrit le bitfield cible du rôle (ancien bitfield, ou nouveau sans
+/// `USE_EXTERNAL_APPS`).
 async fn rollback_permissions(
     ctx: &serenity::Context,
     guild_id: u64,
     role_id: u64,
-    old: serenity::Permissions,
+    target: serenity::Permissions,
+    reason: &str,
 ) -> IntegrityActionResult {
     match ctx
         .http
         .edit_role(
             serenity::GuildId::new(guild_id),
             serenity::RoleId::new(role_id),
-            &serenity::EditRole::new().permissions(old),
-            Some(ANTI_PERMISSIONS_ROLLBACK_REASON),
+            &serenity::EditRole::new().permissions(target),
+            Some(reason),
         )
         .await
     {
