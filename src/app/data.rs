@@ -41,8 +41,8 @@ impl AppData {
 /// Mono-instance : perdu au redémarrage et non partagé entre plusieurs
 /// processus. Les verrous sont des `std::sync::Mutex` : ils ne doivent être
 /// pris que dans du code synchrone, jamais conservés à travers un `.await`.
-/// Seules exceptions, les verrous de quarantaine (par membre) et de
-/// verrouillage (par guilde), asynchrones et conçus pour être tenus pendant
+/// Seules exceptions, les verrous de quarantaine (par membre), de
+/// verrouillage et des règles AutoMod (par guilde), asynchrones et conçus pour être tenus pendant
 /// toute une opération.
 #[derive(Default)]
 pub struct ProtectionState {
@@ -57,6 +57,7 @@ pub struct ProtectionState {
     bad_words: Mutex<BadWordsMatcherCache>,
     quarantine_locks: Arc<MemberLocks>,
     lockdown_locks: Arc<GuildLocks>,
+    automod_locks: GuildLocks,
     lockdown_timers: Arc<LockdownTimers>,
     member_prewarm: Arc<tokio::sync::Mutex<()>>,
     audit_dedup: Mutex<AuditEntryDedup>,
@@ -164,6 +165,13 @@ impl ProtectionState {
     /// les minuteries.
     pub fn lockdown_locks(&self) -> &Arc<GuildLocks> {
         &self.lockdown_locks
+    }
+
+    /// Verrous par guilde des réconciliations des règles AutoMod natives :
+    /// un basculement dans `/config`, une synchronisation et une restauration
+    /// par la garde ne s'entrelacent jamais (sinon : doublons).
+    pub fn automod_locks(&self) -> &GuildLocks {
+        &self.automod_locks
     }
 
     /// Tour de rôle du préchauffage du cache des membres : une demande à la

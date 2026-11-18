@@ -424,5 +424,7 @@ const fn summary_key(module: ProtectionModule) -> TextKey {
         ProtectionModule::AntiGhostPing => TextKey::AntiGhostPingSummary,
         ProtectionModule::AntiSpamPing => TextKey::AntiSpamPingSummary,
         ProtectionModule::AntiPingOwner => TextKey::AntiPingOwnerSummary,
+        ProtectionModule::MemberProfileFilter => TextKey::MemberProfileFilterSummary,
+        ProtectionModule::AutoModRuleGuard => TextKey::AutoModRuleGuardDeletedSummary,
     }
 }

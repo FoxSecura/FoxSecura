@@ -201,10 +201,12 @@ mod tests {
         let config_only = Access {
             config: true,
             whitelist: false,
+            owner: false,
         };
         let admin = Access {
             config: true,
             whitelist: true,
+            owner: false,
         };
         // Neuf interrupteurs : deux rangées ; menu + 2 + sélecteur + boutons
         // = cinq rangées au plus (limite Discord).

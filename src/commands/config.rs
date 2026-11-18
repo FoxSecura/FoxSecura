@@ -7,6 +7,7 @@ mod alt_accounts;
 mod anti_nuke;
 mod anti_raid;
 mod anti_spam;
+mod automod_rules;
 mod bad_words;
 mod content_filters;
 mod server_integrity;
@@ -14,6 +15,7 @@ mod server_integrity;
 use poise::serenity_prelude as serenity;
 
 use super::Context;
+use crate::app::pipeline::automod_rules as automod_rules_runtime;
 use crate::app::pipeline::lockdown::{self, LockdownRuntime};
 use crate::app::pipeline::member::prewarm_members;
 use crate::app::pipeline::quarantine::{self, QuarantineRoleError, ReleaseTrigger};
@@ -30,6 +32,10 @@ use foxsecura::protection::anti_raid::anti_new_account::DEFAULT_MIN_ACCOUNT_AGE_
 use foxsecura::protection::anti_raid::join_burst::JoinBurstLimits;
 use foxsecura::protection::anti_spam::message_flood::MessageFloodConfig;
 use foxsecura::protection::automod::bad_words::parse_custom_words;
+use foxsecura::protection::automod::native_rules::{
+    AutoModRuleKey, ExistingAutoModRule, ReconcileOutcome, cleanup_report, reconcile_report,
+    rule_for_module, toggle_report,
+};
 use foxsecura::protection::lockdown::LiftTrigger;
 use foxsecura::protection::quarantine::QuarantineRoleRefusal;
 use foxsecura::protection::shared::{ModuleSet, ProtectionModule};
@@ -116,6 +122,9 @@ enum CategoryView {
     Automod {
         modules: ModuleSet,
         bad_words: BadWordsSettings,
+        /// Règles natives lues sur Discord ; `None` si la lecture a échoué.
+        rules: Option<Vec<ExistingAutoModRule>>,
+        access: Access,
     },
     AccessControl {
         exemptions: GuildExemptions,
@@ -185,6 +194,7 @@ pub async fn handle_component(
     let blacklist_edit = BlacklistEdit::from_button(custom_id);
     let quarantine_action = QuarantineAction::from_custom_id(custom_id);
     let limit_role_action = LimitRoleAction::from_custom_id(custom_id);
+    let automod_right = automod_rules::required_right(custom_id);
     let required = match (list_target, &module_toggle) {
         (Some(target), _) => target.required_right(),
         (None, Some(_)) => Right::Config,
@@ -193,6 +203,7 @@ pub async fn handle_component(
         (None, None) if limit_role_action.is_some() => server_integrity::LIMIT_ROLE_RIGHT,
         (None, None) if custom_id == anti_raid::LOCKDOWN_LIFT_ID => anti_raid::LOCKDOWN_LIFT_RIGHT,
         (None, None) if bad_words_action.is_some() => Right::Config,
+        (None, None) if automod_right.is_some() => automod_right.unwrap_or(Right::Owner),
         (None, None)
             if [
                 CATEGORY_SELECT_ID,
@@ -235,6 +246,53 @@ pub async fn handle_component(
     };
     let guild_id = guild_id.get();
 
+    if custom_id == automod_rules::SYNC_ID {
+        // Plusieurs appels Discord : réponse différée, puis tableau de bord
+        // relu et rapport éphémère.
+        component
+            .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+            .await?;
+        reconcile_rules(
+            ctx,
+            data,
+            Responder::Component(component),
+            language,
+            guild_id,
+            access,
+            RuleChange {
+                category_id: content_filters::AUTOMOD_CATEGORY_ID,
+                keys: &AutoModRuleKey::ALL,
+                create_when_disabled: true,
+                always_report: true,
+            },
+        )
+        .await?;
+        return Ok(true);
+    }
+
+    if custom_id == automod_rules::DELETE_ID {
+        component
+            .create_response(&ctx.http, automod_rules::delete_confirmation(language))
+            .await?;
+        return Ok(true);
+    }
+
+    if custom_id == automod_rules::DELETE_CONFIRM_ID {
+        component
+            .create_response(&ctx.http, serenity::CreateInteractionResponse::Acknowledge)
+            .await?;
+        let outcome = automod_rules_runtime::delete_all(ctx, data, guild_id).await;
+        component
+            .edit_response(
+                &ctx.http,
+                serenity::EditInteractionResponse::new()
+                    .content(cleanup_report(language, &outcome))
+                    .components(Vec::new()),
+            )
+            .await?;
+        return Ok(true);
+    }
+
     if let Some(action) = quarantine_action {
         handle_quarantine(ctx, data, component, language, guild_id, access, action).await?;
         return Ok(true);
@@ -256,7 +314,7 @@ pub async fn handle_component(
     }
 
     if custom_id == anti_nuke::THRESHOLDS_ID || custom_id == anti_nuke::PANIC_ID {
-        match load_view(data, guild_id, anti_nuke::CATEGORY_ID, access).await {
+        match load_view(ctx, data, guild_id, anti_nuke::CATEGORY_ID, access).await {
             Ok(Some(CategoryView::AntiNuke { state })) => {
                 let modal = if custom_id == anti_nuke::THRESHOLDS_ID {
                     anti_nuke::thresholds_modal(language, state.settings.thresholds)
@@ -289,7 +347,7 @@ pub async fn handle_component(
     }
 
     if custom_id == anti_raid::LIMITS_ID {
-        match load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await {
+        match load_view(ctx, data, guild_id, anti_raid::CATEGORY_ID, access).await {
             Ok(Some(CategoryView::AntiRaid { state, .. })) => {
                 component
                     .create_response(
@@ -345,7 +403,7 @@ pub async fn handle_component(
         })
         .await;
         let view = match saved {
-            Ok(_) => load_view(data, guild_id, access_control::CATEGORY_ID, access).await,
+            Ok(_) => load_view(ctx, data, guild_id, access_control::CATEGORY_ID, access).await,
             Err(error) => Err(error),
         };
 
@@ -411,7 +469,7 @@ pub async fn handle_component(
     }
 
     if custom_id == anti_raid::MIN_AGE_ID {
-        match load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await {
+        match load_view(ctx, data, guild_id, anti_raid::CATEGORY_ID, access).await {
             Ok(Some(CategoryView::AntiRaid { state, .. })) => {
                 component
                     .create_response(
@@ -470,7 +528,7 @@ pub async fn handle_component(
             return Ok(true);
         };
 
-        let view = match load_view(data, guild_id, &category_id, access).await {
+        let view = match load_view(ctx, data, guild_id, &category_id, access).await {
             Ok(view) => view,
             Err(error) => {
                 eprintln!(
@@ -521,7 +579,7 @@ pub async fn handle_component(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, anti_spam::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, anti_spam::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -533,6 +591,17 @@ pub async fn handle_component(
                 language,
                 anti_spam::CATEGORY_ID,
                 view.as_ref(),
+            )
+            .await?;
+            // L'anti-spam pilote aussi la règle native anti-spam.
+            reconcile_rules(
+                ctx,
+                data,
+                Responder::Component(component),
+                language,
+                guild_id,
+                access,
+                RuleChange::toggle(anti_spam::CATEGORY_ID, AutoModRuleKey::GenericSpamBlocking),
             )
             .await?;
         }
@@ -563,7 +632,7 @@ async fn save_module_toggle(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, category_id, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, category_id, access).await,
         Err(error) => Err(error),
     };
 
@@ -582,6 +651,20 @@ async fn save_module_toggle(
                     || content_filters::SERVER_INTEGRITY_MODULES.contains(&toggle.module))
             {
                 crate::app::pipeline::anti_nuke::handle_guild_create(ctx, data, guild_id).await;
+            }
+            // Interrupteur lié à une règle native : activer crée ou réactive
+            // la règle, désactiver la désactive sans la créer.
+            if let Some(key) = rule_for_module(toggle.module) {
+                reconcile_rules(
+                    ctx,
+                    data,
+                    Responder::Component(component),
+                    language,
+                    guild_id,
+                    access,
+                    RuleChange::toggle(category_id, key),
+                )
+                .await?;
             }
         }
         Err(error) => {
@@ -615,7 +698,14 @@ async fn handle_bad_words(
             .await;
             let view = match saved {
                 Ok(_) => {
-                    load_view(data, guild_id, content_filters::AUTOMOD_CATEGORY_ID, access).await
+                    load_view(
+                        ctx,
+                        data,
+                        guild_id,
+                        content_filters::AUTOMOD_CATEGORY_ID,
+                        access,
+                    )
+                    .await
                 }
                 Err(error) => Err(error),
             };
@@ -627,6 +717,16 @@ async fn handle_bad_words(
                         language,
                         content_filters::AUTOMOD_CATEGORY_ID,
                         view.as_ref(),
+                    )
+                    .await?;
+                    reconcile_rules(
+                        ctx,
+                        data,
+                        Responder::Component(component),
+                        language,
+                        guild_id,
+                        access,
+                        RuleChange::word_list(),
                     )
                     .await?;
                 }
@@ -768,7 +868,7 @@ pub async fn handle_modal(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, anti_spam::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, anti_spam::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -842,7 +942,7 @@ async fn save_blacklist(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, access_control::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, access_control::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -905,7 +1005,7 @@ async fn save_min_age(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, anti_raid::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -955,7 +1055,7 @@ async fn save_anti_raid_limits(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, anti_raid::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -1018,7 +1118,7 @@ async fn save_anti_nuke(
         .await
     };
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, anti_nuke::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, anti_nuke::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -1107,7 +1207,7 @@ async fn handle_limit_role(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, server_integrity::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, server_integrity::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
     match view {
@@ -1158,7 +1258,7 @@ async fn save_limit_role_max(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, server_integrity::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, server_integrity::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
     match view {
@@ -1229,7 +1329,7 @@ async fn save_honeypot_channel(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, alt_accounts::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, alt_accounts::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -1385,7 +1485,7 @@ async fn save_quarantine_role(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, anti_raid::CATEGORY_ID, access).await,
+        Ok(_) => load_view(ctx, data, guild_id, anti_raid::CATEGORY_ID, access).await,
         Err(error) => Err(error),
     };
 
@@ -1499,6 +1599,142 @@ fn quarantine_role_message(language: Language, error: &QuarantineRoleError) -> S
     text(language, key).to_owned()
 }
 
+/// Interaction déjà répondue, dont le message peut être relu et complété.
+#[derive(Clone, Copy)]
+enum Responder<'a> {
+    Component(&'a serenity::ComponentInteraction),
+    Modal(&'a serenity::ModalInteraction),
+}
+
+impl Responder<'_> {
+    async fn edit(
+        self,
+        ctx: &serenity::Context,
+        builder: serenity::EditInteractionResponse,
+    ) -> Result<(), Error> {
+        match self {
+            Self::Component(component) => component.edit_response(&ctx.http, builder).await?,
+            Self::Modal(modal) => modal.edit_response(&ctx.http, builder).await?,
+        };
+        Ok(())
+    }
+
+    async fn followup(self, ctx: &serenity::Context, content: &str) -> Result<(), Error> {
+        let builder = serenity::CreateInteractionResponseFollowup::new()
+            .content(content)
+            .ephemeral(true);
+        match self {
+            Self::Component(component) => component.create_followup(&ctx.http, builder).await?,
+            Self::Modal(modal) => modal.create_followup(&ctx.http, builder).await?,
+        };
+        Ok(())
+    }
+}
+
+/// Règles natives à réconcilier après une écriture de `/config`.
+struct RuleChange<'a> {
+    /// Catégorie affichée : seule la catégorie AutoMod montre l'état des
+    /// règles et est relue après la réconciliation.
+    category_id: &'a str,
+    keys: &'a [AutoModRuleKey],
+    create_when_disabled: bool,
+    /// Rapport même si tout a réussi (bouton « Synchroniser AutoMod »).
+    always_report: bool,
+}
+
+impl<'a> RuleChange<'a> {
+    /// Basculement d'un interrupteur : la règle liée, sans création d'une
+    /// règle désactivée.
+    fn toggle(category_id: &'a str, key: AutoModRuleKey) -> Self {
+        let keys: &'a [AutoModRuleKey] = match key {
+            AutoModRuleKey::InviteLinkBlocking => &[AutoModRuleKey::InviteLinkBlocking],
+            AutoModRuleKey::AdultLinksFiltering => &[AutoModRuleKey::AdultLinksFiltering],
+            AutoModRuleKey::BadWordsFilter => &[AutoModRuleKey::BadWordsFilter],
+            AutoModRuleKey::MentionSpamBlocking => &[AutoModRuleKey::MentionSpamBlocking],
+            AutoModRuleKey::GenericSpamBlocking => &[AutoModRuleKey::GenericSpamBlocking],
+            AutoModRuleKey::MemberProfileFilter => &[AutoModRuleKey::MemberProfileFilter],
+        };
+        Self {
+            category_id,
+            keys,
+            create_when_disabled: false,
+            always_report: false,
+        }
+    }
+
+    /// Liste de mots modifiée : la règle des mots interdits, créée même si
+    /// le filtre est désactivé (V1).
+    fn word_list() -> Self {
+        Self {
+            category_id: content_filters::AUTOMOD_CATEGORY_ID,
+            keys: &[AutoModRuleKey::BadWordsFilter],
+            create_when_disabled: true,
+            always_report: false,
+        }
+    }
+}
+
+/// Réconcilie les règles après une interaction déjà répondue : tableau de
+/// bord relu (état des règles lu sur Discord), puis rapport éphémère en cas
+/// d'échec, de règle ignorée ou de mots écartés (toujours pour la
+/// synchronisation). Les droits ont été vérifiés par l'appelant.
+async fn reconcile_rules(
+    ctx: &serenity::Context,
+    data: &AppData,
+    responder: Responder<'_>,
+    language: Language,
+    guild_id: u64,
+    access: Access,
+    change: RuleChange<'_>,
+) -> Result<(), Error> {
+    let Some(outcome) = automod_rules_runtime::reconcile(
+        ctx,
+        data,
+        guild_id,
+        change.keys,
+        change.create_when_disabled,
+        None,
+    )
+    .await
+    else {
+        return responder
+            .followup(ctx, text(language, TextKey::ConfigSaveFailed))
+            .await;
+    };
+
+    if change.category_id == content_filters::AUTOMOD_CATEGORY_ID
+        && !matches!(outcome, ReconcileOutcome::MissingPermission)
+    {
+        match load_view(ctx, data, guild_id, change.category_id, access).await {
+            Ok(view) => {
+                let view = view.as_ref();
+                let category = Some(change.category_id);
+                responder
+                    .edit(
+                        ctx,
+                        serenity::EditInteractionResponse::new()
+                            .embed(build_embed(language, category, view))
+                            .components(build_components(language, category, view)),
+                    )
+                    .await?;
+            }
+            Err(error) => {
+                eprintln!("[config] relecture AutoMod impossible ({guild_id}) : {error}");
+            }
+        }
+    }
+
+    let report = if change.always_report {
+        Some(reconcile_report(language, &outcome))
+    } else {
+        toggle_report(language, &outcome)
+    };
+    if let Some(report) = report {
+        responder.followup(ctx, &report).await?;
+    }
+    Ok(())
+}
+
 async fn followup_ephemeral(
     ctx: &serenity::Context,
     component: &serenity::ComponentInteraction,
@@ -1528,6 +1764,7 @@ fn denied_key_default(required: Right, access: Access) -> TextKey {
     match required {
         Right::Whitelist if access.config => TextKey::ConfigWhitelistAccessDenied,
         Right::Blacklist if access.config => TextKey::ConfigBlacklistAccessDenied,
+        Right::Owner if access.config => TextKey::ConfigAutomodOwnerOnly,
         _ => TextKey::ConfigAccessDenied,
     }
 }
@@ -1576,7 +1813,16 @@ async fn save_custom_words(
     })
     .await;
     let view = match saved {
-        Ok(_) => load_view(data, guild_id, content_filters::AUTOMOD_CATEGORY_ID, access).await,
+        Ok(_) => {
+            load_view(
+                ctx,
+                data,
+                guild_id,
+                content_filters::AUTOMOD_CATEGORY_ID,
+                access,
+            )
+            .await
+        }
         Err(error) => Err(error),
     };
 
@@ -1593,6 +1839,16 @@ async fn save_custom_words(
                     serenity::CreateInteractionResponse::UpdateMessage(response),
                 )
                 .await?;
+            reconcile_rules(
+                ctx,
+                data,
+                Responder::Modal(modal),
+                language,
+                guild_id,
+                access,
+                RuleChange::word_list(),
+            )
+            .await?;
         }
         Err(error) => {
             eprintln!(
@@ -1608,6 +1864,7 @@ async fn save_custom_words(
 /// Lit l'état à afficher pour une catégorie ; `None` si elle n'a pas encore
 /// de réglages.
 async fn load_view(
+    ctx: &serenity::Context,
     data: &AppData,
     guild_id: u64,
     category_id: &str,
@@ -1637,7 +1894,22 @@ async fn load_view(
                 ))
             })
             .await?;
-            Some(CategoryView::Automod { modules, bad_words })
+            let rules = match automod_rules_runtime::read_rules(ctx, guild_id).await {
+                Ok(rules) => Some(rules),
+                Err(failure) => {
+                    eprintln!(
+                        "[config] règles AutoMod illisibles ({guild_id}) : {}",
+                        failure.details
+                    );
+                    None
+                }
+            };
+            Some(CategoryView::Automod {
+                modules,
+                bad_words,
+                rules,
+                access,
+            })
         }
         access_control::CATEGORY_ID => {
             let (exemptions, blacklist) = run_database(&data.database, move |database| {
@@ -1836,14 +2108,20 @@ fn build_embed(
                     .fields([content_filters::message_protections_field(language)]),
                 (
                     content_filters::AUTOMOD_CATEGORY_ID,
-                    Some(CategoryView::Automod { modules, bad_words }),
+                    Some(CategoryView::Automod {
+                        modules,
+                        bad_words,
+                        rules,
+                        ..
+                    }),
                 ) => embed
                     .fields(content_filters::state_fields(
                         language,
                         content_filters::AUTOMOD_MODULES,
                         *modules,
                     ))
-                    .fields(bad_words::state_fields(language, bad_words)),
+                    .fields(bad_words::state_fields(language, bad_words))
+                    .fields(automod_rules::state_fields(language, rules.as_deref())),
                 (
                     access_control::CATEGORY_ID,
                     Some(CategoryView::AccessControl {
@@ -1913,7 +2191,12 @@ fn build_components(
         }
         (
             Some(content_filters::AUTOMOD_CATEGORY_ID),
-            Some(CategoryView::Automod { modules, bad_words }),
+            Some(CategoryView::Automod {
+                modules,
+                bad_words,
+                access,
+                ..
+            }),
         ) => {
             rows.extend(content_filters::buttons(
                 language,
@@ -1921,6 +2204,7 @@ fn build_components(
                 *modules,
             ));
             rows.push(bad_words::buttons(language, bad_words));
+            rows.push(automod_rules::buttons(language, access.owner));
         }
         (Some(access_control::CATEGORY_ID), Some(CategoryView::AccessControl { access, .. })) => {
             rows.extend(access_control::selects(language, *access));

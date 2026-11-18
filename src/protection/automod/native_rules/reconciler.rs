@@ -10,15 +10,24 @@ pub struct ExistingAutoModRule {
     pub id: u64,
     pub name: String,
     pub trigger_type: AutoModRuleTriggerType,
+    /// Règle active sur Discord (affichage de `/config`).
+    pub enabled: bool,
 }
 
 impl ExistingAutoModRule {
+    /// Règle active.
     pub fn new(id: u64, name: impl Into<String>, trigger_type: AutoModRuleTriggerType) -> Self {
         Self {
             id,
             name: name.into(),
             trigger_type,
+            enabled: true,
         }
+    }
+
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
     }
 }
 

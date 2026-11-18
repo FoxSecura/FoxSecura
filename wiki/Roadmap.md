@@ -20,7 +20,7 @@ Chaque branchement doit conserver la séparation `snapshot → détection → d�
 
 **Fait (tranche 7)** : verrouillage temporaire du serveur (migration 8), sous-système réutilisable calqué sur la quarantaine : état d'origine à trois états enregistré avant chaque modification, jamais relancé tant qu'un verrouillage est actif, levée à l'échéance avec nouvelles tentatives toutes les minutes, reprise au démarrage et levée manuelle depuis `/config` (nouveauté V2) ; anti-raid par rafales d'arrivées (seuil et fenêtre persistés, état borné, verrouillage et quarantaine du membre en parallèle) ; honeypot (après les gardes, avant les filtres de contenu, quarantaine avec retrait des rôles dangereux, aucune quarantaine si les permissions sont inconnues) ; doubles comptes depuis le cache des membres, préchauffé par la passerelle. **Fait en tranche 8** : mode panique réutilisant le verrouillage (durée et mode lent généralisés). **Reste** : verrouillage d'un salon créé pendant un verrouillage, rattrapage des membres arrivés juste avant le seuil, état partagé si plusieurs instances.
 
-**Fait (tranche 8)** : socle des journaux d'audit sur `GUILD_AUDIT_LOG_ENTRY_CREATE` (gardes d'âge, de doublon, d'auteur, de propriétaire et du bot, défense en profondeur sur la raison `FoxSecura`) ; rafales par auteur de huit modules (seuils V1, réglables, pause de 30 s, migration 9) ; quarantaine de l'auteur sans repli timeout, jamais d'annulation en masse ; mode panique par types de modules distincts, verrouillage de 15 minutes avec mode lent de 30 s ; verrouillage généralisé (durée et mode lent portés par la requête, mode lent posé enregistré). **Fait (tranche 9)** : recréation des salons et rôles supprimés, retour en arrière des permissions dangereuses, alertes de modification du serveur et d'URL personnalisée, webhooks, rôle plafonné. **Reste** : applications externes, règles AutoMod natives, sauvegardes du serveur ; état partagé si plusieurs instances.
+**Fait (tranche 8)** : socle des journaux d'audit sur `GUILD_AUDIT_LOG_ENTRY_CREATE` (gardes d'âge, de doublon, d'auteur, de propriétaire et du bot, défense en profondeur sur la raison `FoxSecura`) ; rafales par auteur de huit modules (seuils V1, réglables, pause de 30 s, migration 9) ; quarantaine de l'auteur sans repli timeout, jamais d'annulation en masse ; mode panique par types de modules distincts, verrouillage de 15 minutes avec mode lent de 30 s ; verrouillage généralisé (durée et mode lent portés par la requête, mode lent posé enregistré). **Fait (tranche 9)** : recréation des salons et rôles supprimés, retour en arrière des permissions dangereuses, alertes de modification du serveur et d'URL personnalisée, webhooks, rôle plafonné. **Reste** : sauvegardes du serveur ; état partagé si plusieurs instances (applications externes : tranche 10 ; règles AutoMod natives : tranche 11).
 
 **Fait (tranche 2)** : liste blanche (utilisateurs, rôles) et salons ignorés, persistés (migration 3), appliqués par le pipeline de messages dans l'ordre de la V1 et gérés depuis `/config` → Contrôle d'accès. **Fait (tranche 4)** : cache par guilde. **Fait (tranche 6)** : le rôle de quarantaine n'exempte jamais. **Reste** : prise en compte des fils de salons ignorés, et rôles de vérification et rôle limité à exclure de l'exemption quand ces modules seront portés.
 
@@ -46,7 +46,9 @@ Priorités : corrélation avec les audit logs, identification fiable de l'exécu
 
 **Fait (tranche 10)** : applications externes (`anti_external_application`, retrait du seul bit, combiné à l'anti-permissions), messages de webhook (interrupteur `webhook_watch`).
 
-**Reste** : règles AutoMod natives et leur garde (`automod_rule_guard`), snapshots et sauvegardes du serveur (restauration complète, au-delà de l'objet supprimé), filtre de profil des membres ; état partagé si plusieurs instances.
+**Fait (tranche 11)** : garde des règles AutoMod natives (`automod_rule_guard`, restauration sans sanction, renommage + désactivation détectés).
+
+**Reste** : snapshots et sauvegardes du serveur (restauration complète, au-delà de l'objet supprimé) ; état partagé si plusieurs instances.
 
 ## 5. Anti-Raid et Anti-Spam
 
@@ -56,7 +58,9 @@ L'anti-spam par rafales est branché au runtime. La liste blanche et les salons 
 
 ## 6. AutoMod natif
 
-Le modèle `spec + reconciler` doit devenir la voie principale pour synchroniser les règles Discord attendues. Les opérations doivent rester idempotentes et tolérer les modifications externes de manière explicite.
+**Fait (tranche 11)** : le modèle `spec + reconciler` est la voie de synchronisation des six règles natives (charge JSON brute, limites Discord, verrou par guilde, rapport par règle), pilotée par les interrupteurs de `/config`, la liste de mots, « Synchroniser AutoMod » et la suppression réservée au propriétaire ; filtre de profil (`member_profile_filter`) en règle native seule.
+
+**Reste** : exemptions de rôles et de salons sur les règles natives (absentes en V1), alerte vers un salon (`SEND_ALERT_MESSAGE`), état partagé si plusieurs instances.
 
 ## 7. Modération IA
 

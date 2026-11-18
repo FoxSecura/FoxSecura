@@ -57,11 +57,15 @@ pub enum ProtectionModule {
     AntiGhostPing,
     AutoSlowmode,
     AntiExternalApplication,
+    /// Règle AutoMod native du filtre de profil (aucun détecteur runtime).
+    MemberProfileFilter,
+    /// Garde des règles AutoMod natives de FoxSecura.
+    AutoModRuleGuard,
 }
 
 impl ProtectionModule {
     /// Tous les modules connus.
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 41] = [
         Self::InvisibleCharFilter,
         Self::MaliciousLink,
         Self::AdultLink,
@@ -101,6 +105,8 @@ impl ProtectionModule {
         Self::AntiGhostPing,
         Self::AutoSlowmode,
         Self::AntiExternalApplication,
+        Self::MemberProfileFilter,
+        Self::AutoModRuleGuard,
     ];
 
     /// Clé stable, persistée en base et utilisée dans les incidents.
@@ -145,6 +151,8 @@ impl ProtectionModule {
             Self::AntiGhostPing => "anti_ghost_ping",
             Self::AutoSlowmode => "auto_slowmode",
             Self::AntiExternalApplication => "anti_external_application",
+            Self::MemberProfileFilter => "member_profile_filter",
+            Self::AutoModRuleGuard => "automod_rule_guard",
         }
     }
 

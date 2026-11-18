@@ -16,6 +16,9 @@ pub enum Right {
     /// (propriétaire ou `ADMINISTRATOR`). Faire bannir un utilisateur à son
     /// arrivée est aussi sensible que d'en exempter un.
     Blacklist,
+    /// Actions réservées au propriétaire du serveur (suppression des règles
+    /// AutoMod de FoxSecura). `ADMINISTRATOR` ne suffit pas.
+    Owner,
 }
 
 /// Droits d'un membre sur le tableau de bord.
@@ -28,6 +31,8 @@ pub struct Access {
     /// Listes blanche et noire des utilisateurs (propriétaire ou
     /// `ADMINISTRATOR`).
     pub whitelist: bool,
+    /// Propriétaire du serveur.
+    pub owner: bool,
 }
 
 impl Access {
@@ -35,6 +40,7 @@ impl Access {
         Self {
             config: is_authorized(is_guild_owner, permissions),
             whitelist: can_manage_whitelist(is_guild_owner, permissions),
+            owner: is_guild_owner,
         }
     }
 
@@ -42,6 +48,7 @@ impl Access {
         match right {
             Right::Config => self.config,
             Right::Whitelist | Right::Blacklist => self.whitelist,
+            Right::Owner => self.owner,
         }
     }
 }
@@ -158,6 +165,19 @@ mod tests {
         assert!(access.allows(Right::Config));
         assert!(!access.allows(Right::Whitelist));
         assert!(!access.allows(Right::Blacklist));
+    }
+
+    #[test]
+    fn owner_right_is_reserved_to_the_guild_owner() {
+        assert!(Access::new(true, None).allows(Right::Owner));
+        for permissions in [
+            serenity::Permissions::ADMINISTRATOR,
+            serenity::Permissions::MANAGE_GUILD,
+            serenity::Permissions::all(),
+        ] {
+            assert!(!Access::new(false, Some(permissions)).allows(Right::Owner));
+        }
+        assert!(!Access::default().allows(Right::Owner));
     }
 
     #[test]

@@ -74,7 +74,7 @@ Un interrupteur par module, persisté dans la table générique `guild_protectio
 | Catégorie | Modules |
 | --- | --- |
 | Anti-Spam | Pièces jointes dangereuses (`attachment_filter`), Caractères invisibles (`invisible_char_filter`), Anti-arnaque (`anti_scam`, **avec timeout et ban**), Liens malveillants (`malicious_link`), `@everyone` / `@here` (`anti_everyone`), Mentions de masse (`anti_mass_mention`) |
-| AutoMod | Liens adultes (`adult_link`), Invitations Discord (`anti_invite`), Mots interdits (`bad_words`) |
+| AutoMod | Liens adultes (`adult_link`), Invitations Discord (`anti_invite`), Mots interdits (`bad_words`), Filtre de profil (`member_profile_filter`, règle native seule), Garde des règles AutoMod (`automod_rule_guard`) |
 
 > ⚠️ **Anti-arnaque** : confiance haute → timeout d'une heure, critique → **ban avec purge de 7 jours**. Un faux positif bannit un membre légitime : activez-le seulement si l'équipe suit le salon de logs `message`, et vérifiez d'abord les permissions ci-dessous (`MODERATE_MEMBERS`, `BAN_MEMBERS`, position du rôle).
 
@@ -95,6 +95,18 @@ Sous les interrupteurs de la catégorie AutoMod :
 - Droit exigé : `Right::Config`, revérifié à chaque clic et à chaque soumission.
 
 Identifiants internes : `foxsecura:config:bad_words:language:<french|english|all>`, `foxsecura:config:bad_words:edit` et le modal `foxsecura:config:bad_words:modal`.
+
+### Règles AutoMod natives (catégorie AutoMod)
+
+Sous les mots interdits, l'état des six règles « FoxSecura • … » est **lu sur Discord** à chaque affichage de la catégorie (active, désactivée sur Discord, non créée) ; une lecture impossible (permission `MANAGE_GUILD` absente, Discord indisponible) affiche « état inconnu » sans empêcher le reste de la page. Les noms lus sur Discord sont rendus en code en ligne (`inline_literal`).
+
+- **Interrupteurs liés** : invitations ↔ `anti_invite`, liens adultes ↔ `adult_link`, mots interdits ↔ `bad_words`, mentions ↔ `anti_mass_mention` (catégorie Anti-Spam), spam ↔ interrupteur de l'anti-spam, profil ↔ `member_profile_filter`. Activer crée ou réactive la règle, désactiver la désactive sans la créer. Un message éphémère n'apparaît qu'en cas d'échec, de règle ignorée ou de mots écartés.
+- **Liste de mots** (langue ou mots perso modifiés) : la règle des mots interdits est mise à jour, et créée (désactivée) si le filtre est éteint (V1).
+- **« Synchroniser AutoMod »** (`Right::Config`) : les six règles, créées même désactivées ; rapport éphémère par règle (créée, mise à jour, ignorée avec raison, échec, mots écartés par les limites).
+- **« Supprimer les règles FoxSecura »** (**propriétaire seulement**, `Right::Owner`, `ADMINISTRATOR` ne suffit pas) : demande de confirmation, puis suppression des seules règles dont le nom commence par `FoxSecura •`. Les interrupteurs ne changent pas.
+- Droits revérifiés à chaque composant et à chaque modal. Permission du bot : `MANAGE_GUILD`.
+
+Identifiants internes : `foxsecura:config:automod:sync`, `foxsecura:config:automod:delete`, `foxsecura:config:automod:delete_confirm`.
 
 **Coexistence avec l'anti-spam** : l'anti-spam par rafales garde ses colonnes `anti_spam_*` dans `guild_configs` (interrupteur et seuils, migration 2) ; il n'est pas déplacé dans `guild_protection_modules`, réservée aux modules activables par clé. Les deux sources sont chargées ensemble dans le cache de la guilde.
 

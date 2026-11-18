@@ -9,8 +9,8 @@
 //! socle (`audit::screen_entry`) s'appliquent à tous : entrée trop vieille ou
 //! rejouée, sans auteur, propriétaire du serveur, FoxSecura lui-même.
 //!
-//! `automod_rule_guard` reste un socle non branché : la V2 ne crée pas encore
-//! de règles AutoMod natives à protéger.
+//! `automod_rule_guard` restaure une règle AutoMod native de FoxSecura
+//! supprimée ou désactivée, sans sanction de l'auteur.
 
 pub mod alert;
 pub mod anti_external_application;

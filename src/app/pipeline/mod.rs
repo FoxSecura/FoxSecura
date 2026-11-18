@@ -10,6 +10,7 @@
 pub mod anti_nuke;
 mod anti_spam;
 pub mod auto_slowmode;
+pub mod automod_rules;
 mod content_filter;
 mod delete;
 pub mod ghost_ping;
